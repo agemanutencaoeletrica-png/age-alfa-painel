@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AGE ALFA Painel</title>
+<!-- Mini App do AGE BOT ALFA 6.0. Esta pagina NAO guarda nada e NAO tem chaves:
+     os numeros chegam no proprio link (?d=...), montado pelo bot a cada resposta. -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --fundo: #0e1117; --sup: #161a22; --sup2: #1c212b; --borda: #262c38; --grade: #222833; --eixo: #383835;
+    --texto: #e6e9ef; --texto2: #9aa3b2; --mudo: #6b7380;
+    --azul: #3987e5; --vermelho: #e66767; --bom: #0ca30c; --atencao: #fab219; --critico: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--fundo); color: var(--texto);
+    font: 15px/1.4 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 14px 16px 28px; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .logo { width: 34px; height: 34px; border: 2px solid var(--azul); border-radius: 9px; display: grid;
+    place-items: center; font-weight: 800; font-size: 13px; color: var(--texto); flex: none; }
+  h1 { font-size: 17px; margin: 0; letter-spacing: .3px; }
+  .sub { color: var(--texto2); font-size: 12px; }
+  .pilulas { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 14px; }
+  .pil { border: 1px solid var(--borda); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700;
+    color: var(--texto2); background: var(--sup); }
+  .pil.bom { color: var(--bom); border-color: color-mix(in srgb, var(--bom) 45%, var(--borda)); }
+  .pil.critico { color: var(--critico); border-color: color-mix(in srgb, var(--critico) 45%, var(--borda)); }
+  .pil.atencao { color: var(--atencao); border-color: color-mix(in srgb, var(--atencao) 45%, var(--borda)); }
+  .pil.azul { color: var(--azul); }
+  .cartao { background: var(--sup); border: 1px solid var(--borda); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .titulo { font-size: 11px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--texto2);
+    margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
+  .titulo span { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--mudo); }
+  .banca { font-size: 34px; font-weight: 800; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+  .var { font-size: 14px; font-weight: 700; }
+  .pos { color: var(--azul); } .neg { color: var(--vermelho); }
+  .grade4 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .ladrilho { background: var(--sup); border: 1px solid var(--borda); border-radius: 12px; padding: 12px; }
+  .ladrilho .v { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .ladrilho .d { font-size: 12px; color: var(--mudo); }
+  .barra-progresso { height: 6px; background: var(--sup2); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .barra-progresso div { height: 100%; background: var(--azul); border-radius: 3px; }
+  svg { display: block; width: 100%; }
+  .vazio { color: var(--mudo); text-align: center; padding: 22px 0; font-size: 13px; }
+  .linha-pos { display: grid; grid-template-columns: 92px 1fr 70px; align-items: center; gap: 8px; padding: 7px 0;
+    border-top: 1px solid var(--grade); }
+  .linha-pos:first-of-type { border-top: 0; }
+  .moeda { font-weight: 800; font-size: 14px; }
+  .moeda small { display: block; font-weight: 500; color: var(--mudo); font-size: 11px; }
+  .trilho { position: relative; height: 14px; }
+  .trilho .zero { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--eixo); }
+  .trilho .b { position: absolute; top: 2px; height: 10px; border-radius: 4px; }
+  .valor { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .valor small { display: block; color: var(--mudo); font-weight: 500; font-size: 11px; }
+  .legenda { color: var(--mudo); font-size: 12px; margin-top: 6px; }
+  .botoes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+  button { appearance: none; border: 0; border-radius: 10px; padding: 13px 10px; font: inherit; font-weight: 800;
+    color: var(--texto); background: var(--sup2); cursor: pointer; }
+  button.prin { background: var(--azul); color: #fff; }
+  button:disabled { opacity: .45; }
+  button:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+  .rodape { color: var(--mudo); font-size: 12px; text-align: center; margin-top: 14px; }
+  .aviso { background: color-mix(in srgb, var(--atencao) 16%, var(--sup)); border: 1px solid
+    color-mix(in srgb, var(--atencao) 45%, var(--borda)); color: var(--texto); border-radius: 10px; padding: 9px 12px;
+    font-size: 13px; margin-bottom: 12px; }
+  .dica { position: absolute; pointer-events: none; background: var(--sup2); border: 1px solid var(--borda);
+    border-radius: 8px; padding: 5px 8px; font-size: 12px; white-space: nowrap; display: none; }
+  .curva-caixa { position: relative; }
+</style>
+</head>
+<body>
+<main id="app"><div class="vazio">Carregando...</div></main>
+<script>
+(function () {
+  "use strict";
+  var tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) { try { tg.ready(); tg.expand(); tg.setHeaderColor("#0e1117"); tg.setBackgroundColor("#0e1117"); } catch (e) {} }
+  var app = document.getElementById("app");
+
+  function br(v, casas) {
+    casas = casas === undefined ? 2 : casas;
+    return Number(v).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+  }
+  function sinal(v, casas) { return (v >= 0 ? "+" : "−") + br(Math.abs(v), casas); }
+  function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; }
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function ler() {
+    var cod = new URLSearchParams(location.search).get("d");
+    if (!cod) return null;
+    try {
+      cod = cod.replace(/-/g, "+").replace(/_/g, "/");
+      while (cod.length % 4) cod += "=";
+      var bytes = Uint8Array.from(atob(cod), function (c) { return c.charCodeAt(0); });
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch (e) { return { erro: "link com dados estragados" }; }
+  }
+
+  function mandar(pedido) {
+    if (tg && tg.sendData) { try { tg.sendData(pedido); return; } catch (e) {} }
+    alert("Abra pelo botão 📱 Painel gráfico do bot para usar este botão.");
+  }
+
+  function curva(pontos) {
+    var caixa = el("div", "curva-caixa");
+    if (!pontos || !pontos.length) { caixa.appendChild(el("div", "vazio", "Sem operações fechadas ainda.<br>A curva aparece depois da primeira saída.")); return caixa; }
+    var serie = [0].concat(pontos), W = 520, H = 170, m = { e: 34, d: 10, c: 10, b: 18 };
+    var min = Math.min.apply(null, serie), max = Math.max.apply(null, serie);
+    if (max - min < 1) { max += 0.5; min -= 0.5; }
+    var x = function (i) { return m.e + i * (W - m.e - m.d) / Math.max(1, serie.length - 1); };
+    var y = function (v) { return m.c + (max - v) * (H - m.c - m.b) / (max - min); };
+    var d = serie.map(function (v, i) { return (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); }).join(" ");
+    var base = y(Math.min(Math.max(0, min), max));
+    var area = d + " L" + x(serie.length - 1).toFixed(1) + " " + base.toFixed(1) + " L" + x(0).toFixed(1) + " " + base.toFixed(1) + " Z";
+    var ultimo = serie[serie.length - 1];
+    var svg = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Curva do resultado acumulado em R">' +
+      '<line x1="' + m.e + '" x2="' + (W - m.d) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="var(--eixo)" stroke-width="1"/>' +
+      '<text x="' + (m.e - 6) + '" y="' + (y(max) + 4) + '" fill="var(--mudo)" font-size="11" text-anchor="end">' + br(max, 1) + "</text>" +
+      '<text x="' + (m.e - 6) + '" y="' + (y(min) + 4) + '" fill="var(--mudo)" font-size="11" text-anchor="end">' + br(min, 1) + "</text>" +
+      '<path d="' + area + '" fill="var(--azul)" fill-opacity=".14"/>' +
+      '<path d="' + d + '" fill="none" stroke="var(--azul)" stroke-width="2" stroke-linejoin="round"/>' +
+      '<circle cx="' + x(serie.length - 1) + '" cy="' + y(ultimo) + '" r="4" fill="var(--azul)" stroke="var(--sup)" stroke-width="2"/>' +
+      '<line id="mira" y1="' + m.c + '" y2="' + (H - m.b) + '" stroke="var(--texto2)" stroke-dasharray="3 3" visibility="hidden"/>' +
+      "</svg>";
+    caixa.innerHTML = svg;
+    var dica = el("div", "dica"); caixa.appendChild(dica);
+    var alvo = caixa.querySelector("svg"), mira = caixa.querySelector("#mira");
+    function mover(ev) {
+      var r = alvo.getBoundingClientRect(), px = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left) * W / r.width;
+      var i = Math.max(0, Math.min(serie.length - 1, Math.round((px - m.e) * (serie.length - 1) / (W - m.e - m.d))));
+      mira.setAttribute("x1", x(i)); mira.setAttribute("x2", x(i)); mira.setAttribute("visibility", "visible");
+      dica.style.display = "block";
+      dica.textContent = (i === 0 ? "início" : "operação " + i) + " · acumulado " + sinal(serie[i]) + "R";
+      dica.style.left = Math.min(r.width - 170, Math.max(0, x(i) * r.width / W - 60)) + "px"; dica.style.top = "-6px";
+    }
+    function sair() { dica.style.display = "none"; mira.setAttribute("visibility", "hidden"); }
+    alvo.addEventListener("pointermove", mover); alvo.addEventListener("touchmove", mover, { passive: true });
+    alvo.addEventListener("pointerleave", sair); alvo.addEventListener("touchend", sair);
+    return caixa;
+  }
+
+  function abertas(lista) {
+    var c = el("div");
+    if (!lista || !lista.length) { c.appendChild(el("div", "vazio", "Nenhuma posição aberta agora.")); return c; }
+    var maior = Math.max.apply(null, lista.map(function (p) { return Math.abs(p[2]); }).concat([1]));
+    var temNeg = lista.some(function (p) { return p[2] < 0; });
+    var zero = temNeg ? 50 : 0;
+    lista.slice().sort(function (a, b) { return b[2] - a[2]; }).forEach(function (p) {
+      var largura = Math.abs(p[2]) / maior * (temNeg ? 50 : 100);
+      var esquerda = p[2] >= 0 ? zero : zero - largura;
+      var cor = p[2] >= 0 ? "var(--azul)" : "var(--vermelho)";
+      var linha = el("div", "linha-pos");
+      linha.innerHTML = '<div class="moeda">' + esc(p[0]) + " " + (p[1] === "L" ? "▲" : "▼") + "<small>" + (p[1] === "L" ? "LONG" : "SHORT") + (p[4] ? " · " + esc(p[4]) : "") + "</small></div>" +
+        '<div class="trilho"><div class="zero" style="left:' + zero + '%"></div><div class="b" style="left:' + esquerda + "%;width:" + Math.max(largura, 1.5) + "%;background:" + cor + '"></div></div>' +
+        '<div class="valor">' + sinal(p[2]) + "R<small>" + (p[3] === null ? "" : "prot. " + sinal(p[3]) + "R") + "</small></div>";
+      c.appendChild(linha);
+    });
+    c.appendChild(el("div", "legenda", "Resultado agora em R · prot. = o que já está garantido se sair hoje pelo pior caminho (stop ou saída de 20 dias)."));
+    return c;
+  }
+
+  function desenhar(D) {
+    app.innerHTML = "";
+    if (!D) {
+      app.appendChild(el("div", "cartao", '<div class="titulo">AGE BOT ALFA 6.0</div>Abra este painel pelo botão <b>📱 Painel gráfico</b> do bot <b>AGE ALFA Controle</b> no Telegram.'));
+      return;
+    }
+    if (D.erro) { app.appendChild(el("div", "aviso", "⚠ " + esc(D.erro) + ". Toque em Status no bot e abra o painel de novo.")); return; }
+    var head = el("header");
+    head.innerHTML = '<div class="logo">A6</div><div><h1>AGE BOT ALFA 6.0</h1><div class="sub">Estratégia D1 · rompimento 55/20 · ' + (D.a ? "ADMIN" : "acompanhamento") + "</div></div>";
+    app.appendChild(head);
+    var pil = el("div", "pilulas");
+    pil.innerHTML = '<span class="pil ' + (D.r ? "bom" : "critico") + '">' + (D.r ? "● ROBÔ ATIVO" : "■ ROBÔ PARADO") + "</span>" +
+      '<span class="pil azul">◆ ' + esc(D.m) + "</span>" +
+      '<span class="pil ' + (D.p ? "atencao" : "") + '">' + (D.p ? "❚❚ ENTRADAS PAUSADAS" : "▶ ENTRADAS LIBERADAS") + "</span>";
+    app.appendChild(pil);
+
+    var idade = Math.round((Date.now() / 1000 - D.t) / 60);
+    if (idade > 30) app.appendChild(el("div", "aviso", "Estes dados são de " + (idade < 120 ? idade + " min" : Math.round(idade / 60) + " h") + " atrás. Toque em <b>Atualizar</b>."));
+
+    var variacao = D.b[1] - D.b[0];
+    var hero = el("div", "cartao");
+    hero.innerHTML = '<div class="titulo">Banca <span>sombra · banca de referência</span></div>' +
+      '<div class="banca">' + br(D.b[1]) + ' <span style="font-size:15px;color:var(--texto2);font-weight:600">USDT</span></div>' +
+      '<div class="var ' + (variacao >= 0 ? "pos" : "neg") + '">' + (variacao >= 0 ? "▲ " : "▼ ") + sinal(variacao) + " USDT (" + sinal(D.b[0] ? variacao / D.b[0] * 100 : 0) + "%)</div>" +
+      '<div class="sub">início ' + br(D.b[0]) + " · 1R = " + br(D.u) + " USDT</div>";
+    app.appendChild(hero);
+
+    var g = el("div", "grade4");
+    var fe = D.fe || [0, 0, 0, 0];
+    g.innerHTML =
+      '<div class="ladrilho"><div class="titulo">Abertas</div><div class="v">' + (D.ab ? D.ab.length : "-") + (D.lim ? '<span style="font-size:14px;color:var(--mudo)"> / ' + D.lim + "</span>" : "") + '</div><div class="d">' +
+        (D.ab && D.ab.length ? "aberto " + sinal(D.ab.reduce(function (s, p) { return s + p[2]; }, 0)) + "R" : "nenhuma") + "</div></div>" +
+      '<div class="ladrilho"><div class="titulo">Fechadas</div><div class="v">' + fe[0] + '</div><div class="d">' + fe[1] + " ganhos · " + fe[2] + " perdas</div></div>" +
+      '<div class="ladrilho"><div class="titulo">Resultado</div><div class="v ' + (fe[3] >= 0 ? "" : "neg") + '">' + sinal(fe[3]) + 'R</div><div class="d">' + sinal(fe[3] * D.u) + " USDT fechado</div></div>" +
+      '<div class="ladrilho"><div class="titulo">Critério D1</div><div class="v">' + D.cr[0] + '<span style="font-size:14px;color:var(--mudo)"> / ' + D.cr[1] + '</span></div><div class="d">dias seguidos sem falha</div>' +
+        '<div class="barra-progresso"><div style="width:' + Math.min(100, D.cr[0] / D.cr[1] * 100) + '%"></div></div></div>';
+    app.appendChild(g);
+
+    var cc = el("div", "cartao"); cc.appendChild(el("div", "titulo", "Curva de resultado <span>R acumulado das fechadas</span>")); cc.appendChild(curva(D.cv)); app.appendChild(cc);
+    var ca = el("div", "cartao"); ca.appendChild(el("div", "titulo", "Posições abertas <span>resultado agora</span>")); ca.appendChild(abertas(D.ab)); app.appendChild(ca);
+
+    var cp = el("div", "cartao");
+    if (D.sl) {
+      var vsl = D.sl[0] - D.b[0];
+      cp.innerHTML = '<div class="titulo">Paralela sem limite <span>só comparação</span></div>' +
+        '<div style="font-size:22px;font-weight:800">' + br(D.sl[0]) + ' <span style="font-size:13px;color:var(--texto2)">USDT</span> <span class="var ' + (vsl >= 0 ? "pos" : "neg") + '">' + sinal(vsl) + "</span></div>" +
+        '<div class="sub">' + D.sl[1] + " abertas · " + D.sl[2] + " fechadas · " + sinal(D.sl[3]) + "R · oficial MAX 4: " + br(D.b[1]) + "</div>" +
+        '<div class="sub">A mais que a oficial: ' + (D.sl[4] ? esc(D.sl[4]).replace(/,/g, ", ") : "nenhuma") + "</div>";
+    } else {
+      cp.innerHTML = '<div class="titulo">Paralela sem limite <span>só comparação</span></div><div class="sub">Começa no próximo ciclo (21:05).</div>';
+    }
+    app.appendChild(cp);
+
+    var b = el("div", "botoes");
+    var at = el("button", "prin", "🔄 Atualizar"); at.onclick = function () { mandar("atualizar"); }; b.appendChild(at);
+    if (D.a) {
+      var pz = el("button", "", D.p ? "▶ Retomar entradas" : "⏸ Pausar entradas");
+      pz.onclick = function () { mandar(D.p ? "retomar" : "pausar"); };
+      b.appendChild(pz);
+    } else {
+      var fx = el("button", "", "Fechar"); fx.onclick = function () { if (tg) tg.close(); }; b.appendChild(fx);
+    }
+    app.appendChild(b);
+    var quando = new Date(D.t * 1000);
+    app.appendChild(el("div", "rodape", "dados de " + quando.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) +
+      " · último ciclo " + esc(D.uc) + " · sinais em andamento " + (D.si || 0) + "<br>SOMBRA: nenhuma ordem é enviada · valores estimados" +
+      (D.a ? "<br>Pausar/Retomar pedem confirmação no chat." : "")));
+  }
+
+  desenhar(ler());
+})();
+</script>
+</body>
+</html>
