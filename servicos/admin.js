@@ -152,8 +152,9 @@
 
   function montar() {
     app.innerHTML = '<div class="topo"><div class="marca">AGE</div><div><div class="nome">AGE Elétrica e Pintura</div><div class="sub">Painel do responsável</div></div>' +
-      '<div class="dir"><button class="leve peq" id="b-recarregar" aria-label="Atualizar">↻</button><button class="leve peq" id="b-sair">Sair</button></div></div>' +
+      '<div class="dir"><button class="leve peq oculto" id="b-instalar">📲 Instalar app</button><button class="leve peq" id="b-recarregar" aria-label="Atualizar">↻</button><button class="leve peq" id="b-sair">Sair</button></div></div>' +
       '<nav class="abas" id="abas"></nav><main id="conteudo"></main>';
+    A.ligarInstalar($("#b-instalar"));
     $("#b-sair").onclick = function () { sb.auth.signOut(); };
     $("#b-recarregar").onclick = function () {
       carregarBase().then(function () { rota(); A.avisar("Atualizado"); }).catch(falhou);
@@ -272,7 +273,7 @@
           '<span class="dir"><button class="peq" data-parte="' + o.id + '">+ Parte</button> <button class="peq" data-orc-obra="' + o.id + '">💲 Orçamento</button> ' +
           '<button class="peq" data-obra="' + o.id + '">Editar</button></span></div>' +
           (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
-          (o.telefone ? '<div class="peq mudo">📞 ' + esc(o.telefone) + "</div>" : "") +
+          (o.telefone || o.email ? '<div class="peq mudo">' + (o.telefone ? "📞 " + esc(o.telefone) + " " : "") + (o.email ? "✉ " + esc(o.email) : "") + "</div>" : "") +
           partes.map(function (s) {
             return '<div class="parte ' + s.categoria + '" data-serv="' + s.id + '" role="button" tabindex="0"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
               '<span class="peq">' + (s.funcionario_id ? "👷 " + esc(nomeFunc(s.funcionario_id)) : '<span class="selo critico">sem funcionário</span>') + "</span>" +
@@ -320,8 +321,9 @@
     var j = A.janela(
       (obra ? '<div class="cartao" style="margin:0"><b>' + esc(obra.cliente) + "</b><div class=\"peq mudo\">" + esc(obra.endereco || "") + "</div></div>" :
         '<label for="ns-cli">Cliente *</label><input id="ns-cli" maxlength="200" required>' +
-        '<div class="duas"><div><label for="ns-tel">Telefone do cliente</label><input id="ns-tel" type="tel" maxlength="40"></div>' +
-        '<div><label for="ns-end">Endereço</label><input id="ns-end" maxlength="300"></div></div>' +
+        '<div class="duas"><div><label for="ns-tel">WhatsApp do cliente</label><input id="ns-tel" type="tel" maxlength="40"></div>' +
+        '<div><label for="ns-email">E-mail do cliente</label><input id="ns-email" type="email" maxlength="200"></div></div>' +
+        '<label for="ns-end">Endereço</label><input id="ns-end" maxlength="300">' +
         '<label for="ns-obs">Observações (o funcionário vê)</label><textarea id="ns-obs" rows="2" placeholder="Ex.: chave com o porteiro, cachorro no quintal"></textarea>') +
       '<p class="peq mudo" style="margin:12px 0 0">Marque as partes do serviço. Cada parte vai para o funcionário daquela área.</p>' +
       formParte("eletrica", "⚡ Parte ELÉTRICA") + formParte("pintura", "🖌️ Parte PINTURA") +
@@ -338,7 +340,7 @@
       if (!cats.length) { erro.innerHTML = '<div class="aviso erro">Marque a parte elétrica, a de pintura ou as duas.</div>'; return; }
       A.ocupado(b, true, "Salvando...");
       var pObra = obra ? Promise.resolve(obra) : q(sb.from("obras").insert({
-        cliente: val(el, "#ns-cli"), telefone: nulo(val(el, "#ns-tel")), endereco: nulo(val(el, "#ns-end")), observacoes: nulo(val(el, "#ns-obs"))
+        cliente: val(el, "#ns-cli"), telefone: nulo(val(el, "#ns-tel")), email: nulo(val(el, "#ns-email")), endereco: nulo(val(el, "#ns-end")), observacoes: nulo(val(el, "#ns-obs"))
       }).select().single()).then(function (o) { S.obras.unshift(o); obra = o; return o; });
       pObra.then(function (o) {
         return q(sb.from("servicos").insert(cats.map(function (cat) {
@@ -363,8 +365,9 @@
   function editarObra(id) {
     var o = porId(S.obras, id);
     var j = A.janela('<label for="eo-cli">Cliente *</label><input id="eo-cli" maxlength="200" value="' + esc(o.cliente) + '">' +
-      '<div class="duas"><div><label for="eo-tel">Telefone</label><input id="eo-tel" type="tel" maxlength="40" value="' + esc(o.telefone || "") + '"></div>' +
-      '<div><label for="eo-end">Endereço</label><input id="eo-end" maxlength="300" value="' + esc(o.endereco || "") + '"></div></div>' +
+      '<div class="duas"><div><label for="eo-tel">WhatsApp</label><input id="eo-tel" type="tel" maxlength="40" value="' + esc(o.telefone || "") + '"></div>' +
+      '<div><label for="eo-email">E-mail</label><input id="eo-email" type="email" maxlength="200" value="' + esc(o.email || "") + '"></div></div>' +
+      '<label for="eo-end">Endereço</label><input id="eo-end" maxlength="300" value="' + esc(o.endereco || "") + '">' +
       '<label for="eo-obs">Observações (o funcionário vê)</label><textarea id="eo-obs" rows="3">' + esc(o.observacoes || "") + "</textarea>" +
       '<div class="acoes"><button class="prim" id="eo-salvar">Salvar</button><button class="perigo" id="eo-apagar">Apagar cliente e partes</button></div>',
       { titulo: "Cliente / obra" });
@@ -372,7 +375,7 @@
     $("#eo-salvar", el).onclick = function () {
       if (!val(el, "#eo-cli")) { A.avisar("Informe o cliente.", "erro"); return; }
       var b = this; A.ocupado(b, true, "Salvando...");
-      q(sb.from("obras").update({ cliente: val(el, "#eo-cli"), telefone: nulo(val(el, "#eo-tel")), endereco: nulo(val(el, "#eo-end")), observacoes: nulo(val(el, "#eo-obs")) })
+      q(sb.from("obras").update({ cliente: val(el, "#eo-cli"), telefone: nulo(val(el, "#eo-tel")), email: nulo(val(el, "#eo-email")), endereco: nulo(val(el, "#eo-end")), observacoes: nulo(val(el, "#eo-obs")) })
         .eq("id", id).select().single()).then(function (n) { trocar(S.obras, n); j.fechar(); A.avisar("Salvo", "ok"); rota(); })
         .catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
@@ -577,7 +580,7 @@
       var itens = mats.map(function (m) { return { tipo: "material", descricao: m.item, qtd: Number(m.qtd) || 1, un: m.un || "un", valor: 0 }; });
       itens.push({ tipo: "servico", descricao: (r.tipo_servico || "Mão de obra") + (s ? " (" + A.CATEG[s.categoria].nome.toLowerCase() + ")" : ""), qtd: 1, un: "serv", valor: 0 });
       editarOrcamento(null, {
-        obra_id: o ? o.id : null, relatorio_id: r.id, cliente: o ? o.cliente : "", telefone: o ? o.telefone : "", endereco: o ? o.endereco : "",
+        obra_id: o ? o.id : null, relatorio_id: r.id, cliente: o ? o.cliente : "", telefone: o ? o.telefone : "", email: o ? o.email : "", endereco: o ? o.endereco : "",
         categoria: s ? s.categoria : "", itens: itens, observacoes: r.descricao || ""
       });
     };
@@ -603,7 +606,7 @@
     var o = porId(S.obras, obraId);
     var cats = S.serv.filter(function (s) { return s.obra_id === obraId; }).map(function (s) { return s.categoria; });
     var cat = cats.indexOf("eletrica") >= 0 && cats.indexOf("pintura") >= 0 ? "eletrica_pintura" : cats[0] || "";
-    editarOrcamento(null, { obra_id: o.id, cliente: o.cliente, telefone: o.telefone, endereco: o.endereco, categoria: cat });
+    editarOrcamento(null, { obra_id: o.id, cliente: o.cliente, telefone: o.telefone, email: o.email, endereco: o.endereco, categoria: cat });
   }
 
   function calcOrc(M) {
@@ -615,14 +618,15 @@
 
   function editarOrcamento(orc, base) {
     var M = orc ? JSON.parse(JSON.stringify(orc)) : Object.assign({
-      id: null, numero: null, obra_id: null, relatorio_id: null, cliente: "", telefone: "", endereco: "", categoria: "", itens: [],
+      id: null, numero: null, obra_id: null, relatorio_id: null, cliente: "", telefone: "", email: "", endereco: "", categoria: "", itens: [],
       desconto: 0, pagamento: "50% na aprovação e 50% na entrega do serviço", prazo: "", validade_dias: 15, observacoes: "", status: "rascunho"
     }, base || {});
     M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
     if (!M.itens.length) M.itens.push({ tipo: "servico", descricao: "Mão de obra", qtd: 1, un: "serv", valor: 0 });
 
     var j = A.janela(
-      '<div class="duas"><div><label for="eo2-cli">Cliente *</label><input id="eo2-cli" maxlength="200"></div><div><label for="eo2-tel">Telefone</label><input id="eo2-tel" type="tel" maxlength="40"></div></div>' +
+      '<label for="eo2-cli">Cliente *</label><input id="eo2-cli" maxlength="200">' +
+      '<div class="duas"><div><label for="eo2-tel">WhatsApp do cliente</label><input id="eo2-tel" type="tel" maxlength="40"></div><div><label for="eo2-email">E-mail do cliente</label><input id="eo2-email" type="email" maxlength="200"></div></div>' +
       '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><select id="eo2-cat"><option value="">—</option>' +
       Object.keys(CAT_ORC).map(function (k) { return '<option value="' + k + '">' + CAT_ORC[k] + "</option>"; }).join("") + "</select></div></div>" +
       '<h3 style="margin-top:14px">Itens</h3><div id="eo2-itens"></div>' +
@@ -632,11 +636,14 @@
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
       '<label for="eo2-obs">Observações</label><textarea id="eo2-obs" rows="3"></textarea>' +
       '<label for="eo2-st">Situação</label><select id="eo2-st">' + Object.keys(STATUS_ORC).map(function (k) { return '<option value="' + k + '">' + STATUS_ORC[k] + "</option>"; }).join("") + "</select>" +
-      '<div class="acoes"><button class="prim" id="eo2-salvar">Salvar</button><button id="eo2-imprimir">🖨 Imprimir / PDF</button><button class="zap" id="eo2-zap">📲 WhatsApp do cliente</button>' +
-      (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
+      '<div class="acoes"><button class="prim" id="eo2-salvar">Salvar</button>' +
+      (podeCompartilharArquivo() ? '<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>' : "") +
+      '<button id="eo2-pdf">📄 Baixar PDF</button></div>' +
+      '<div class="acoes" style="margin-top:8px"><button class="zap" id="eo2-zap">📲 WhatsApp do cliente</button><button id="eo2-email-b">✉ E-mail do cliente</button>' +
+      '<button id="eo2-imprimir">🖨 Imprimir</button>' + (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
       { titulo: M.numero ? "Orçamento nº " + String(M.numero).padStart(4, "0") : "Novo orçamento", larga: true, fixa: true });
     var el = j.el;
-    $("#eo2-cli", el).value = M.cliente || ""; $("#eo2-tel", el).value = M.telefone || ""; $("#eo2-end", el).value = M.endereco || "";
+    $("#eo2-cli", el).value = M.cliente || ""; $("#eo2-tel", el).value = M.telefone || ""; $("#eo2-email", el).value = M.email || ""; $("#eo2-end", el).value = M.endereco || "";
     $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? A.numero(M.desconto) : "";
     $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
     $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
@@ -664,7 +671,7 @@
       totais();
     }
     function lerCampos() {
-      M.cliente = val(el, "#eo2-cli"); M.telefone = val(el, "#eo2-tel"); M.endereco = val(el, "#eo2-end"); M.categoria = $("#eo2-cat", el).value;
+      M.cliente = val(el, "#eo2-cli"); M.telefone = val(el, "#eo2-tel"); M.email = val(el, "#eo2-email"); M.endereco = val(el, "#eo2-end"); M.categoria = $("#eo2-cat", el).value;
       M.desconto = A.lerNumero($("#eo2-desc", el).value); M.validade_dias = Math.max(1, parseInt($("#eo2-val", el).value, 10) || 15);
       M.pagamento = val(el, "#eo2-pag"); M.prazo = val(el, "#eo2-prazo"); M.observacoes = val(el, "#eo2-obs"); M.status = $("#eo2-st", el).value;
     }
@@ -689,7 +696,7 @@
       var itens = M.itens.filter(function (i) { return i.descricao.trim(); }).map(function (i) {
         return { tipo: i.tipo, descricao: i.descricao.trim(), qtd: Number(i.qtd) || 0, un: i.un, valor: Math.round((Number(i.valor) || 0) * 100) / 100 };
       });
-      var dados = { obra_id: M.obra_id, relatorio_id: M.relatorio_id, cliente: M.cliente, telefone: nulo(M.telefone), endereco: nulo(M.endereco), categoria: nulo(M.categoria),
+      var dados = { obra_id: M.obra_id, relatorio_id: M.relatorio_id, cliente: M.cliente, telefone: nulo(M.telefone), email: nulo(M.email), endereco: nulo(M.endereco), categoria: nulo(M.categoria),
         itens: itens, desconto: Math.round((M.desconto || 0) * 100) / 100, total: calcOrc({ itens: itens, desconto: M.desconto }).total,
         pagamento: nulo(M.pagamento), prazo: nulo(M.prazo), validade_dias: M.validade_dias, observacoes: nulo(M.observacoes), status: M.status };
       var p = M.id ? sb.from("orcamentos").update(dados).eq("id", M.id).select().single() : sb.from("orcamentos").insert(dados).select().single();
@@ -716,12 +723,39 @@
     };
     $("#eo2-zap", el).onclick = function () {
       lerCampos();
-      if (!M.telefone) { A.avisar("Informe o telefone do cliente.", "erro"); return; }
+      if (A.soDigitos(M.telefone).length < 10) { A.avisar("Informe o WhatsApp do cliente com DDD.", "erro"); return; }
       var w = window.open("", "_blank");
       salvar().then(function (n) {
         var url = A.linkZap(n.telefone, textoOrcamento(n));
         if (w) w.location.href = url; else location.href = url;
       }).catch(function (e) { if (w) w.close(); falhou(e); });
+    };
+    carregarJsPdf().catch(function () { /* tenta de novo ao clicar */ });
+    function prepararPdf(b) {
+      A.ocupado(b, true, "Gerando PDF...");
+      return salvar().then(function (n) {
+        return gerarPdf(n).then(function (blob) { A.ocupado(b, false); return { orc: n, blob: blob }; });
+      }).catch(function (e) { A.ocupado(b, false); throw e; });
+    }
+    $("#eo2-pdf", el).onclick = function () {
+      prepararPdf(this).then(function (r) { baixar(r.blob, nomePdf(r.orc)); A.avisar("PDF baixado", "ok"); }).catch(falhou);
+    };
+    if ($("#eo2-compartilhar", el)) $("#eo2-compartilhar", el).onclick = function () {
+      prepararPdf(this).then(function (r) { compartilharPdf(r.orc, r.blob); }).catch(falhou);
+    };
+    $("#eo2-email-b", el).onclick = function () {
+      lerCampos();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(M.email)) { A.avisar("Informe um e-mail válido do cliente.", "erro"); return; }
+      prepararPdf(this).then(function (r) {
+        baixar(r.blob, nomePdf(r.orc));
+        var o = r.orc, E = A.CFG.EMPRESA || {};
+        var assunto = "Orçamento nº " + String(o.numero).padStart(4, "0") + " - " + (E.nome || "AGE Elétrica e Pintura");
+        var corpo = textoOrcamento(o, true) + "\n\n(O orçamento completo vai em PDF, anexo.)";
+        A.janela('<p>O PDF <b>' + esc(nomePdf(o)) + '</b> foi baixado. Clique abaixo para abrir o e-mail já preenchido para <b>' + esc(o.email) +
+          "</b> e <b>anexe o PDF</b> (fica na pasta Downloads).</p>" +
+          '<div class="acoes"><a class="botao prim" id="ok-email" href="mailto:' + encodeURIComponent(o.email) + "?subject=" + encodeURIComponent(assunto) +
+          "&body=" + encodeURIComponent(corpo.replace(/\n/g, "\r\n")) + '">✉ Abrir e-mail</a></div>', { titulo: "Enviar por e-mail" });
+      }).catch(falhou);
     };
     if ($("#eo2-apagar", el)) $("#eo2-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar este orçamento?")) return;
@@ -729,9 +763,10 @@
     };
   }
 
-  function textoOrcamento(o) {
+  function textoOrcamento(o, semNegrito) {
     var E = A.CFG.EMPRESA || {};
-    var t = "*" + (E.nome || "AGE Elétrica e Pintura") + "*\nOrçamento nº " + String(o.numero).padStart(4, "0") + " — " + A.data(o.criado_em) + "\n\nCliente: " + o.cliente + "\n";
+    var t = "Olá, " + o.cliente.split(" ")[0] + "! Segue o orçamento solicitado.\n\n*" + (E.nome || "AGE Elétrica e Pintura") + "*\nOrçamento nº " +
+      String(o.numero).padStart(4, "0") + " — " + A.data(o.criado_em) + "\n\nCliente: " + o.cliente + "\n";
     if (o.endereco) t += "Local: " + o.endereco + "\n";
     t += "\n";
     o.itens.forEach(function (i) {
@@ -743,7 +778,148 @@
     if (o.prazo) t += "Prazo: " + o.prazo + "\n";
     t += "Validade: " + o.validade_dias + " dias";
     if (o.observacoes) t += "\n\n" + o.observacoes;
-    return t;
+    if (E.telefone) t += "\n\nDúvidas: " + E.telefone;
+    return semNegrito ? t.replace(/\*/g, "") : t;
+  }
+
+  // ---------- PDF do orçamento ----------
+  var jsPdfPronto = null;
+  function carregarJsPdf() {
+    if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+    if (!jsPdfPronto) {
+      jsPdfPronto = new Promise(function (ok, falha) {
+        var sc = document.createElement("script");
+        sc.src = "https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js";
+        sc.onload = function () { if (window.jspdf && window.jspdf.jsPDF) ok(window.jspdf.jsPDF); else { jsPdfPronto = null; falha(new Error("Falha ao carregar o gerador de PDF.")); } };
+        sc.onerror = function () { jsPdfPronto = null; sc.remove(); falha(new Error("Sem internet para gerar o PDF. Tente de novo.")); };
+        document.head.appendChild(sc);
+      });
+    }
+    return jsPdfPronto;
+  }
+  function nomePdf(o) {
+    var c = String(o.cliente || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return "Orcamento-" + String(o.numero).padStart(4, "0") + (c ? "-" + c : "") + ".pdf";
+  }
+  function baixar(blob, nome) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = nome;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  }
+  function podeCompartilharArquivo() {
+    try { return !!(navigator.canShare && navigator.canShare({ files: [new File(["x"], "x.pdf", { type: "application/pdf" })] })); } catch (e) { return false; }
+  }
+  function compartilharPdf(o, blob) {
+    var arq = new File([blob], nomePdf(o), { type: "application/pdf" });
+    var dados = { files: [arq], title: "Orçamento nº " + String(o.numero).padStart(4, "0"), text: "Orçamento nº " + String(o.numero).padStart(4, "0") + " — " + o.cliente };
+    return navigator.share(dados).catch(function (e) {
+      if (e && e.name === "AbortError") return;           // a pessoa fechou a janela de compartilhar
+      // o navegador exige um toque novo depois de gerar o PDF
+      var j = A.janela('<p>PDF pronto. Toque para escolher WhatsApp, Gmail ou outro app.</p><div class="acoes"><button class="prim" id="ok-comp">📤 Compartilhar PDF</button>' +
+        '<button id="ok-baixar">📄 Baixar</button></div>', { titulo: "Enviar PDF" });
+      $("#ok-comp", j.el).onclick = function () { navigator.share(dados).then(j.fechar, function (e2) { if (!e2 || e2.name !== "AbortError") falhou(e2); }); };
+      $("#ok-baixar", j.el).onclick = function () { baixar(blob, arq.name); j.fechar(); };
+    });
+  }
+
+  // Texto em A4, nítido e leve (não é foto da tela).
+  function gerarPdf(o) {
+    return carregarJsPdf().then(function (JsPDF) {
+      var doc = new JsPDF({ unit: "mm", format: "a4" }), E = A.CFG.EMPRESA || {}, t = calcOrc(o);
+      var L = 15, R = 195, y = 18, num = String(o.numero).padStart(4, "0");
+      function tx(v) {
+        return String(v === null || v === undefined ? "" : v).replace(/[\u2212\u2013\u2014]/g, "-").replace(/[\u201c\u201d]/g, '"')
+          .replace(/[\u2018\u2019]/g, "'").replace(/\u2022/g, "-").replace(/\u202f/g, " ").replace(/[^\x00-\xff]/g, "");
+      }
+      function azul() { doc.setTextColor(20, 50, 92); }
+      function preto() { doc.setTextColor(20, 20, 20); }
+      function fonte(peso, tam) { doc.setFont("helvetica", peso); doc.setFontSize(tam); }
+      function cabeTabela() {
+        fonte("bold", 8); doc.setTextColor(90, 90, 90);
+        doc.text("DESCRIÇÃO", L + 1, y); doc.text("QTD", 122, y, { align: "right" }); doc.text("UN", 125, y);
+        doc.text("VALOR UN.", 162, y, { align: "right" }); doc.text("SUBTOTAL", R - 1, y, { align: "right" });
+        y += 2; doc.setDrawColor(200); doc.setLineWidth(0.3); doc.line(L, y, R, y); y += 4.5;
+      }
+      function espaco(alt) { if (y + alt > 278) { doc.addPage(); y = 18; return true; } return false; }
+
+      // cabeçalho
+      fonte("bold", 16); azul(); doc.text(tx(E.nome || "AGE Elétrica e Pintura"), L, y);
+      fonte("bold", 13); preto(); doc.text("ORÇAMENTO Nº " + num, R, y, { align: "right" });
+      var validade = new Date(o.criado_em); validade.setDate(validade.getDate() + Number(o.validade_dias || 15));
+      fonte("normal", 10); doc.text("Data: " + A.data(o.criado_em), R, y + 6, { align: "right" }); doc.text("Válido até: " + A.data(validade), R, y + 11, { align: "right" });
+      fonte("normal", 9); var yi = y + 6;
+      [E.documento, E.telefone, E.email, E.endereco, E.cidade].filter(Boolean).forEach(function (l) { doc.text(tx(l), L, yi); yi += 4.5; });
+      y = Math.max(yi, y + 14) + 1;
+      doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.8); doc.line(L, y, R, y); y += 6;
+
+      // cliente
+      var cli = [["Cliente: ", o.cliente], ["WhatsApp: ", o.telefone], ["E-mail: ", o.email], ["Local: ", o.endereco], ["Serviço: ", CAT_ORC[o.categoria] || o.categoria]]
+        .filter(function (c) { return c[1]; });
+      var linhasCli = cli.map(function (c) { return { r: c[0], v: doc.splitTextToSize(tx(c[1]), 150) }; });
+      var altCli = linhasCli.reduce(function (s2, c) { return s2 + c.v.length * 5; }, 0) + 5;
+      doc.setFillColor(243, 245, 248); doc.roundedRect(L, y - 4, R - L, altCli, 2, 2, "F");
+      y += 1.5;
+      linhasCli.forEach(function (c) {
+        fonte("bold", 10); preto(); doc.text(c.r, L + 3, y);
+        fonte("normal", 10); doc.text(c.v, L + 23, y); y += c.v.length * 5;
+      });
+      y += 5;
+
+      // itens
+      [["material", "Materiais"], ["servico", "Mão de obra / serviços"]].forEach(function (g) {
+        var itens = o.itens.filter(function (i) { return (g[0] === "material") === (i.tipo === "material"); });
+        if (!itens.length) return;
+        espaco(20);
+        fonte("bold", 12); azul(); doc.text(tx(g[1]), L, y); y += 6;
+        cabeTabela();
+        itens.forEach(function (i) {
+          fonte("normal", 9.5); preto();
+          var d = doc.splitTextToSize(tx(i.descricao), 88), alt = d.length * 4.4 + 2.4;
+          if (espaco(alt)) cabeTabela();
+          fonte("normal", 9.5); preto();
+          doc.text(d, L + 1, y);
+          doc.text(tx(A.numero(i.qtd, 3)), 122, y, { align: "right" }); doc.text(tx(i.un), 125, y);
+          doc.text(tx(A.dinheiro(i.valor)), 162, y, { align: "right" }); doc.text(tx(A.dinheiro(i.qtd * i.valor)), R - 1, y, { align: "right" });
+          y += alt - 2.4; doc.setDrawColor(225); doc.setLineWidth(0.2); doc.line(L, y - 1.6, R, y - 1.6); y += 3.2;
+        });
+        y += 3;
+      });
+
+      // totais
+      espaco(32);
+      var xt = 120;
+      fonte("normal", 10); preto();
+      [["Materiais", t.mat], ["Mão de obra", t.serv]].concat(Number(o.desconto) ? [["Desconto", -Number(o.desconto)]] : []).forEach(function (l) {
+        doc.text(l[0], xt, y); doc.text((l[1] < 0 ? "- " : "") + tx(A.dinheiro(Math.abs(l[1]))), R, y, { align: "right" }); y += 5.5;
+      });
+      doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.6); doc.line(xt, y - 2.5, R, y - 2.5); y += 3;
+      fonte("bold", 14); doc.text("TOTAL", xt, y); doc.text(tx(A.dinheiro(o.total)), R, y, { align: "right" }); y += 10;
+
+      // condições
+      [["Forma de pagamento: ", o.pagamento], ["Prazo de execução: ", o.prazo], ["Observações: ", o.observacoes]].forEach(function (c) {
+        if (!c[1]) return;
+        var linhas = doc.splitTextToSize(tx(c[1]), R - L);
+        espaco(6 + linhas.length * 4.6);
+        fonte("bold", 10); preto(); doc.text(c[0], L, y); y += 5;
+        fonte("normal", 10); doc.text(linhas, L, y); y += linhas.length * 4.6 + 3;
+      });
+
+      // assinaturas
+      if (espaco(30)) y += 10; else y += 18;
+      doc.setDrawColor(60); doc.setLineWidth(0.3);
+      doc.line(L, y, 95, y); doc.line(115, y, R, y);
+      fonte("normal", 9); doc.text(tx(E.nome || "AGE Elétrica e Pintura"), 55, y + 4.5, { align: "center" }); doc.text("Cliente - de acordo", 155, y + 4.5, { align: "center" });
+
+      var n = doc.getNumberOfPages();
+      for (var pg = 1; pg <= n; pg++) {
+        doc.setPage(pg); fonte("normal", 8); doc.setTextColor(130);
+        doc.text("Orçamento nº " + num + "  ·  página " + pg + " de " + n, 105, 290, { align: "center" });
+      }
+      doc.setProperties({ title: "Orçamento " + num + " - " + tx(o.cliente), author: tx(E.nome || "AGE Elétrica e Pintura") });
+      return doc.output("blob");
+    });
   }
 
   function escreverImpressao(w, o) {
@@ -773,7 +949,7 @@
       '<div class="cab"><div class="emp"><b>' + esc(E.nome || "AGE Elétrica e Pintura") + "</b><br>" +
       [E.documento, E.telefone, E.email, E.endereco, E.cidade].filter(Boolean).map(esc).join("<br>") + "</div>" +
       '<div class="num"><b>ORÇAMENTO Nº ' + String(o.numero).padStart(4, "0") + "</b><br>Data: " + A.data(o.criado_em) + "<br>Válido até: " + A.data(validade) + "</div></div>" +
-      '<div class="cli"><b>Cliente:</b> ' + esc(o.cliente) + (o.telefone ? " · " + esc(o.telefone) : "") + (o.endereco ? "<br><b>Local:</b> " + esc(o.endereco) : "") +
+      '<div class="cli"><b>Cliente:</b> ' + esc(o.cliente) + (o.telefone ? " · " + esc(o.telefone) : "") + (o.email ? " · " + esc(o.email) : "") + (o.endereco ? "<br><b>Local:</b> " + esc(o.endereco) : "") +
       (o.categoria ? "<br><b>Serviço:</b> " + esc(CAT_ORC[o.categoria] || o.categoria) : "") + "</div>" +
       bloco("material", "Materiais") + bloco("servico", "Mão de obra / serviços") +
       '<div class="tot"><div><span>Materiais</span><span>' + A.dinheiro(t.mat) + "</span></div><div><span>Mão de obra</span><span>" + A.dinheiro(t.serv) + "</span></div>" +

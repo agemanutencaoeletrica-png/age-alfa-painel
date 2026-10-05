@@ -89,7 +89,7 @@
     var res = resumoHoje();
     var h = '<div class="topo"><div class="marca">AGE</div><div><div class="nome">Olá, ' + esc(f.nome.split(" ")[0]) + '</div>' +
       '<div class="sub">' + esc(A.AREA[f.area] || "") + " · " + hoje.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" }) + "</div></div>" +
-      '<div class="dir"><button class="leve peq" id="b-atualizar" aria-label="Atualizar">↻</button></div></div><main>';
+      '<div class="dir"><button class="leve peq oculto" id="b-instalar">📲 Instalar</button><button class="leve peq" id="b-atualizar" aria-label="Atualizar">↻</button></div></div><main>';
     h += '<div class="aviso ' + res.cor + ' estado">' + esc(res.texto) + "</div>";
     h += '<div class="botoes-ponto">' +
       '<button class="bom" data-ponto="chegada"><span class="ic">📍</span>Chegada</button>' +
@@ -123,6 +123,7 @@
     h += '</div><p class="mudo mini" style="text-align:center">A hora do registro é a do servidor da AGE. As fotos vão direto para o responsável.</p></main>';
     app.innerHTML = h;
 
+    A.ligarInstalar($("#b-instalar"));
     $("#b-atualizar").onclick = function () { carregar().then(function () { A.avisar("Atualizado"); }); };
     $$("[data-ponto]").forEach(function (b) { b.onclick = function () { fluxoPonto(b.dataset.ponto, b.dataset.serv || null); }; });
     $$("[data-relatorio]").forEach(function (b) { b.onclick = function () { fluxoRelatorio(b.dataset.relatorio || null); }; });

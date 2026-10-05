@@ -7,6 +7,9 @@ Dois endereços:
 | **Você (dono)** | `servicos/index.html` | Entra com e-mail e senha. Cadastra equipe, cria serviços (partes de **elétrica** e **pintura** separadas), vê o **cartão de ponto** com fotos e GPS, lê os relatórios e faz os **orçamentos** (só você vê valores). |
 | **Funcionário** | `servicos/funcionario.html#t=...` | Abre pelo link pessoal que você manda no WhatsApp. Vê só os serviços dele, registra **chegada**, **foto do serviço** e **saída** (foto + GPS) e envia **relatório com materiais**. Nunca vê preços. |
 
+**Separado do AGE BOT:** este app não usa nada do bot — banco de dados, login, arquivos e
+endereço próprios (tudo dentro da pasta `servicos/`). O bot e o `index.html` da raiz não são alterados.
+
 Custo: **R$ 0** no plano gratuito do Supabase (banco + fotos) e do GitHub Pages (site).
 O plano grátis guarda 1 GB de fotos (≈ 6.000 fotos de ponto) e pausa o projeto se ficar
 **7 dias sem nenhum acesso** — com uso diário isso não acontece.
@@ -53,6 +56,19 @@ O plano grátis guarda 1 GB de fotos (≈ 6.000 fotos de ponto) e pausa o projet
 
 ---
 
+## Instalar como aplicativo
+
+Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone próprio.
+
+- **Android (dono e funcionários):** abra o endereço no **Chrome** → toque em **📲 Instalar** no topo
+  (ou menu ⋮ → **Instalar app** / *Adicionar à tela inicial*). O funcionário faz isso depois de abrir o link
+  pessoal; o app instalado já entra direto na conta dele.
+- **Notebook (Windows/Mac):** abra o painel no **Chrome** ou **Edge** → botão **📲 Instalar app** no topo
+  (ou o ícone de instalar na barra de endereço). Ele abre em janela própria, como programa, e fica no menu Iniciar.
+- O app se atualiza sozinho quando o sistema é atualizado. Sem internet ele abre, mas só registra/salva com internet.
+
+---
+
 ## Uso no dia a dia
 
 1. **Equipe** → *+ Novo funcionário* (nome, WhatsApp, área) → **📲 Enviar link**.
@@ -65,7 +81,11 @@ O plano grátis guarda 1 GB de fotos (≈ 6.000 fotos de ponto) e pausa o projet
 4. Você acompanha em **Hoje** (quem chegou, horas, fotos) e em **Ponto** (período, total de horas,
    planilha CSV que abre no Excel).
 5. **Relatórios** → abrir → **💲 Gerar orçamento**: os materiais que o funcionário pediu já entram
-   como itens; você só coloca os preços, a mão de obra e o desconto → **Imprimir / PDF** ou **WhatsApp do cliente**.
+   como itens; você só coloca os preços, a mão de obra e o desconto. Para mandar ao cliente:
+   - **📤 Enviar PDF** (Android e Windows): abre a lista de apps → escolha WhatsApp, Gmail, Outlook... e o PDF vai anexado.
+   - **📲 WhatsApp do cliente**: abre a conversa com o número do cliente já com o resumo e o total.
+   - **✉ E-mail do cliente**: baixa o PDF e abre o e-mail já preenchido (destinatário, assunto e texto); é só anexar o PDF.
+   - **📄 Baixar PDF** / **🖨 Imprimir**.
 
 ### Segurança e controle do ponto
 - A **hora** de cada registro é a do servidor, não a do celular (não dá para adiantar o relógio).

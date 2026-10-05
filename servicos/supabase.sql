@@ -35,6 +35,7 @@ create table if not exists public.obras (
   id          uuid primary key default gen_random_uuid(),
   cliente     text not null,
   telefone    text,
+  email       text,
   endereco    text,
   observacoes text,
   criado_em   timestamptz not null default now()
@@ -86,6 +87,7 @@ create table if not exists public.orcamentos (
   relatorio_id  uuid references public.relatorios (id) on delete set null,
   cliente       text not null,
   telefone      text,
+  email         text,
   endereco      text,
   categoria     text,
   itens         jsonb not null default '[]'::jsonb,
@@ -99,6 +101,10 @@ create table if not exists public.orcamentos (
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+
+-- colunas novas (para quem já tinha rodado uma versão anterior deste arquivo)
+alter table public.obras      add column if not exists email text;
+alter table public.orcamentos add column if not exists email text;
 
 create index if not exists pontos_func_data_idx on public.pontos (funcionario_id, criado_em);
 create index if not exists pontos_data_idx      on public.pontos (criado_em);

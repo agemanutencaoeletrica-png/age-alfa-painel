@@ -185,7 +185,34 @@
     });
   }
 
+  // ---------- app instalável (Android e notebook) ----------
+  var pedidoInstalar = null, botoesInstalar = [];
+  function instalado() {
+    return (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  }
+  function atualizarBotoesInstalar() {
+    botoesInstalar = botoesInstalar.filter(function (b) { return document.body.contains(b); });
+    botoesInstalar.forEach(function (b) { b.classList.toggle("oculto", !pedidoInstalar || instalado()); });
+  }
+  window.addEventListener("beforeinstallprompt", function (ev) { ev.preventDefault(); pedidoInstalar = ev; atualizarBotoesInstalar(); });
+  window.addEventListener("appinstalled", function () { pedidoInstalar = null; atualizarBotoesInstalar(); avisar("App instalado", "ok"); });
+  function ligarInstalar(botao) {
+    if (!botao) return;
+    botoesInstalar.push(botao);
+    botao.onclick = function () {
+      if (!pedidoInstalar) return;
+      pedidoInstalar.prompt();
+      pedidoInstalar.userChoice.then(function () { pedidoInstalar = null; atualizarBotoesInstalar(); });
+    };
+    atualizarBotoesInstalar();
+  }
+  var seguro = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  if ("serviceWorker" in navigator && seguro) {
+    window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () { /* segue sem modo app */ }); });
+  }
+
   window.AGE = {
+    ligarInstalar: ligarInstalar,
     CFG: CFG, CATEG: CATEG, AREA: AREA, STATUS: STATUS, TIPO_PONTO: TIPO_PONTO,
     esc: esc, $: $, $$: $$, data: data, hora: hora, dataHora: dataHora, dataSimples: dataSimples, isoLocal: isoLocal,
     inicioDia: inicioDia, duracao: duracao, dinheiro: dinheiro, numero: numero, lerNumero: lerNumero, soDigitos: soDigitos,
