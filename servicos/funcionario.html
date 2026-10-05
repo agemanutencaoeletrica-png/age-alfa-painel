@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#14325c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AGE Ponto">
+<title>AGE Ponto</title>
+<link rel="icon" href="icone.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icone-192.png">
+<link rel="stylesheet" href="estilo.css">
+<style>
+  main { max-width: 560px; }
+  .botoes-ponto { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .botoes-ponto button { min-height: 86px; flex-direction: column; font-size: 16px; border-radius: 14px; }
+  .botoes-ponto button .ic { font-size: 26px; line-height: 1; }
+  button.grande { min-height: 54px; font-size: 17px; width: 100%; }
+  .previa img { width: 100%; max-height: 34vh; object-fit: contain; background: #000; border-radius: 10px; margin-top: 10px; display: block; }
+  .mat { display: grid; grid-template-columns: 1fr 70px 82px 38px; gap: 6px; margin-bottom: 6px; }
+  .mat input, .mat select { padding: 8px; }
+  .mat button { padding: 0; min-height: 42px; }
+  .estado { font-size: 16px; font-weight: 800; }
+</style>
+</head>
+<body>
+<div id="app"><div class="vazio">Carregando...</div></div>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+<script src="comum.js"></script>
+<script src="funcionario.js"></script>
+</body>
+</html>
