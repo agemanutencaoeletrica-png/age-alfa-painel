@@ -154,6 +154,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   border-radius: 50%; animation: gira .7s linear infinite; vertical-align: -3px; }
 @keyframes gira { to { transform: rotate(360deg); } }
 
+/* mapa (Leaflet) não pode ficar por cima das janelas e do topo */
+.leaflet-container { z-index: 0; font: inherit; }
+.rota-parada { display: grid; grid-template-columns: 28px 1fr; gap: 8px; padding: 8px 0; border-top: 1px solid var(--borda); }
+.rota-parada:first-of-type { border-top: 0; }
+.rota-parada .n { width: 26px; height: 26px; border-radius: 50%; background: var(--prim); color: var(--prim-t); font-weight: 800; display: grid; place-items: center; font-size: 13px; }
+
 /* ---------- tela de entrada ---------- */
 .entrada { max-width: 380px; margin: 8vh auto; padding: 0 16px; }
 .entrada .marca-g { width: 64px; height: 64px; border-radius: 14px; background: var(--prim); color: #fff; display: grid; place-items: center;

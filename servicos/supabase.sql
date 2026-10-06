@@ -41,6 +41,29 @@ create table if not exists public.obras (
   criado_em   timestamptz not null default now()
 );
 
+create table if not exists public.lojas (
+  id           uuid primary key default gen_random_uuid(),
+  codigo       text,
+  tipo         text not null default 'loja' check (tipo in ('loja', 'cd', 'posto', 'outro')),
+  nome         text not null,
+  empresa      text,
+  endereco     text,
+  numero       text,
+  complemento  text,
+  bairro       text,
+  cidade       text,
+  uf           text default 'MG',
+  cep          text,
+  cnpj         text,
+  regiao       text,
+  telefone     text,
+  lat          double precision,
+  lng          double precision,
+  geo_precisao text check (geo_precisao in ('endereco', 'cep', 'bairro', 'cidade', 'gps', 'manual')),
+  ativo        boolean not null default true,
+  criado_em    timestamptz not null default now()
+);
+
 create table if not exists public.servicos (
   id             uuid primary key default gen_random_uuid(),
   obra_id        uuid not null references public.obras (id) on delete cascade,
@@ -105,6 +128,23 @@ create table if not exists public.orcamentos (
 -- colunas novas (para quem já tinha rodado uma versão anterior deste arquivo)
 alter table public.obras      add column if not exists email text;
 alter table public.orcamentos add column if not exists email text;
+alter table public.obras      add column if not exists loja_id uuid references public.lojas (id) on delete set null;
+
+-- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
+create table if not exists public.rotas (
+  id             uuid primary key default gen_random_uuid(),
+  nome           text not null,
+  data           date,
+  funcionario_id uuid references public.funcionarios (id) on delete set null,
+  partida        jsonb,
+  paradas        jsonb not null default '[]'::jsonb,
+  km             numeric(10, 1),
+  criado_em      timestamptz not null default now()
+);
+
+create index if not exists lojas_cidade_idx  on public.lojas (cidade);
+create index if not exists obras_loja_idx    on public.obras (loja_id);
+create index if not exists rotas_func_idx    on public.rotas (funcionario_id, data);
 
 create index if not exists pontos_func_data_idx on public.pontos (funcionario_id, criado_em);
 create index if not exists pontos_data_idx      on public.pontos (criado_em);
@@ -148,7 +188,7 @@ create policy admin_le on public.admins for select to authenticated using (publi
 do $$
 declare t text;
 begin
-  foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos'] loop
+  foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
@@ -195,6 +235,13 @@ begin
              order by p.criado_em)
       from public.pontos p
       where p.funcionario_id = f.id and p.criado_em >= v_inicio
+    ), '[]'::jsonb),
+    'rotas', coalesce((
+      select jsonb_agg(jsonb_build_object('id', r.id, 'nome', r.nome, 'data', r.data, 'paradas', r.paradas, 'km', r.km)
+             order by r.data nulls last, r.criado_em)
+      from public.rotas r
+      where r.funcionario_id = f.id
+        and (r.data is null or r.data >= (now() at time zone 'America/Sao_Paulo')::date)
     ), '[]'::jsonb)
   );
 end $$;
@@ -245,6 +292,19 @@ begin
 
   if p_servico_id is not null and p_tipo in ('chegada', 'servico') then
     update public.servicos set status = 'em_andamento' where id = p_servico_id and status = 'aberto';
+  end if;
+
+  -- Chegada com GPS bom numa loja: melhora a localização da loja (para as rotas).
+  -- Só troca se a loja não tem local, ou se o novo ponto está a menos de 3 km
+  -- do atual (evita estragar com um serviço escolhido errado).
+  if p_tipo = 'chegada' and p_servico_id is not null and p_lat is not null and coalesce(p_precisao, 999) <= 60 then
+    update public.lojas l set lat = p_lat, lng = p_lng, geo_precisao = 'gps'
+    from public.servicos s join public.obras o on o.id = s.obra_id
+    where s.id = p_servico_id and l.id = o.loja_id
+      and coalesce(l.geo_precisao, '') not in ('gps', 'manual')
+      and (l.lat is null
+           or 6371 * 2 * asin(sqrt(power(sin(radians(p_lat - l.lat) / 2), 2)
+              + cos(radians(l.lat)) * cos(radians(p_lat)) * power(sin(radians(p_lng - l.lng) / 2), 2))) < 3);
   end if;
 
   return jsonb_build_object('id', v_id, 'criado_em', v_quando);

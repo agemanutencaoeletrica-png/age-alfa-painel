@@ -87,6 +87,26 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
    - **✉ E-mail do cliente**: baixa o PDF e abre o e-mail já preenchido (destinatário, assunto e texto); é só anexar o PDF.
    - **📄 Baixar PDF** / **🖨 Imprimir**.
 
+### Lojas e rotas (lojas próximas no mesmo dia)
+1. **Rode de novo o `supabase.sql`** (SQL Editor → colar tudo → Run). Ele cria as tabelas de lojas e rotas sem apagar nada.
+2. **Lojas → ⬆ Importar planilha** → escolha `lojas-supermercados-bh.csv` (434 lojas, CDs e postos da rede, tirados
+   do documento DADOS DAS LOJAS). O arquivo **não fica no GitHub** (o repositório é público): guarde-o com você.
+   Importar de novo atualiza as lojas pelo CNPJ/número, sem duplicar.
+3. Depois de importar, o app oferece **📍 Localizar no mapa**: procura cada loja pelo endereço (se não achar, pelo CEP,
+   bairro e por último a cidade). É grátis e devagar de propósito (1 consulta por segundo): 434 lojas levam ~10 a 20 min,
+   e pode pausar e continuar. Lojas marcadas “só cidade”/“bairro” ficam com local aproximado.
+4. Para acertar o local de uma loja: abra a loja → cole o link do Google Maps (ou as coordenadas) ou, estando na loja,
+   toque **📍 Estou na loja: usar meu GPS**. E sozinho: quando o funcionário registra **chegada** com GPS bom num serviço
+   ligado à loja, o local da loja é corrigido automaticamente.
+5. Ao criar um serviço, escolha a loja no campo **Loja da rede** (preenche cliente e endereço e liga o serviço à loja).
+6. **Rotas → 🧭 Montar rota**:
+   - *Saindo de*: sua localização, a base (opcional, `BASE` no `config.js`) ou uma loja;
+   - *Quais lojas*: as com serviço aberto, as que você escolher (filtro por cidade/região) ou todas num raio de X km;
+   - *Máximo de lojas por dia* e *Só junta no mesmo dia lojas a até X km* (padrão 40 km): lojas longe umas das outras
+     **nunca** caem no mesmo dia; cada dia sai na melhor ordem (menos quilômetros).
+   - Cada dia mostra o mapa, a ordem, os km estimados, o botão **Google Maps** (com todas as paradas) e
+     **💾 Salvar / enviar ao funcionário**: a rota vai para o app dele (botões *Ir* e *Waze* em cada loja) e pelo WhatsApp.
+
 ### Segurança e controle do ponto
 - A **hora** de cada registro é a do servidor, não a do celular (não dá para adiantar o relógio).
 - Toda foto sai **carimbada** com tipo, nome, data/hora e coordenadas; no ponto o app pede foto tirada na hora e recusa foto antiga da galeria (quando o celular informa a data do arquivo).

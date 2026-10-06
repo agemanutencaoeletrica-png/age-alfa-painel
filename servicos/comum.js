@@ -73,6 +73,7 @@
     t.className = "toast " + (tipo || "");
     t.textContent = msg;
     caixa.appendChild(t);
+    while (caixa.children.length > 3) caixa.removeChild(caixa.firstChild);
     setTimeout(function () { t.remove(); }, tipo === "erro" ? 6000 : 3200);
   }
   function msgErro(e) {

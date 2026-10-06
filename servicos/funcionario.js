@@ -97,7 +97,21 @@
       '<button class="perigo" data-ponto="saida"><span class="ic">🏁</span>Saída</button>' +
       '<button data-relatorio=""><span class="ic">📝</span>Relatório e materiais</button></div>';
 
-    h += '<div class="cab-secao"><h2>Meus serviços</h2><span class="mudo peq">' + D.servicos.length + "</span></div>";
+    (D.rotas || []).forEach(function (r) {
+      var G = window.AGE_GEO, paradas = r.paradas || [], links = G.linksGoogle(null, paradas, false);
+      h += '<div class="cab-secao" ><h2>🧭 ' + esc(r.nome) + "</h2>" + (r.data ? '<span class="mudo peq">' + A.dataSimples(r.data) + "</span>" : "") + "</div>" +
+        '<div class="cartao"><div class="acoes" style="margin-top:0">' + links.map(function (u, k) {
+          return '<a class="botao prim" target="_blank" rel="noopener" href="' + esc(u) + '">🗺 Rota completa' + (links.length > 1 ? " (parte " + (k + 1) + ")" : "") + "</a>";
+        }).join("") + "</div>" +
+        paradas.map(function (p, i) {
+          return '<div class="rota-parada"><div class="n">' + (i + 1) + "</div><div><b>" + esc((p.codigo ? (p.tipo === "loja" ? "Loja " : "") + p.codigo + " – " : "") + p.nome) + "</b>" +
+            '<div class="peq mudo">' + esc([[p.endereco, p.numero].filter(Boolean).join(", "), p.bairro, p.cidade].filter(Boolean).join(" - ")) + "</div>" +
+            '<div class="linha" style="margin-top:6px"><a class="botao peq" target="_blank" rel="noopener" href="' + esc(G.linkNavegar(p)) + '">🧭 Ir (Google Maps)</a>' +
+            '<a class="botao peq" target="_blank" rel="noopener" href="' + esc(G.linkWaze(p)) + '">Waze</a></div></div></div>';
+        }).join("") + "</div>";
+    });
+
+    h += '<div class="cab-secao" style="margin-top:18px"><h2>Meus serviços</h2><span class="mudo peq">' + D.servicos.length + "</span></div>";
     if (!D.servicos.length) h += '<div class="cartao vazio">Nenhum serviço aberto para você agora.</div>';
     D.servicos.forEach(function (s) {
       h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +

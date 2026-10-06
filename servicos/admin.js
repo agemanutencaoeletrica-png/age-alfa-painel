@@ -5,13 +5,13 @@
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var app = $("#app");
   var sb = null;
-  var S = { func: [], obras: [], serv: [], rel: [], orc: [] };
+  var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [] };
   var urls = {};        // caminho da foto -> { url, vence }
   var infoFoto = {};    // caminho da foto -> html com detalhes (hora, GPS...)
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["ponto", "Ponto"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -146,8 +146,10 @@
       q(sb.from("obras").select("*").order("criado_em", { ascending: false })),
       q(sb.from("servicos").select("*").order("criado_em", { ascending: false })),
       q(sb.from("relatorios").select("*").order("criado_em", { ascending: false }).limit(500)),
-      q(sb.from("orcamentos").select("*").order("numero", { ascending: false }).limit(500))
-    ]).then(function (r) { S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; });
+      q(sb.from("orcamentos").select("*").order("numero", { ascending: false }).limit(500)),
+      q(sb.from("lojas").select("*").limit(5000)),
+      q(sb.from("rotas").select("*").order("criado_em", { ascending: false }).limit(300))
+    ]).then(function (r) { S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas(); });
   }
 
   function montar() {
@@ -179,7 +181,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, ponto: verPonto, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, rotas: verRotas, lojas: verLojas, ponto: verPonto, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -320,6 +322,8 @@
     var obra = obraId ? porId(S.obras, obraId) : null;
     var j = A.janela(
       (obra ? '<div class="cartao" style="margin:0"><b>' + esc(obra.cliente) + "</b><div class=\"peq mudo\">" + esc(obra.endereco || "") + "</div></div>" :
+        (S.lojas.length ? '<label for="ns-loja">Loja da rede (opcional)</label><input id="ns-loja" list="ns-dl-lojas" placeholder="Digite o número, nome ou cidade da loja">' +
+          '<datalist id="ns-dl-lojas">' + S.lojas.filter(function (l) { return l.ativo; }).map(function (l) { return '<option value="' + esc(rotuloLoja(l)) + '">'; }).join("") + "</datalist>" : "") +
         '<label for="ns-cli">Cliente *</label><input id="ns-cli" maxlength="200" required>' +
         '<div class="duas"><div><label for="ns-tel">WhatsApp do cliente</label><input id="ns-tel" type="tel" maxlength="40"></div>' +
         '<div><label for="ns-email">E-mail do cliente</label><input id="ns-email" type="email" maxlength="200"></div></div>' +
@@ -330,6 +334,14 @@
       '<div id="ns-erro"></div><div class="acoes"><button class="prim" id="ns-salvar">Salvar serviço</button></div>',
       { titulo: obra ? "Nova parte do serviço" : "Novo serviço", fixa: true });
     var el = j.el;
+    var lojaEscolhida = null;
+    if ($("#ns-loja", el)) $("#ns-loja", el).onchange = function () {
+      lojaEscolhida = lojaPorRotulo(this.value);
+      if (!lojaEscolhida) return;
+      $("#ns-cli", el).value = nomeLoja(lojaEscolhida);
+      $("#ns-end", el).value = enderecoLoja(lojaEscolhida);
+      if (lojaEscolhida.telefone) $("#ns-tel", el).value = lojaEscolhida.telefone;
+    };
     ["eletrica", "pintura"].forEach(function (cat) {
       $("#ns-" + cat, el).onchange = function () { $("#ns-" + cat + "-campos", el).classList.toggle("oculto", !this.checked); };
     });
@@ -340,7 +352,8 @@
       if (!cats.length) { erro.innerHTML = '<div class="aviso erro">Marque a parte elétrica, a de pintura ou as duas.</div>'; return; }
       A.ocupado(b, true, "Salvando...");
       var pObra = obra ? Promise.resolve(obra) : q(sb.from("obras").insert({
-        cliente: val(el, "#ns-cli"), telefone: nulo(val(el, "#ns-tel")), email: nulo(val(el, "#ns-email")), endereco: nulo(val(el, "#ns-end")), observacoes: nulo(val(el, "#ns-obs"))
+        cliente: val(el, "#ns-cli"), telefone: nulo(val(el, "#ns-tel")), email: nulo(val(el, "#ns-email")), endereco: nulo(val(el, "#ns-end")), observacoes: nulo(val(el, "#ns-obs")),
+        loja_id: lojaEscolhida && $("#ns-loja", el).value === rotuloLoja(lojaEscolhida) ? lojaEscolhida.id : null
       }).select().single()).then(function (o) { S.obras.unshift(o); obra = o; return o; });
       pObra.then(function (o) {
         return q(sb.from("servicos").insert(cats.map(function (cat) {
@@ -962,6 +975,563 @@
     w.document.open();
     w.document.write(html);
     w.document.close();
+  }
+
+  // =================================================================
+  // LOJAS (endereços da rede de clientes)
+  // =================================================================
+  var G = window.AGE_GEO;
+  var PRECISAO = { endereco: ["bom", "endereço"], gps: ["bom", "GPS"], manual: ["bom", "conferido"], cep: ["", "CEP"], bairro: ["atencao", "bairro"], cidade: ["atencao", "só cidade"] };
+  var NIVEL = { cidade: 1, bairro: 2, cep: 3, endereco: 4, gps: 5, manual: 6 };
+  var CORES_DIA = ["#1f62d0", "#d1495b", "#2a9d8f", "#e08a00", "#7b4fd6", "#3c8d2f", "#c2185b", "#00838f", "#6d4c41", "#455a64"];
+  var filtroLojas = { busca: "", cidade: "", regiao: "", local: "" }, limiteLojas = 150;
+
+  function semAcento(t) { return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+  function ordenarLojas() {
+    S.lojas.sort(function (a, b) {
+      var na = parseInt(a.codigo, 10), nb = parseInt(b.codigo, 10);
+      if (isNaN(na) !== isNaN(nb)) return isNaN(na) ? 1 : -1;
+      return (na - nb) || String(a.nome).localeCompare(String(b.nome));
+    });
+  }
+  function nomeLoja(l) { return (l.codigo ? (l.tipo === "loja" ? "Loja " : "") + l.codigo + " – " : "") + l.nome; }
+  function rotuloLoja(l) { return nomeLoja(l) + (l.cidade ? " (" + l.cidade + ")" : ""); }
+  function lojaPorRotulo(t) { for (var i = 0; i < S.lojas.length; i++) if (rotuloLoja(S.lojas[i]) === t) return S.lojas[i]; return null; }
+  function enderecoLoja(l) {
+    return [[l.endereco, l.numero].filter(Boolean).join(", "), l.complemento, l.bairro, l.cidade ? l.cidade + (l.uf ? "/" + l.uf : "") : ""].filter(Boolean).join(" - ");
+  }
+  function seloLocal(l) {
+    if (!G.temLocal(l)) return '<span class="selo critico">sem local</span>';
+    var p = PRECISAO[l.geo_precisao] || ["", "?"];
+    return '<span class="selo ' + p[0] + '">📍 ' + p[1] + "</span>";
+  }
+  function opcoesUnicas(campo) {
+    var vistos = {};
+    S.lojas.forEach(function (l) { if (l[campo]) vistos[l[campo]] = 1; });
+    return Object.keys(vistos).sort(function (a, b) { return a.localeCompare(b); });
+  }
+  function filtrarLojas(F) {
+    var b = semAcento(F.busca);
+    return S.lojas.filter(function (l) {
+      if (F.local === "desativadas") { if (l.ativo) return false; } else if (!l.ativo) return false;
+      if (F.cidade && l.cidade !== F.cidade) return false;
+      if (F.regiao && l.regiao !== F.regiao) return false;
+      if (F.local === "sem" && G.temLocal(l)) return false;
+      if (F.local === "aprox" && !(G.temLocal(l) && NIVEL[l.geo_precisao] <= 2)) return false;
+      if (F.local === "bom" && !(G.temLocal(l) && NIVEL[l.geo_precisao] >= 3)) return false;
+      if (b && semAcento([l.codigo, l.nome, l.bairro, l.cidade, l.endereco, l.cnpj].join(" ")).indexOf(b) < 0) return false;
+      return true;
+    });
+  }
+  function htmlFiltrosLojas(pref, F) {
+    return '<div class="filtros"><input id="' + pref + '-busca" type="search" placeholder="Buscar nº, nome, bairro, cidade" value="' + esc(F.busca) + '">' +
+      '<select id="' + pref + '-cidade" aria-label="Cidade"><option value="">Todas as cidades</option>' +
+      opcoesUnicas("cidade").map(function (c) { return '<option' + (c === F.cidade ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") + "</select>" +
+      '<select id="' + pref + '-regiao" aria-label="Região"><option value="">Todas as regiões</option>' +
+      opcoesUnicas("regiao").map(function (c) { return '<option' + (c === F.regiao ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") + "</select></div>";
+  }
+  function ligarFiltrosLojas(raiz, pref, F, depois) {
+    $("#" + pref + "-busca", raiz).oninput = function () { F.busca = this.value.trim(); depois(); };
+    $("#" + pref + "-cidade", raiz).onchange = function () { F.cidade = this.value; depois(); };
+    $("#" + pref + "-regiao", raiz).onchange = function () { F.regiao = this.value; depois(); };
+  }
+
+  function verLojas(c) {
+    var F = filtroLojas, ativas = S.lojas.filter(function (l) { return l.ativo; });
+    var sem = ativas.filter(function (l) { return !G.temLocal(l); }).length;
+    var aprox = ativas.filter(function (l) { return G.temLocal(l) && NIVEL[l.geo_precisao] <= 2; }).length;
+    c.innerHTML = '<div class="cab-secao"><h2>Lojas</h2><button id="bl-imp">⬆ Importar planilha</button><button id="bl-geo">📍 Localizar no mapa</button>' +
+      '<button class="prim" id="bl-nova">+ Nova loja</button></div>' +
+      '<p class="peq mudo" style="margin-top:-6px">' + ativas.length + " lojas · " + (sem ? '<b style="color:var(--critico)">' + sem + " sem local</b> · " : "") +
+      (aprox ? aprox + " com local aproximado · " : "") + (ativas.length - sem - aprox) + " com local bom</p>" +
+      htmlFiltrosLojas("fl", F).replace('</div>', '<select id="fl-local" aria-label="Localização"><option value="">Todas</option><option value="sem">Sem local</option>' +
+        '<option value="aprox">Local aproximado</option><option value="bom">Local bom</option><option value="desativadas">Desativadas</option></select></div>') +
+      '<div id="lista-lojas"></div><input type="file" id="bl-arq" accept=".csv,text/csv" class="oculto">';
+    $("#fl-local").value = F.local;
+    $("#fl-local").onchange = function () { F.local = this.value; listar(); };
+    ligarFiltrosLojas(c, "fl", F, function () { limiteLojas = 150; listar(); });
+    $("#bl-nova").onclick = function () { editarLoja(null); };
+    $("#bl-geo").onclick = function () { localizarLojas(); };
+    $("#bl-imp").onclick = function () { $("#bl-arq").value = ""; $("#bl-arq").click(); };
+    $("#bl-arq").onchange = function () { var f = this.files && this.files[0]; if (f) importarLojas(f); };
+    function listar() {
+      var lista = filtrarLojas(F), l = $("#lista-lojas");
+      if (!S.lojas.length) {
+        l.innerHTML = '<div class="cartao vazio">Nenhuma loja cadastrada. Use <b>⬆ Importar planilha</b> com o arquivo <b>lojas-supermercados-bh.csv</b> ou cadastre uma a uma.</div>';
+        return;
+      }
+      if (!lista.length) { l.innerHTML = '<div class="cartao vazio">Nenhuma loja com este filtro.</div>'; return; }
+      l.innerHTML = '<div class="cartao tabela-caixa"><table><thead><tr><th>Nº</th><th>Loja</th><th class="esconde-cel">Bairro</th><th>Cidade</th><th>Local</th></tr></thead><tbody>' +
+        lista.slice(0, limiteLojas).map(function (x) {
+          return '<tr data-loja="' + x.id + '" style="cursor:pointer"><td>' + esc(x.codigo || "") + "</td><td>" + esc(x.nome) +
+            (x.tipo !== "loja" ? ' <span class="selo">' + esc(x.tipo === "cd" ? "CD" : x.tipo === "posto" ? "posto" : "outro") + "</span>" : "") +
+            '</td><td class="esconde-cel">' + esc(x.bairro || "") + "</td><td>" + esc(x.cidade || "") + "</td><td>" + seloLocal(x) + "</td></tr>";
+        }).join("") + "</tbody></table></div>" +
+        (lista.length > limiteLojas ? '<div class="acoes"><button id="bl-mais">Mostrar mais (' + (lista.length - limiteLojas) + ")</button></div>" : "");
+      $$("[data-loja]", l).forEach(function (tr) { tr.onclick = function () { editarLoja(tr.dataset.loja); }; });
+      if ($("#bl-mais")) $("#bl-mais").onclick = function () { limiteLojas += 300; listar(); };
+    }
+    listar();
+  }
+
+  function posicaoAtual(precisa) {
+    return new Promise(function (ok, falha) {
+      if (!navigator.geolocation) { falha(new Error("Este aparelho não informa a localização.")); return; }
+      navigator.geolocation.getCurrentPosition(function (p) { ok({ lat: p.coords.latitude, lng: p.coords.longitude, precisao: p.coords.accuracy }); },
+        function (e) { falha(new Error(e.code === 1 ? "Localização bloqueada: libere a localização para este site." : "Não consegui pegar a localização. Tente de novo.")); },
+        { enableHighAccuracy: !!precisa, timeout: 20000, maximumAge: precisa ? 0 : 120000 });
+    });
+  }
+
+  function editarLoja(id) {
+    var l = id ? porId(S.lojas, id) : { tipo: "loja", uf: "MG", ativo: true, nome: "" };
+    var geo = { lat: l.lat, lng: l.lng, geo_precisao: l.geo_precisao };
+    var campo = function (k, rot, extra) { return '<div><label for="lj-' + k + '">' + rot + '</label><input id="lj-' + k + '" ' + (extra || "") + ' value="' + esc(l[k] || "") + '"></div>'; };
+    var j = A.janela(
+      '<div class="duas">' + campo("codigo", "Nº / código", 'maxlength="20"') + '<div><label for="lj-tipo">Tipo</label><select id="lj-tipo"><option value="loja">Loja</option>' +
+      '<option value="cd">Centro de distribuição</option><option value="posto">Posto</option><option value="outro">Outro</option></select></div></div>' +
+      '<label for="lj-nome">Nome *</label><input id="lj-nome" maxlength="200" value="' + esc(l.nome) + '">' +
+      '<div class="duas">' + campo("endereco", "Rua / avenida", 'maxlength="300"') + campo("numero", "Número", 'maxlength="40"') + "</div>" +
+      '<div class="duas">' + campo("complemento", "Complemento", 'maxlength="100"') + campo("bairro", "Bairro", 'maxlength="120"') + "</div>" +
+      '<div class="duas">' + campo("cidade", "Cidade", 'maxlength="120"') + '<div class="duas"><div><label for="lj-uf">UF</label><input id="lj-uf" maxlength="2" value="' + esc(l.uf || "MG") + '"></div>' +
+      campo("cep", "CEP", 'inputmode="numeric" maxlength="10"') + "</div></div>" +
+      '<div class="duas">' + campo("telefone", "Telefone da loja", 'type="tel" maxlength="40"') + campo("cnpj", "CNPJ", 'maxlength="20"') + "</div>" +
+      '<div class="duas">' + campo("regiao", "Região", 'maxlength="120"') + campo("empresa", "Empresa", 'maxlength="200"') + "</div>" +
+      '<h3 style="margin-top:14px">Localização no mapa</h3><div id="lj-geo-txt" class="peq" style="margin:6px 0"></div>' +
+      '<label for="lj-coord">Coordenadas ou link do Google Maps</label><input id="lj-coord" placeholder="-19.9167, -43.9345  ou cole o link do Google Maps">' +
+      '<div class="acoes"><button id="lj-gps">📍 Estou na loja: usar meu GPS</button><button id="lj-buscar">🔎 Buscar pelo endereço</button></div>' +
+      '<label class="marca-linha"><input type="checkbox" id="lj-ativo"> Ativa</label>' +
+      '<div class="acoes"><button class="prim" id="lj-salvar">Salvar</button>' + (id ? '<button class="perigo" id="lj-apagar">Apagar</button>' : "") + "</div>",
+      { titulo: id ? nomeLoja(l) : "Nova loja", fixa: true });
+    var el = j.el;
+    $("#lj-tipo", el).value = l.tipo || "loja";
+    $("#lj-ativo", el).checked = l.ativo !== false;
+    function mostrarGeo() {
+      $("#lj-geo-txt", el).innerHTML = G.temLocal(geo) ? seloLocal(geo) + ' <a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=' +
+        geo.lat + "," + geo.lng + '">ver no mapa</a> <span class="mudo">(' + geo.lat.toFixed(5) + ", " + geo.lng.toFixed(5) + ")</span>" : seloLocal(geo);
+      $("#lj-coord", el).value = G.temLocal(geo) ? geo.lat.toFixed(6) + ", " + geo.lng.toFixed(6) : "";
+    }
+    mostrarGeo();
+    $("#lj-coord", el).onchange = function () {
+      if (!this.value.trim()) { geo = { lat: null, lng: null, geo_precisao: null }; mostrarGeo(); return; }
+      var c = G.lerCoordenadas(this.value);
+      if (!c) { A.avisar("Não entendi as coordenadas. Ex.: -19.9167, -43.9345", "erro"); return; }
+      geo = { lat: c.lat, lng: c.lng, geo_precisao: "manual" }; mostrarGeo();
+    };
+    $("#lj-gps", el).onclick = function () {
+      var b = this; A.ocupado(b, true, "Pegando GPS...");
+      posicaoAtual(true).then(function (p) {
+        A.ocupado(b, false);
+        if (p.precisao > 100 && !A.confirmar("O GPS está impreciso (±" + Math.round(p.precisao) + " m). Usar mesmo assim?")) return;
+        geo = { lat: p.lat, lng: p.lng, geo_precisao: "gps" }; mostrarGeo();
+      }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+    };
+    $("#lj-buscar", el).onclick = function () {
+      var b = this; A.ocupado(b, true, "Buscando...");
+      G.localizar(lerForm()).then(function (r) {
+        A.ocupado(b, false);
+        if (!r) { A.avisar("Endereço não encontrado no mapa. Cole as coordenadas ou use o GPS na loja.", "erro"); return; }
+        geo = r; mostrarGeo();
+      }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+    };
+    function lerForm() {
+      var d = {};
+      ["codigo", "nome", "endereco", "numero", "complemento", "bairro", "cidade", "cep", "telefone", "cnpj", "regiao", "empresa"].forEach(function (k) { d[k] = nulo(val(el, "#lj-" + k)); });
+      d.uf = (val(el, "#lj-uf") || "MG").toUpperCase(); d.tipo = $("#lj-tipo", el).value; d.ativo = $("#lj-ativo", el).checked;
+      return d;
+    }
+    $("#lj-salvar", el).onclick = function () {
+      var d = lerForm();
+      if (!d.nome) { A.avisar("Informe o nome da loja.", "erro"); return; }
+      d.lat = G.temLocal(geo) ? geo.lat : null; d.lng = G.temLocal(geo) ? geo.lng : null; d.geo_precisao = G.temLocal(geo) ? geo.geo_precisao : null;
+      var b = this; A.ocupado(b, true, "Salvando...");
+      q(id ? sb.from("lojas").update(d).eq("id", id).select().single() : sb.from("lojas").insert(d).select().single()).then(function (n) {
+        trocar(S.lojas, n); ordenarLojas(); j.fechar(); A.avisar("Loja salva", "ok"); rota();
+      }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+    };
+    if (id) $("#lj-apagar", el).onclick = function () {
+      if (!A.confirmar("Apagar " + nomeLoja(l) + "? Os serviços dessa loja continuam, só perdem o vínculo. Para só esconder, desmarque “Ativa”.")) return;
+      q(sb.from("lojas").delete().eq("id", id)).then(function () {
+        tirar(S.lojas, id); S.obras.forEach(function (o) { if (o.loja_id === id) o.loja_id = null; });
+        j.fechar(); A.avisar("Apagada", "ok"); rota();
+      }).catch(falhou);
+    };
+  }
+
+  // Planilha CSV (separada por ; ou ,) com cabeçalho: codigo;tipo;nome;endereco;numero;complemento;bairro;cidade;uf;cep;cnpj;regiao;empresa[;telefone;lat;lng]
+  function lerCsv(texto) {
+    texto = texto.replace(/^﻿/, "");
+    var prim = texto.split(/\r?\n/)[0] || "", sep = prim.split(";").length >= prim.split(",").length ? ";" : ",";
+    var linhas = [], campoAtual = "", linha = [], aspas = false;
+    for (var i = 0; i < texto.length; i++) {
+      var ch = texto[i];
+      if (aspas) {
+        if (ch === '"') { if (texto[i + 1] === '"') { campoAtual += '"'; i++; } else aspas = false; } else campoAtual += ch;
+      } else if (ch === '"') aspas = true;
+      else if (ch === sep) { linha.push(campoAtual); campoAtual = ""; }
+      else if (ch === "\n" || ch === "\r") { if (ch === "\r" && texto[i + 1] === "\n") i++; linha.push(campoAtual); linhas.push(linha); linha = []; campoAtual = ""; }
+      else campoAtual += ch;
+    }
+    if (campoAtual || linha.length) { linha.push(campoAtual); linhas.push(linha); }
+    linhas = linhas.filter(function (l) { return l.some(function (x) { return x.trim(); }); });
+    if (!linhas.length) return [];
+    var cab = linhas.shift().map(function (h) { return semAcento(h).trim().replace(/[^a-z_]/g, ""); });
+    return linhas.map(function (l) { var o = {}; cab.forEach(function (h, k) { o[h] = (l[k] || "").trim(); }); return o; });
+  }
+  function importarLojas(arquivo) {
+    var CAMPOS = ["codigo", "tipo", "nome", "empresa", "endereco", "numero", "complemento", "bairro", "cidade", "uf", "cep", "cnpj", "regiao", "telefone"];
+    arquivo.text().then(function (texto) {
+      var linhas = lerCsv(texto);
+      if (!linhas.length || !("nome" in linhas[0]) && !("codigo" in linhas[0])) throw new Error("Planilha sem as colunas esperadas (nome, codigo, endereco, cidade...).");
+      var porCnpj = {}, porCodigo = {};
+      S.lojas.forEach(function (l) { if (l.cnpj) porCnpj[A.soDigitos(l.cnpj)] = l; if (l.codigo) porCodigo[l.tipo + "|" + l.codigo] = l; });
+      var novas = [], atualizar = [], comLocal = [];
+      linhas.forEach(function (r) {
+        if (!r.nome && !r.codigo) return;
+        var d = {};
+        CAMPOS.forEach(function (k) { d[k] = nulo(r[k] || ""); });
+        d.tipo = ["loja", "cd", "posto", "outro"].indexOf(d.tipo) >= 0 ? d.tipo : "loja";
+        d.nome = d.nome || "Loja " + d.codigo;
+        d.uf = (d.uf || "MG").toUpperCase().slice(0, 2);
+        var la = Number(String(r.lat || "").replace(",", ".")), ln = Number(String(r.lng || r.lon || "").replace(",", "."));
+        var existe = (d.cnpj && porCnpj[A.soDigitos(d.cnpj)]) || (d.codigo && porCodigo[d.tipo + "|" + d.codigo]);
+        if (existe) d.id = existe.id;
+        if (r.lat && r.lng && isFinite(la) && isFinite(ln) && la && ln) comLocal.push({ d: d, lat: la, lng: ln });
+        (existe ? atualizar : novas).push(d);
+      });
+      var j = A.janela("<p>Planilha <b>" + esc(arquivo.name) + "</b>: <b>" + novas.length + "</b> lojas novas e <b>" + atualizar.length +
+        "</b> já cadastradas (serão atualizadas pelo CNPJ ou número)." + (comLocal.length ? " " + comLocal.length + " com coordenadas." : "") + "</p>" +
+        '<div class="acoes"><button class="prim" id="ok-imp">Importar</button></div>', { titulo: "Importar lojas" });
+      $("#ok-imp", j.el).onclick = function () {
+        var b = this; A.ocupado(b, true, "Importando...");
+        var lotes = [];
+        for (var i = 0; i < novas.length; i += 200) lotes.push(sb.from("lojas").insert(novas.slice(i, i + 200)).select());
+        for (i = 0; i < atualizar.length; i += 200) lotes.push(sb.from("lojas").upsert(atualizar.slice(i, i + 200)).select());
+        Promise.all(lotes.map(q)).then(function () {
+          // coordenadas da planilha (se tiver) entram depois, uma a uma pelo id
+          return q(sb.from("lojas").select("*").limit(5000)).then(function (todas) {
+            S.lojas = todas; ordenarLojas();
+            var porChave = {};
+            todas.forEach(function (l) { if (l.cnpj) porChave["c" + A.soDigitos(l.cnpj)] = l; if (l.codigo) porChave["k" + l.tipo + "|" + l.codigo] = l; });
+            return comLocal.reduce(function (p, x) {
+              var l = (x.d.cnpj && porChave["c" + A.soDigitos(x.d.cnpj)]) || porChave["k" + x.d.tipo + "|" + x.d.codigo];
+              if (!l) return p;
+              return p.then(function () { return q(sb.from("lojas").update({ lat: x.lat, lng: x.lng, geo_precisao: "manual" }).eq("id", l.id).select().single()).then(function (n) { trocar(S.lojas, n); }); });
+            }, Promise.resolve());
+          });
+        }).then(function () {
+          j.fechar(); ordenarLojas(); rota();
+          var sem = S.lojas.filter(function (l) { return l.ativo && !G.temLocal(l); }).length;
+          A.avisar("Importação concluída", "ok");
+          if (sem && A.confirmar(sem + " lojas ainda não estão no mapa. Localizar agora pelo endereço? (leva cerca de " + Math.ceil(sem * 2.5 / 60) + " min; pode deixar rodando)")) localizarLojas();
+        }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+      };
+    }).catch(falhou);
+  }
+
+  // Localiza no mapa as lojas sem coordenadas (1 consulta por segundo, regra do serviço gratuito)
+  function localizarLojas() {
+    var semLocal = S.lojas.filter(function (l) { return l.ativo && !G.temLocal(l); });
+    var aproximadas = S.lojas.filter(function (l) { return l.ativo && G.temLocal(l) && NIVEL[l.geo_precisao] <= 2; });
+    var parar = false, rodando = false;
+    var j = A.janela('<p><b>' + semLocal.length + "</b> lojas sem local e <b>" + aproximadas.length + "</b> com local aproximado.</p>" +
+      '<label class="marca-linha"><input type="checkbox" id="lg-aprox"> Tentar melhorar também as aproximadas</label>' +
+      '<p class="peq mudo">Usa o mapa gratuito OpenStreetMap: procura pelo endereço; se não achar, pelo CEP, bairro e por último a cidade. ' +
+      "É devagar de propósito (regra do serviço gratuito). Pode deixar a tela aberta. O que for achado já fica salvo.</p>" +
+      '<div class="cartao" id="lg-prog" style="display:none"><div class="linha"><b id="lg-txt"></b></div>' +
+      '<div style="height:8px;background:var(--sup2);border-radius:4px;margin-top:8px;overflow:hidden"><div id="lg-barra" style="height:100%;width:0;background:var(--prim)"></div></div>' +
+      '<div class="peq mudo" id="lg-ult" style="margin-top:6px"></div></div>' +
+      '<div class="acoes"><button class="prim" id="lg-ir">Começar</button></div>',
+      { titulo: "Localizar lojas no mapa", fixa: true, aoFechar: function () { parar = true; } });
+    var el = j.el;
+    $("#lg-ir", el).onclick = function () {
+      if (rodando) { parar = true; return; }
+      var lista = semLocal.concat($("#lg-aprox", el).checked ? aproximadas : []).filter(function (l) { return porId(S.lojas, l.id); });
+      if (!lista.length) { A.avisar("Nada para localizar."); return; }
+      parar = false; rodando = true; this.textContent = "⏸ Pausar";
+      $("#lg-prog", el).style.display = "";
+      var b = this, feitas = 0, achadas = 0, falhas = 0;
+      (function proxima(i) {
+        $("#lg-txt", el).textContent = feitas + " de " + lista.length + " · achadas " + achadas + (falhas ? " · não achadas " + falhas : "");
+        $("#lg-barra", el).style.width = (feitas / lista.length * 100) + "%";
+        if (parar || i >= lista.length) {
+          rodando = false; b.textContent = i >= lista.length ? "Concluído" : "▶ Continuar";
+          if (i >= lista.length) { b.disabled = true; A.avisar("Localização concluída: " + achadas + " lojas no mapa", "ok"); }
+          semLocal = lista.slice(i); aproximadas = [];
+          if (location.hash.slice(1) === "lojas" || location.hash.slice(1) === "rotas") rota();
+          return;
+        }
+        var l = lista[i];
+        $("#lg-ult", el).textContent = "Procurando " + nomeLoja(l) + " (" + (l.cidade || "?") + ")...";
+        G.localizar(l).then(function (r) {
+          feitas++;
+          if (!r || (G.temLocal(l) && NIVEL[r.geo_precisao] <= NIVEL[l.geo_precisao])) { if (!r) falhas++; return; }
+          achadas++;
+          return q(sb.from("lojas").update({ lat: r.lat, lng: r.lng, geo_precisao: r.geo_precisao }).eq("id", l.id).select().single()).then(function (n) { trocar(S.lojas, n); });
+        }).then(function () { proxima(i + 1); }, function (e) {
+          A.avisar(A.msgErro(e), "erro");
+          parar = true; proxima(i);
+        });
+      })(0);
+    };
+  }
+
+  // =================================================================
+  // ROTAS (lojas próximas no mesmo dia, na melhor ordem)
+  // =================================================================
+  var R = { partida: "gps", partidaLoja: "", modo: "servicos", cat: "", raio: 15, porDia: 6, juntar: 40, voltar: false, escolhidas: {}, plano: null, origem: null, mapa: null };
+
+  function lojasComServico(cat) {
+    var mapa = {};
+    S.serv.forEach(function (s) {
+      if (!(s.status === "aberto" || s.status === "em_andamento") || (cat && s.categoria !== cat)) return;
+      var o = porId(S.obras, s.obra_id), l = o && o.loja_id ? porId(S.lojas, o.loja_id) : null;
+      if (!l) return;
+      (mapa[l.id] = mapa[l.id] || { loja: l, servicos: [] }).servicos.push(s);
+    });
+    return Object.keys(mapa).map(function (k) { return mapa[k]; });
+  }
+
+  function verRotas(c) {
+    var base = A.CFG.BASE && G.temLocal(A.CFG.BASE) ? A.CFG.BASE : null;
+    c.innerHTML = '<div class="cab-secao"><h2>Rotas</h2></div>' +
+      (S.lojas.length ? "" : '<div class="aviso">Cadastre ou importe as lojas na aba <a href="#lojas">Lojas</a> para montar rotas.</div>') +
+      '<div class="cartao"><div class="duas"><div><label for="rt-partida">Saindo de</label><select id="rt-partida"><option value="gps">📍 Minha localização agora</option>' +
+      (base ? '<option value="base">🏠 ' + esc(base.nome || "Base da AGE") + "</option>" : "") + '<option value="loja">🏪 Uma loja...</option>' +
+      '<option value="nenhuma">— sem ponto de partida (começa na 1ª loja)</option></select>' +
+      '<input id="rt-partida-loja" list="rt-dl-lojas" class="oculto" style="margin-top:6px" placeholder="Digite a loja de partida"></div>' +
+      '<div><label for="rt-modo">Quais lojas</label><select id="rt-modo"><option value="servicos">Lojas com serviço aberto</option>' +
+      '<option value="escolher">Escolher as lojas</option><option value="raio">Todas as lojas perto da partida</option></select>' +
+      '<div id="rt-modo-extra" style="margin-top:6px"></div></div></div>' +
+      '<div class="duas"><div><label for="rt-pordia">Máximo de lojas por dia</label><input id="rt-pordia" type="number" min="1" max="40" value="' + R.porDia + '"></div>' +
+      '<div><label for="rt-juntar">Só junta no mesmo dia lojas a até (km)</label><input id="rt-juntar" type="number" min="1" max="500" value="' + R.juntar + '"></div></div>' +
+      '<label class="marca-linha"><input type="checkbox" id="rt-voltar"> Voltar ao ponto de partida no fim do dia</label>' +
+      '<datalist id="rt-dl-lojas">' + S.lojas.filter(function (l) { return l.ativo && G.temLocal(l); }).map(function (l) { return '<option value="' + esc(rotuloLoja(l)) + '">'; }).join("") + "</datalist>" +
+      '<div class="acoes"><button class="prim" id="rt-montar">🧭 Montar rota</button></div></div>' +
+      '<div id="rt-resultado"></div>' +
+      '<div class="cab-secao" style="margin-top:18px"><h2>Rotas salvas</h2></div><div id="rt-salvas"></div>';
+    $("#rt-partida").value = R.partida === "base" && !base ? "gps" : R.partida;
+    $("#rt-partida-loja").value = R.partidaLoja;
+    $("#rt-modo").value = R.modo; $("#rt-voltar").checked = R.voltar;
+    function extras() {
+      $("#rt-partida-loja").classList.toggle("oculto", $("#rt-partida").value !== "loja");
+      var m = $("#rt-modo").value, x = $("#rt-modo-extra");
+      if (m === "servicos") {
+        x.innerHTML = '<select id="rt-cat" aria-label="Área"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
+          '<div class="peq mudo" style="margin-top:4px">' + lojasComServico(R.cat).length + " lojas com serviço aberto (serviços ligados a uma loja)</div>";
+        $("#rt-cat").value = R.cat;
+        $("#rt-cat").onchange = function () { R.cat = this.value; extras(); };
+      } else if (m === "escolher") {
+        x.innerHTML = '<button id="rt-esc">✔ Escolher lojas (' + Object.keys(R.escolhidas).length + " escolhidas)</button>";
+        $("#rt-esc").onclick = escolherLojas;
+      } else {
+        x.innerHTML = '<div class="linha"><input id="rt-raio" type="number" min="1" max="500" value="' + R.raio + '" style="width:90px"> <span>km de distância</span></div>';
+        $("#rt-raio").oninput = function () { R.raio = Number(this.value) || 15; };
+      }
+    }
+    extras();
+    $("#rt-partida").onchange = function () { R.partida = this.value; extras(); };
+    $("#rt-partida-loja").onchange = function () { R.partidaLoja = this.value; };
+    $("#rt-modo").onchange = function () { R.modo = this.value; extras(); };
+    $("#rt-pordia").oninput = function () { R.porDia = Math.max(1, Math.min(40, parseInt(this.value, 10) || 6)); };
+    $("#rt-juntar").oninput = function () { R.juntar = Math.max(1, Number(this.value) || 40); };
+    $("#rt-voltar").onchange = function () { R.voltar = this.checked; };
+    $("#rt-montar").onclick = function () { montarRota(this); };
+    function escolherLojas() {
+      var F = { busca: "", cidade: "", regiao: "" };
+      var j = A.janela(htmlFiltrosLojas("re", F) + '<div class="linha" style="margin-bottom:8px"><button class="peq" id="re-todas">Marcar as da lista</button>' +
+        '<button class="peq" id="re-nenhuma">Desmarcar as da lista</button><span class="dir forte" id="re-cont"></span></div><div id="re-lista"></div>' +
+        '<div class="acoes"><button class="prim" id="re-ok">Concluir</button></div>', { titulo: "Escolher lojas", larga: true, aoFechar: extras });
+      var el = j.el;
+      function listar() {
+        var lista = filtrarLojas(F);
+        $("#re-cont", el).textContent = Object.keys(R.escolhidas).length + " escolhidas";
+        $("#re-lista", el).innerHTML = lista.slice(0, 600).map(function (l) {
+          return '<label class="marca-linha" style="font-weight:400;margin:4px 0"><input type="checkbox" data-esc="' + l.id + '"' + (R.escolhidas[l.id] ? " checked" : "") + "> " +
+            esc(rotuloLoja(l)) + " " + seloLocal(l) + "</label>";
+        }).join("") || '<div class="vazio">Nenhuma loja com este filtro.</div>';
+        $$("[data-esc]", el).forEach(function (cb) {
+          cb.onchange = function () { if (this.checked) R.escolhidas[this.dataset.esc] = 1; else delete R.escolhidas[this.dataset.esc]; $("#re-cont", el).textContent = Object.keys(R.escolhidas).length + " escolhidas"; };
+        });
+      }
+      ligarFiltrosLojas(el, "re", F, listar);
+      $("#re-todas", el).onclick = function () { filtrarLojas(F).forEach(function (l) { R.escolhidas[l.id] = 1; }); listar(); };
+      $("#re-nenhuma", el).onclick = function () { filtrarLojas(F).forEach(function (l) { delete R.escolhidas[l.id]; }); listar(); };
+      $("#re-ok", el).onclick = function () { j.fechar(); };
+      listar();
+    }
+    desenharResultado();
+    desenharSalvas();
+  }
+
+  function obterPartida() {
+    var tipo = R.partida;
+    if (tipo === "nenhuma") return Promise.resolve(null);
+    if (tipo === "base") { var b = A.CFG.BASE; return Promise.resolve({ nome: b.nome || "Base da AGE", lat: Number(b.lat), lng: Number(b.lng) }); }
+    if (tipo === "loja") {
+      var l = lojaPorRotulo(R.partidaLoja);
+      if (!l || !G.temLocal(l)) return Promise.reject(new Error("Escolha a loja de partida (precisa estar localizada no mapa)."));
+      return Promise.resolve({ nome: nomeLoja(l), lat: l.lat, lng: l.lng, lojaId: l.id });
+    }
+    return posicaoAtual(false).then(function (p) { return { nome: "Minha localização", lat: p.lat, lng: p.lng, gps: true }; });
+  }
+
+  function montarRota(b) {
+    A.ocupado(b, true, "Montando...");
+    obterPartida().then(function (partida) {
+      var lojas;
+      if (R.modo === "servicos") {
+        lojas = lojasComServico(R.cat).map(function (x) { return Object.assign({}, x.loja, { servicos: x.servicos }); });
+        if (!lojas.length) throw new Error("Nenhuma loja com serviço aberto. Ao criar o serviço, escolha a loja no campo “Loja da rede”.");
+      } else if (R.modo === "escolher") {
+        lojas = Object.keys(R.escolhidas).map(function (id) { return porId(S.lojas, id); }).filter(Boolean);
+        if (!lojas.length) throw new Error("Escolha as lojas primeiro.");
+      } else {
+        if (!partida) throw new Error("Para “lojas perto”, escolha de onde vai sair.");
+        lojas = G.perto(partida, S.lojas.filter(function (l) { return l.ativo; }), R.raio);
+        if (!lojas.length) throw new Error("Nenhuma loja localizada a até " + R.raio + " km.");
+      }
+      if (partida && partida.lojaId) lojas = lojas.filter(function (l) { return l.id !== partida.lojaId; });
+      R.origem = partida;
+      R.plano = G.planejar(partida, lojas, { porDia: R.porDia, voltar: R.voltar, raioRegiao: R.juntar });
+      A.ocupado(b, false);
+      desenharResultado();
+      var res = $("#rt-resultado"); if (res) res.scrollIntoView({ behavior: "smooth", block: "start" });
+    }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+  }
+
+  function htmlParada(p, i, ant) {
+    var d = ant ? G.km(ant, p) * G.FATOR_ESTRADA : null;
+    return '<li style="margin:6px 0"><b>' + esc(nomeLoja(p)) + "</b> " + (NIVEL[p.geo_precisao] <= 2 ? '<span class="selo atencao">local aproximado</span>' : "") +
+      (d !== null ? ' <span class="mudo peq">+' + A.numero(d, 1) + " km</span>" : "") +
+      '<div class="peq mudo">' + esc(enderecoLoja(p)) + "</div>" +
+      (p.servicos ? '<div class="peq">' + p.servicos.map(function (s) { return A.seloCategoria(s.categoria) + " " + esc((s.descricao || "").slice(0, 60)); }).join("<br>") + "</div>" : "") + "</li>";
+  }
+
+  function desenharResultado() {
+    var c = $("#rt-resultado");
+    if (!c) return;
+    if (R.mapa) { try { R.mapa.remove(); } catch (e) { /* mapa já removido */ } R.mapa = null; }
+    var P = R.plano;
+    if (!P) { c.innerHTML = ""; return; }
+    var total = P.dias.reduce(function (t, d) { return t + d.kmEstrada; }, 0);
+    var h = '<div class="cab-secao" style="margin-top:14px"><h2>' + P.dias.length + (P.dias.length === 1 ? " dia" : " dias") + " · " +
+      P.dias.reduce(function (t, d) { return t + d.paradas.length; }, 0) + " paradas</h2><span class=\"mudo peq\">≈ " + A.numero(total, 0) + " km no total (estimado)</span></div>";
+    if (P.semLocal.length) h += '<div class="aviso">⚠ ' + P.semLocal.length + " loja(s) ficaram de fora por não estarem no mapa: " +
+      P.semLocal.slice(0, 8).map(function (l) { return esc(nomeLoja(l)); }).join(", ") + (P.semLocal.length > 8 ? "…" : "") + '. Localize na aba <a href="#lojas">Lojas</a>.</div>';
+    h += '<div id="rt-mapa" style="height:340px;border-radius:12px;margin-bottom:12px;background:var(--sup2)"></div>';
+    P.dias.forEach(function (d, i) {
+      var links = G.linksGoogle(R.origem && !R.origem.gps ? R.origem : null, d.paradas, R.voltar);
+      h += '<div class="cartao" style="border-left:5px solid ' + CORES_DIA[i % CORES_DIA.length] + '"><div class="linha"><h3>Dia ' + (i + 1) + "</h3>" +
+        '<span class="mudo peq">' + d.paradas.length + " paradas · ≈ " + A.numero(d.kmEstrada, 0) + " km</span></div>" +
+        (R.origem ? '<div class="peq mudo" style="margin-top:4px">Saída: ' + esc(R.origem.nome) + "</div>" : "") +
+        '<ol style="padding-left:22px;margin:6px 0">' + d.paradas.map(function (p, k) { return htmlParada(p, k, k ? d.paradas[k - 1] : R.origem); }).join("") + "</ol>" +
+        '<div class="acoes">' + links.map(function (u, k) {
+          return '<a class="botao" target="_blank" rel="noopener" href="' + esc(u) + '">🗺 Google Maps' + (links.length > 1 ? " (parte " + (k + 1) + ")" : "") + "</a>";
+        }).join("") + '<button class="prim" data-salvar-dia="' + i + '">💾 Salvar / enviar ao funcionário</button></div></div>';
+    });
+    c.innerHTML = h;
+    $$("[data-salvar-dia]", c).forEach(function (b) { b.onclick = function () { salvarRota(Number(b.dataset.salvarDia)); }; });
+    desenharMapa($("#rt-mapa"), P.dias, R.origem);
+  }
+
+  var leafletPronto = null;
+  function carregarLeaflet() {
+    if (window.L && window.L.map) return Promise.resolve(window.L);
+    if (!leafletPronto) {
+      leafletPronto = new Promise(function (ok, falha) {
+        var css = document.createElement("link");
+        css.rel = "stylesheet"; css.href = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(css);
+        var sc = document.createElement("script");
+        sc.src = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
+        sc.onload = function () { ok(window.L); };
+        sc.onerror = function () { leafletPronto = null; sc.remove(); falha(new Error("Mapa indisponível sem internet.")); };
+        document.head.appendChild(sc);
+      });
+    }
+    return leafletPronto;
+  }
+  function desenharMapa(caixa, dias, origem) {
+    if (!caixa) return;
+    carregarLeaflet().then(function (L) {
+      if (!document.body.contains(caixa)) return;
+      var m = L.map(caixa, { scrollWheelZoom: false });
+      R.mapa = m;
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(m);
+      var todos = [];
+      if (origem) {
+        L.circleMarker([origem.lat, origem.lng], { radius: 8, color: "#111", fillColor: "#fff", fillOpacity: 1, weight: 3 }).addTo(m).bindTooltip("Saída: " + origem.nome);
+        todos.push([origem.lat, origem.lng]);
+      }
+      dias.forEach(function (d, i) {
+        var cor = CORES_DIA[i % CORES_DIA.length];
+        var linha = (origem ? [[origem.lat, origem.lng]] : []).concat(d.paradas.map(function (p) { return [p.lat, p.lng]; }));
+        L.polyline(linha, { color: cor, weight: 3, opacity: .8 }).addTo(m);
+        d.paradas.forEach(function (p, k) {
+          todos.push([p.lat, p.lng]);
+          L.marker([p.lat, p.lng], { icon: L.divIcon({ className: "", iconSize: [24, 24], iconAnchor: [12, 12],
+            html: '<div style="width:24px;height:24px;border-radius:50%;background:' + cor + ';color:#fff;font:700 12px/24px sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)">' + (k + 1) + "</div>" }) })
+            .addTo(m).bindTooltip("Dia " + (i + 1) + " · " + (k + 1) + ". " + esc(nomeLoja(p)));
+        });
+      });
+      if (todos.length) m.fitBounds(todos, { padding: [24, 24], maxZoom: 15 });
+    }).catch(function (e) { caixa.innerHTML = '<div class="vazio">' + esc(A.msgErro(e)) + "</div>"; });
+  }
+
+  function paradaParaSalvar(p) {
+    return { loja_id: p.id, codigo: p.codigo, tipo: p.tipo, nome: p.nome, endereco: p.endereco, numero: p.numero, complemento: p.complemento,
+      bairro: p.bairro, cidade: p.cidade, uf: p.uf, lat: p.lat, lng: p.lng, geo_precisao: p.geo_precisao };
+  }
+  function msgRota(r) {
+    var f = porId(S.func, r.funcionario_id);
+    var t = "*AGE Elétrica e Pintura — " + r.nome + "*\n" + (r.data ? "Data: " + A.dataSimples(r.data) + "\n" : "") + r.paradas.length + " paradas, na ordem:\n\n";
+    r.paradas.forEach(function (p, i) { t += (i + 1) + ". " + nomeLoja(p) + "\n   " + enderecoLoja(p) + "\n   " + G.linkNavegar(p) + "\n"; });
+    var links = G.linksGoogle(r.partida && G.temLocal(r.partida) ? r.partida : null, r.paradas, false);
+    t += "\nRota completa no Google Maps" + (links.length > 1 ? " (em partes)" : "") + ":\n" + links.join("\n");
+    if (f) t += "\n\nA rota também aparece no seu app:\n" + linkFunc(f);
+    return t;
+  }
+  function salvarRota(i) {
+    var d = R.plano.dias[i], hoje = A.isoLocal(new Date());
+    var j = A.janela('<label for="sr-nome">Nome da rota</label><input id="sr-nome" maxlength="120" value="' + esc("Rota " + A.data(new Date()) + " – dia " + (i + 1)) + '">' +
+      '<div class="duas"><div><label for="sr-data">Data</label><input id="sr-data" type="date" value="' + hoje + '"></div>' +
+      '<div><label for="sr-func">Funcionário</label><select id="sr-func">' + opcoesFunc(null, null) + "</select></div></div>" +
+      '<p class="peq mudo">O funcionário vê a rota no app (do dia marcado em diante) com botões para navegar até cada loja.</p>' +
+      '<div class="acoes"><button class="prim" id="sr-ok">Salvar</button></div>', { titulo: "Salvar rota" });
+    var el = j.el;
+    $("#sr-ok", el).onclick = function () {
+      var b = this; A.ocupado(b, true, "Salvando...");
+      var partida = R.origem && !R.origem.gps ? { nome: R.origem.nome, lat: R.origem.lat, lng: R.origem.lng } : null;
+      q(sb.from("rotas").insert({ nome: val(el, "#sr-nome") || "Rota", data: nulo($("#sr-data", el).value), funcionario_id: nulo($("#sr-func", el).value),
+        partida: partida, paradas: d.paradas.map(paradaParaSalvar), km: Math.round(d.kmEstrada * 10) / 10 }).select().single()).then(function (n) {
+        S.rotas.unshift(n); j.fechar(); desenharSalvas(); A.avisar("Rota salva", "ok");
+        var f = porId(S.func, n.funcionario_id);
+        if (f && f.telefone) A.janela('<p>Rota salva para ' + esc(f.nome) + ".</p>" + '<div class="acoes"><a class="botao zap" target="_blank" rel="noopener" href="' +
+          esc(A.linkZap(f.telefone, msgRota(n))) + '">📲 Enviar a rota no WhatsApp</a></div>', { titulo: "Rota salva" });
+      }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+    };
+  }
+  function desenharSalvas() {
+    var c = $("#rt-salvas");
+    if (!c) return;
+    if (!S.rotas.length) { c.innerHTML = '<div class="cartao vazio">Nenhuma rota salva.</div>'; return; }
+    c.innerHTML = S.rotas.slice(0, 60).map(function (r) {
+      var f = porId(S.func, r.funcionario_id), links = G.linksGoogle(r.partida && G.temLocal(r.partida) ? r.partida : null, r.paradas || [], false);
+      return '<div class="cartao"><div class="linha"><h3>' + esc(r.nome) + "</h3>" + (r.data ? '<span class="selo">📅 ' + A.dataSimples(r.data) + "</span>" : "") +
+        '<span class="dir mudo peq">' + (r.paradas || []).length + " paradas" + (r.km ? " · ≈ " + A.numero(r.km, 0) + " km" : "") + "</span></div>" +
+        '<div class="peq">' + (f ? "👷 " + esc(f.nome) : '<span class="mudo">sem funcionário</span>') + " · " +
+        esc((r.paradas || []).map(function (p) { return p.codigo || p.nome; }).join(" → ")) + "</div>" +
+        '<div class="acoes">' + links.map(function (u, k) { return '<a class="botao peq" target="_blank" rel="noopener" href="' + esc(u) + '">🗺 Google Maps' + (links.length > 1 ? " " + (k + 1) : "") + "</a>"; }).join("") +
+        (f && f.telefone ? '<a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgRota(r))) + '">📲 WhatsApp</a>' : "") +
+        '<button class="peq perigo" data-apagar-rota="' + r.id + '">Apagar</button></div></div>';
+    }).join("");
+    $$("[data-apagar-rota]", c).forEach(function (b) {
+      b.onclick = function () {
+        if (!A.confirmar("Apagar esta rota?")) return;
+        q(sb.from("rotas").delete().eq("id", b.dataset.apagarRota)).then(function () { tirar(S.rotas, b.dataset.apagarRota); desenharSalvas(); }).catch(falhou);
+      };
+    });
   }
 
   // =================================================================

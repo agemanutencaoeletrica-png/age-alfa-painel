@@ -8,6 +8,10 @@ window.AGE_CONFIG = {
   SUPABASE_URL: "",       // ex.: "https://abcdefghijkl.supabase.co"
   SUPABASE_ANON_KEY: "",  // ex.: "eyJhbGciOi..."
 
+  // Ponto de partida padrão das rotas (opcional). Ex.: { nome: "Oficina AGE", lat: -19.93, lng: -44.05 }
+  // Dica: no Google Maps, toque e segure no local e copie os números que aparecem.
+  BASE: null,
+
   // Dados que saem no cabeçalho do orçamento impresso / PDF
   EMPRESA: {
     nome: "AGE Elétrica e Pintura",
