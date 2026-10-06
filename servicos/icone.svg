@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#14325c"/>
+  <path d="M286 70 170 280h78l-28 162 126-226h-82z" fill="#f2b632"/>
+  <text x="256" y="490" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="64" fill="#ffffff" letter-spacing="6">AGE</text>
+</svg>

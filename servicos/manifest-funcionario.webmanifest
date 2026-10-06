@@ -1,0 +1,17 @@
+{
+  "id": "./funcionario.html",
+  "name": "AGE Ponto — Funcionário",
+  "short_name": "AGE Ponto",
+  "start_url": "./funcionario.html",
+  "scope": "./funcionario.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14325c",
+  "theme_color": "#14325c",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icone-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
