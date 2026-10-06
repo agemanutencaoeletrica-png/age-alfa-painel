@@ -5,8 +5,8 @@
 // NUNCA coloque aqui a chave "service_role".
 // =====================================================================
 window.AGE_CONFIG = {
-  SUPABASE_URL: "",       // ex.: "https://abcdefghijkl.supabase.co"
-  SUPABASE_ANON_KEY: "",  // ex.: "eyJhbGciOi..."
+  SUPABASE_URL: "https://upghiadxztkojeolkmhd.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_A48O8Jdg0fih1oTD8XK-wg_1ChzO1t8",  // chave pública (publishable)
 
   // Ponto de partida padrão das rotas (opcional). Ex.: { nome: "Oficina AGE", lat: -19.93, lng: -44.05 }
   // Dica: no Google Maps, toque e segure no local e copie os números que aparecem.
