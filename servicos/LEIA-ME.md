@@ -89,10 +89,17 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
 
 ### Lojas e rotas (lojas próximas no mesmo dia)
 1. **Rode de novo o `supabase.sql`** (SQL Editor → colar tudo → Run). Ele cria as tabelas de lojas e rotas sem apagar nada.
-2. **Lojas → ⬆ Importar planilha** → escolha `lojas-supermercados-bh.csv` (434 lojas, CDs e postos da rede, tirados
-   do documento DADOS DAS LOJAS). O arquivo **não fica no GitHub** (o repositório é público): guarde-o com você.
-   Importar de novo atualiza as lojas pelo CNPJ/número, sem duplicar.
-3. Depois de importar, o app oferece **📍 Localizar no mapa**: procura cada loja pelo endereço (se não achar, pelo CEP,
+2. **Lojas → ⬆ Atualizar lojas (Word ou planilha)** → escolha o documento **DADOS DAS LOJAS** do jeito que ele é
+   (Word `.doc` ou `.docx`). O app lê o documento e, **antes de gravar**, mostra:
+   - 🆕 lojas novas · ✏️ lojas com dados alterados (com o “antes → depois”) · ✔ lojas sem mudança;
+   - ❓ lojas que não estão mais no documento (só desativa se você marcar).
+
+   **Sempre que chegar uma versão nova do documento, é só repetir este passo.** Nada é duplicado (as lojas são
+   reconhecidas pelo CNPJ ou pelo número), e loja que mudou de endereço é localizada de novo no mapa.
+   O documento precisa manter o modelo atual: empresa e nº da loja na 1ª linha, endereço com “Nº”, “B:” e CEP
+   na 2ª, CNPJ na 3ª, e uma linha em branco entre as lojas. Também aceita a planilha `lojas-supermercados-bh.csv`.
+   As lojas **não ficam no GitHub** (o repositório é público): ficam só no seu banco de dados.
+3. Depois de atualizar, o app oferece **📍 Localizar no mapa** (só as lojas que ainda não estão no mapa): procura cada loja pelo endereço (se não achar, pelo CEP,
    bairro e por último a cidade). É grátis e devagar de propósito (1 consulta por segundo): 434 lojas levam ~10 a 20 min,
    e pode pausar e continuar. Lojas marcadas “só cidade”/“bairro” ficam com local aproximado.
 4. Para acertar o local de uma loja: abra a loja → cole o link do Google Maps (ou as coordenadas) ou, estando na loja,

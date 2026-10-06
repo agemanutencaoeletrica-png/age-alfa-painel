@@ -1040,13 +1040,13 @@
     var F = filtroLojas, ativas = S.lojas.filter(function (l) { return l.ativo; });
     var sem = ativas.filter(function (l) { return !G.temLocal(l); }).length;
     var aprox = ativas.filter(function (l) { return G.temLocal(l) && NIVEL[l.geo_precisao] <= 2; }).length;
-    c.innerHTML = '<div class="cab-secao"><h2>Lojas</h2><button id="bl-imp">⬆ Importar planilha</button><button id="bl-geo">📍 Localizar no mapa</button>' +
+    c.innerHTML = '<div class="cab-secao"><h2>Lojas</h2><button id="bl-imp">⬆ Atualizar lojas (Word ou planilha)</button><button id="bl-geo">📍 Localizar no mapa</button>' +
       '<button class="prim" id="bl-nova">+ Nova loja</button></div>' +
       '<p class="peq mudo" style="margin-top:-6px">' + ativas.length + " lojas · " + (sem ? '<b style="color:var(--critico)">' + sem + " sem local</b> · " : "") +
       (aprox ? aprox + " com local aproximado · " : "") + (ativas.length - sem - aprox) + " com local bom</p>" +
       htmlFiltrosLojas("fl", F).replace('</div>', '<select id="fl-local" aria-label="Localização"><option value="">Todas</option><option value="sem">Sem local</option>' +
         '<option value="aprox">Local aproximado</option><option value="bom">Local bom</option><option value="desativadas">Desativadas</option></select></div>') +
-      '<div id="lista-lojas"></div><input type="file" id="bl-arq" accept=".csv,text/csv" class="oculto">';
+      '<div id="lista-lojas"></div><input type="file" id="bl-arq" accept=".doc,.docx,.csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv" class="oculto">';
     $("#fl-local").value = F.local;
     $("#fl-local").onchange = function () { F.local = this.value; listar(); };
     ligarFiltrosLojas(c, "fl", F, function () { limiteLojas = 150; listar(); });
@@ -1057,7 +1057,7 @@
     function listar() {
       var lista = filtrarLojas(F), l = $("#lista-lojas");
       if (!S.lojas.length) {
-        l.innerHTML = '<div class="cartao vazio">Nenhuma loja cadastrada. Use <b>⬆ Importar planilha</b> com o arquivo <b>lojas-supermercados-bh.csv</b> ou cadastre uma a uma.</div>';
+        l.innerHTML = '<div class="cartao vazio">Nenhuma loja cadastrada. Toque em <b>⬆ Atualizar lojas</b> e escolha o documento <b>DADOS DAS LOJAS</b> (Word) ou a planilha <b>lojas-supermercados-bh.csv</b>.</div>';
         return;
       }
       if (!lista.length) { l.innerHTML = '<div class="cartao vazio">Nenhuma loja com este filtro.</div>'; return; }
@@ -1178,53 +1178,145 @@
     var cab = linhas.shift().map(function (h) { return semAcento(h).trim().replace(/[^a-z_]/g, ""); });
     return linhas.map(function (l) { var o = {}; cab.forEach(function (h, k) { o[h] = (l[k] || "").trim(); }); return o; });
   }
-  function importarLojas(arquivo) {
-    var CAMPOS = ["codigo", "tipo", "nome", "empresa", "endereco", "numero", "complemento", "bairro", "cidade", "uf", "cep", "cnpj", "regiao", "telefone"];
-    arquivo.text().then(function (texto) {
-      var linhas = lerCsv(texto);
-      if (!linhas.length || !("nome" in linhas[0]) && !("codigo" in linhas[0])) throw new Error("Planilha sem as colunas esperadas (nome, codigo, endereco, cidade...).");
-      var porCnpj = {}, porCodigo = {};
-      S.lojas.forEach(function (l) { if (l.cnpj) porCnpj[A.soDigitos(l.cnpj)] = l; if (l.codigo) porCodigo[l.tipo + "|" + l.codigo] = l; });
-      var novas = [], atualizar = [], comLocal = [];
-      linhas.forEach(function (r) {
-        if (!r.nome && !r.codigo) return;
-        var d = {};
-        CAMPOS.forEach(function (k) { d[k] = nulo(r[k] || ""); });
-        d.tipo = ["loja", "cd", "posto", "outro"].indexOf(d.tipo) >= 0 ? d.tipo : "loja";
-        d.nome = d.nome || "Loja " + d.codigo;
-        d.uf = (d.uf || "MG").toUpperCase().slice(0, 2);
-        var la = Number(String(r.lat || "").replace(",", ".")), ln = Number(String(r.lng || r.lon || "").replace(",", "."));
-        var existe = (d.cnpj && porCnpj[A.soDigitos(d.cnpj)]) || (d.codigo && porCodigo[d.tipo + "|" + d.codigo]);
-        if (existe) d.id = existe.id;
-        if (r.lat && r.lng && isFinite(la) && isFinite(ln) && la && ln) comLocal.push({ d: d, lat: la, lng: ln });
-        (existe ? atualizar : novas).push(d);
+  // ---------- atualizar lojas pelo documento do Word (.doc/.docx) ou planilha (.csv) ----------
+  var CAMPOS_LOJA = ["codigo", "tipo", "nome", "empresa", "endereco", "numero", "complemento", "bairro", "cidade", "uf", "cep", "cnpj", "regiao", "telefone"];
+  var CAMPOS_ENDERECO = ["endereco", "numero", "bairro", "cidade", "uf", "cep"];
+  var NOME_CAMPO = { codigo: "nº", tipo: "tipo", nome: "nome", empresa: "empresa", endereco: "rua", numero: "número", complemento: "complemento", bairro: "bairro",
+    cidade: "cidade", uf: "UF", cep: "CEP", cnpj: "CNPJ", regiao: "região", telefone: "telefone", ativo: "situação" };
+  var cfbPronto = null;
+  function carregarCfb() {
+    if (window.CFB && window.CFB.read) return Promise.resolve(window.CFB);
+    if (!cfbPronto) {
+      cfbPronto = new Promise(function (ok, falha) {
+        var sc = document.createElement("script");
+        sc.src = "https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js";
+        sc.onload = function () { if (window.CFB && window.CFB.read) ok(window.CFB); else { cfbPronto = null; falha(new Error("Falha ao carregar o leitor do Word.")); } };
+        sc.onerror = function () { cfbPronto = null; sc.remove(); falha(new Error("Sem internet para ler o documento. Tente de novo.")); };
+        document.head.appendChild(sc);
       });
-      var j = A.janela("<p>Planilha <b>" + esc(arquivo.name) + "</b>: <b>" + novas.length + "</b> lojas novas e <b>" + atualizar.length +
-        "</b> já cadastradas (serão atualizadas pelo CNPJ ou número)." + (comLocal.length ? " " + comLocal.length + " com coordenadas." : "") + "</p>" +
-        '<div class="acoes"><button class="prim" id="ok-imp">Importar</button></div>', { titulo: "Importar lojas" });
+    }
+    return cfbPronto;
+  }
+  function lerArquivoLojas(arquivo) {
+    var nome = arquivo.name.toLowerCase();
+    if (/\.docx?$/.test(nome)) {
+      return Promise.all([carregarCfb(), arquivo.arrayBuffer()]).then(function (r) {
+        var D = window.AGE_LOJAS_DOC, lojas;
+        try { lojas = D.extrairLojas(D.textoDoWord(new Uint8Array(r[1]), r[0])); }
+        catch (e) { throw new Error("Não consegui ler o documento: " + A.msgErro(e)); }
+        if (!lojas.length) throw new Error("Não achei lojas neste documento. Ele precisa seguir o modelo do DADOS DAS LOJAS (empresa e nº da loja, endereço com CEP e CNPJ).");
+        return lojas;
+      });
+    }
+    if (/\.csv$/.test(nome) || /csv/.test(arquivo.type)) {
+      return arquivo.text().then(function (texto) {
+        var linhas = lerCsv(texto);
+        if (!linhas.length || !("nome" in linhas[0]) && !("codigo" in linhas[0])) throw new Error("Planilha sem as colunas esperadas (nome, codigo, endereco, cidade...).");
+        return linhas;
+      });
+    }
+    return Promise.reject(new Error("Escolha o documento do Word (.doc ou .docx) ou uma planilha .csv."));
+  }
+  function plural(n, um, varios) { return n + " " + (n === 1 ? um : varios); }
+  function compararLojas(registros) {
+    var porCnpj = {}, porCodigo = {}, usados = {};
+    S.lojas.forEach(function (l) { if (l.cnpj) porCnpj[A.soDigitos(l.cnpj)] = l; if (l.codigo) porCodigo[l.tipo + "|" + l.codigo] = l; });
+    var R2 = { novas: [], alteradas: [], iguais: 0, repetidas: 0, comLocal: [], sumidas: [] };
+    registros.forEach(function (r) {
+      var d = {};
+      CAMPOS_LOJA.forEach(function (k) { d[k] = nulo(String(r[k] === null || r[k] === undefined ? "" : r[k]).trim()); });
+      if (!d.nome && !d.codigo) return;
+      d.tipo = ["loja", "cd", "posto", "outro"].indexOf(d.tipo) >= 0 ? d.tipo : "loja";
+      d.nome = d.nome || "Loja " + d.codigo;
+      d.uf = (d.uf || "MG").toUpperCase().slice(0, 2);
+      var la = Number(String(r.lat || "").replace(",", ".")), ln = Number(String(r.lng || r.lon || "").replace(",", "."));
+      var temCoord = r.lat && r.lng && isFinite(la) && isFinite(ln) && la && ln;
+      var ex = (d.cnpj && porCnpj[A.soDigitos(d.cnpj)]) || (d.codigo && porCodigo[d.tipo + "|" + d.codigo]) || null;
+      if (ex && usados[ex.id]) { R2.repetidas++; return; }
+      if (!ex) { R2.novas.push(d); if (temCoord) R2.comLocal.push({ d: d, lat: la, lng: ln }); return; }
+      usados[ex.id] = 1;
+      var mud = {}, n = 0;
+      CAMPOS_LOJA.forEach(function (k) {
+        // campo vazio no documento não apaga o que já está no app
+        if (d[k] !== null && d[k] !== (ex[k] === undefined ? null : ex[k])) { mud[k] = [ex[k], d[k]]; n++; }
+      });
+      if (!ex.ativo) { mud.ativo = [false, true]; n++; }
+      if (temCoord) R2.comLocal.push({ id: ex.id, lat: la, lng: ln });
+      if (!n) { R2.iguais++; return; }
+      var endMudou = CAMPOS_ENDERECO.some(function (k) { return k in mud; });
+      R2.alteradas.push({ loja: ex, mud: mud, endMudou: endMudou });
+    });
+    R2.sumidas = S.lojas.filter(function (l) { return l.ativo && !usados[l.id] && (l.cnpj || l.codigo); });
+    return R2;
+  }
+  function importarLojas(arquivo) {
+    lerArquivoLojas(arquivo).then(function (registros) {
+      var C = compararLojas(registros);
+      var lista = function (itens, fmt, max) {
+        max = max || 80;
+        return '<ul class="peq" style="max-height:260px;overflow:auto;margin:6px 0;padding-left:20px">' + itens.slice(0, max).map(fmt).join("") +
+          (itens.length > max ? "<li>… e mais " + (itens.length - max) + "</li>" : "") + "</ul>";
+      };
+      var h = "<p>Arquivo <b>" + esc(arquivo.name) + "</b>: <b>" + registros.length + "</b> lojas lidas.</p>";
+      h += '<details' + (C.novas.length && C.novas.length <= 30 ? " open" : "") + '><summary><b>🆕 ' + plural(C.novas.length, "loja nova", "lojas novas") + "</b></summary>" +
+        (C.novas.length ? lista(C.novas, function (d) { return "<li>" + esc(rotuloLoja(d)) + (d.endereco ? " — " + esc(enderecoLoja(d)) : ' — <span style="color:var(--critico)">sem endereço no documento</span>') + "</li>"; }) : "") + "</details>";
+      h += '<details' + (C.alteradas.length && C.alteradas.length <= 30 ? " open" : "") + '><summary><b>✏️ ' + plural(C.alteradas.length, "loja com dados alterados", "lojas com dados alterados") + "</b></summary>" +
+        (C.alteradas.length ? lista(C.alteradas, function (a) {
+          return "<li><b>" + esc(rotuloLoja(a.loja)) + "</b>: " + Object.keys(a.mud).map(function (k) {
+            var v = a.mud[k];
+            if (k === "ativo") return "volta a ficar ativa";
+            return esc(NOME_CAMPO[k] || k) + ' "' + esc(v[0] || "") + '" → "' + esc(v[1] || "") + '"';
+          }).join("; ") + (a.endMudou ? ' <span class="selo atencao">endereço mudou: localizar de novo</span>' : "") + "</li>";
+        }) : "") + "</details>";
+      h += "<p>✔ " + plural(C.iguais, "loja sem mudança", "lojas sem mudança") + (C.repetidas ? " · " + C.repetidas + " repetidas no arquivo (ignoradas)" : "") + "</p>";
+      if (C.sumidas.length) {
+        h += "<details><summary><b>❓ " + plural(C.sumidas.length, "loja do app não está neste arquivo", "lojas do app não estão neste arquivo") + "</b></summary>" +
+          lista(C.sumidas, function (l) { return "<li>" + esc(rotuloLoja(l)) + "</li>"; }) + "</details>" +
+          '<label class="marca-linha"><input type="checkbox" id="imp-desativar"> ' + (C.sumidas.length === 1 ? "Desativar essa loja" : "Desativar essas " + C.sumidas.length + " lojas") + " (some das rotas; dá para reativar)</label>";
+      }
+      var nada = !C.novas.length && !C.alteradas.length && !C.comLocal.length;
+      h += '<div class="acoes"><button class="prim" id="ok-imp">' + (nada && !C.sumidas.length ? "Fechar" : "Atualizar lojas") + "</button></div>";
+      var j = A.janela(h, { titulo: "Atualizar lojas", larga: true });
       $("#ok-imp", j.el).onclick = function () {
-        var b = this; A.ocupado(b, true, "Importando...");
-        var lotes = [];
-        for (var i = 0; i < novas.length; i += 200) lotes.push(sb.from("lojas").insert(novas.slice(i, i + 200)).select());
-        for (i = 0; i < atualizar.length; i += 200) lotes.push(sb.from("lojas").upsert(atualizar.slice(i, i + 200)).select());
-        Promise.all(lotes.map(q)).then(function () {
-          // coordenadas da planilha (se tiver) entram depois, uma a uma pelo id
+        var desativar = $("#imp-desativar", j.el) && $("#imp-desativar", j.el).checked;
+        if (nada && !desativar) { j.fechar(); return; }
+        var b = this; A.ocupado(b, true, "Atualizando...");
+        var passos = Promise.resolve();
+        for (var i = 0; i < C.novas.length; i += 200) {
+          (function (lote) { passos = passos.then(function () { return q(sb.from("lojas").insert(lote).select()); }); })(C.novas.slice(i, i + 200));
+        }
+        C.alteradas.forEach(function (a) {
+          var dados = {};
+          Object.keys(a.mud).forEach(function (k) { dados[k] = a.mud[k][1]; });
+          if (a.endMudou) { dados.lat = null; dados.lng = null; dados.geo_precisao = null; }
+          passos = passos.then(function () { return q(sb.from("lojas").update(dados).eq("id", a.loja.id).select()); });
+        });
+        if (desativar) {
+          var ids = C.sumidas.map(function (l) { return l.id; });
+          passos = passos.then(function () { return q(sb.from("lojas").update({ ativo: false }).in("id", ids).select()); });
+        }
+        passos.then(function () {
           return q(sb.from("lojas").select("*").limit(5000)).then(function (todas) {
             S.lojas = todas; ordenarLojas();
+            // coordenadas que vieram na planilha (se tiver)
             var porChave = {};
             todas.forEach(function (l) { if (l.cnpj) porChave["c" + A.soDigitos(l.cnpj)] = l; if (l.codigo) porChave["k" + l.tipo + "|" + l.codigo] = l; });
-            return comLocal.reduce(function (p, x) {
-              var l = (x.d.cnpj && porChave["c" + A.soDigitos(x.d.cnpj)]) || porChave["k" + x.d.tipo + "|" + x.d.codigo];
+            return C.comLocal.reduce(function (p, x) {
+              var l = x.id ? porId(S.lojas, x.id) : (x.d.cnpj && porChave["c" + A.soDigitos(x.d.cnpj)]) || porChave["k" + x.d.tipo + "|" + x.d.codigo];
               if (!l) return p;
               return p.then(function () { return q(sb.from("lojas").update({ lat: x.lat, lng: x.lng, geo_precisao: "manual" }).eq("id", l.id).select().single()).then(function (n) { trocar(S.lojas, n); }); });
             }, Promise.resolve());
           });
         }).then(function () {
           j.fechar(); ordenarLojas(); rota();
+          A.avisar("Lojas atualizadas: " + plural(C.novas.length, "nova", "novas") + ", " + plural(C.alteradas.length, "alterada", "alteradas") + (desativar ? ", " + plural(C.sumidas.length, "desativada", "desativadas") : ""), "ok");
           var sem = S.lojas.filter(function (l) { return l.ativo && !G.temLocal(l); }).length;
-          A.avisar("Importação concluída", "ok");
-          if (sem && A.confirmar(sem + " lojas ainda não estão no mapa. Localizar agora pelo endereço? (leva cerca de " + Math.ceil(sem * 2.5 / 60) + " min; pode deixar rodando)")) localizarLojas();
-        }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+          if (sem && A.confirmar(sem + " lojas ainda não estão no mapa. Localizar agora pelo endereço? (leva cerca de " + Math.max(1, Math.ceil(sem * 2.5 / 60)) + " min; pode deixar rodando)")) localizarLojas();
+        }).catch(function (e) {
+          A.ocupado(b, false); falhou(e);
+          // recarrega para mostrar o que já foi gravado antes do erro
+          q(sb.from("lojas").select("*").limit(5000)).then(function (todas) { S.lojas = todas; ordenarLojas(); }).catch(function () { /* fica a lista atual */ });
+        });
       };
     }).catch(falhou);
   }
