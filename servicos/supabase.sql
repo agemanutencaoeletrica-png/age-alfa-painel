@@ -197,6 +197,43 @@ alter table public.obras add column if not exists referencia    text;   -- nº d
 alter table public.obras add column if not exists fiscal        text;   -- nome do fiscal da prefeitura
 alter table public.relatorios add column if not exists fotos_antes text[] not null default '{}';
 
+-- Licitações de que a AGE participa (só o dono vê) e documentos de habilitação
+create table if not exists public.licitacoes (
+  id             uuid primary key default gen_random_uuid(),
+  prefeitura_id  uuid references public.prefeituras (id) on delete set null,
+  orgao          text not null,
+  modalidade     text,
+  numero         text,
+  objeto         text,
+  link           text,
+  abertura       timestamptz,
+  visita         timestamptz,
+  prazo_duvidas  timestamptz,
+  valor_estimado numeric(14, 2),
+  bdi            numeric(6, 2) not null default 0,
+  itens          jsonb not null default '[]'::jsonb,   -- planilha da proposta [{codigo, descricao, un, qtd, valor}]
+  proposta       numeric(14, 2),
+  validade_dias  integer not null default 60,
+  prazo_execucao text,
+  documentos     jsonb not null default '[]'::jsonb,   -- checklist [{nome, ok}]
+  status         text not null default 'analise'
+                 check (status in ('analise', 'participar', 'enviada', 'ganhou', 'perdeu', 'desistiu', 'cancelada')),
+  resultado      text,
+  contrato_id    uuid references public.contratos (id) on delete set null,
+  observacoes    text,
+  criado_em      timestamptz not null default now()
+);
+
+create table if not exists public.documentos (
+  id         uuid primary key default gen_random_uuid(),
+  nome       text not null,
+  validade   date,
+  link       text,
+  observacao text,
+  criado_em  timestamptz not null default now()
+);
+
+create index if not exists licitacoes_abertura_idx on public.licitacoes (abertura);
 create index if not exists obras_pref_idx      on public.obras (prefeitura_id);
 create index if not exists contratos_pref_idx  on public.contratos (prefeitura_id);
 create index if not exists medicoes_contr_idx  on public.medicoes (contrato_id);
@@ -264,7 +301,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
-                             'prefeituras', 'contratos', 'medicoes'] loop
+                             'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

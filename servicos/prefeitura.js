@@ -20,13 +20,13 @@
         "(SQL Editor → colar tudo → Run). Ele cria as tabelas de prefeituras, contratos e medições sem apagar nada. Depois toque em ↻.</div>";
       return;
     }
-    var abas = [["os", "Ordens de serviço"], ["medicoes", "Medições"], ["contratos", "Contratos"], ["prefeituras", "Prefeituras"]];
+    var abas = [["os", "Ordens de serviço"], ["medicoes", "Medições"], ["licitacoes", "Licitações"], ["contratos", "Contratos"], ["documentos", "Documentos"], ["prefeituras", "Prefeituras"]];
     c.innerHTML = '<div class="cab-secao"><h2>🏛️ Prefeitura</h2></div><div class="filtros" id="pf-abas">' +
       abas.map(function (a) { return '<button class="' + (a[0] === sub ? "prim" : "") + '" data-sub="' + a[0] + '">' + a[1] + "</button>"; }).join("") +
       '</div><div id="pf-corpo"></div>';
     $$("[data-sub]", c).forEach(function (b) { b.onclick = function () { sub = b.dataset.sub; ver(c, P); }; });
     var corpo = $("#pf-corpo", c);
-    ({ os: verOS, medicoes: verMedicoes, contratos: verContratos, prefeituras: verPrefeituras })[sub](corpo, c);
+    ({ os: verOS, medicoes: verMedicoes, licitacoes: verLicitacoes, contratos: verContratos, documentos: verDocumentos, prefeituras: verPrefeituras })[sub](corpo, c);
   }
   function redesenhar() { if ((location.hash.slice(1) || "hoje") === "prefeitura") P.rota(); }
 
@@ -924,5 +924,325 @@
     };
   }
 
-  window.AGE_PREF = { ver: ver, lerPlanilha: lerPlanilha, totalMed: totalMed };
+// =================================================================
+  // LICITAÇÕES (participação da AGE) e DOCUMENTOS de habilitação
+  // =================================================================
+  var MODALIDADE = { pregao_eletronico: "Pregão eletrônico", pregao_presencial: "Pregão presencial", concorrencia: "Concorrência",
+    tomada_precos: "Tomada de preços", convite: "Convite", dispensa: "Dispensa / cotação", credenciamento: "Credenciamento", outra: "Outra" };
+  var STATUS_LIC = { analise: "Em análise", participar: "Vamos participar", enviada: "Proposta enviada", ganhou: "Ganhou",
+    perdeu: "Perdeu", desistiu: "Desistiu", cancelada: "Cancelada / deserta" };
+  var COR_LIC = { analise: "", participar: "atencao", enviada: "atencao", ganhou: "bom", perdeu: "critico", desistiu: "", cancelada: "" };
+  var LIC_ATIVA = ["analise", "participar", "enviada"];
+  var DOCS_PADRAO = ["Contrato social e alterações", "Cartão CNPJ", "Documento do sócio / representante", "CND Federal (Receita e PGFN)",
+    "CND Estadual", "CND Municipal", "CRF - FGTS", "CNDT - Trabalhista", "Certidão negativa de falência", "Balanço patrimonial",
+    "Registro no CREA / CFT", "Atestado de capacidade técnica", "Inscrição municipal / estadual"];
+  var DIA = 86400000;
+
+  function diasAte(data) { return Math.floor((A.inicioDia(new Date(data)) - A.inicioDia(new Date())) / DIA); }
+  function dataHoraLocal(v) { if (!v) return ""; var d = new Date(v); return A.isoLocal(d) + "T" + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+  function lerDataHora(v) { return v ? new Date(v).toISOString() : null; }
+  function quando(v) {
+    if (!v) return "";
+    var n = diasAte(v);
+    return n < 0 ? "já foi (" + A.dataHora(v) + ")" : n === 0 ? "HOJE às " + A.hora(v) : n === 1 ? "amanhã às " + A.hora(v) : "em " + n + " dias (" + A.dataHora(v) + ")";
+  }
+  // proposta: preço unitário com BDI (arredondado), total = soma das linhas
+  function linhasProposta(itens, bdi) {
+    return (itens || []).map(function (i) {
+      var pu = arred((Number(i.valor) || 0) * (1 + (Number(bdi) || 0) / 100));
+      return { codigo: i.codigo || "", descricao: i.descricao, un: i.un, qtd: Number(i.qtd) || 0, pu: pu, total: arred((Number(i.qtd) || 0) * pu) };
+    });
+  }
+  function totalProposta(itens, bdi) { return arred(linhasProposta(itens, bdi).reduce(function (t, l) { return t + l.total; }, 0)); }
+  function docPorNome(nome) {
+    var n = semAcento(nome);
+    return P.S.docs.filter(function (d) { return semAcento(d.nome) === n; })[0] || null;
+  }
+  function seloValidade(d) {
+    if (!d || !d.validade) return d ? '<span class="selo">sem validade</span>' : "";
+    var n = diasAte(d.validade + "T12:00:00");
+    if (n < 0) return '<span class="selo critico">vencido em ' + A.dataSimples(d.validade) + "</span>";
+    if (n <= 30) return '<span class="selo atencao">vence em ' + n + " dia(s)</span>";
+    return '<span class="selo bom">válido até ' + A.dataSimples(d.validade) + "</span>";
+  }
+  function linkAgenda(l) {
+    var ini = new Date(l.abertura), fim = new Date(ini.getTime() + 3600000);
+    var f = function (d) { return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, ""); };
+    return "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent("Licitação " + (l.numero || "") + " - " + l.orgao) +
+      "&dates=" + f(ini) + "/" + f(fim) + "&details=" + encodeURIComponent((l.objeto || "") + (l.link ? "\n" + l.link : ""));
+  }
+
+  // avisos para a aba Hoje do painel
+  function avisosHoje(S) {
+    if (S.semPref) return "";
+    var h = "";
+    var prox = (S.lic || []).filter(function (l) { return LIC_ATIVA.indexOf(l.status) >= 0 && l.abertura && diasAte(l.abertura) >= 0 && diasAte(l.abertura) <= 7; })
+      .sort(function (a, b) { return new Date(a.abertura) - new Date(b.abertura); });
+    if (prox.length) h += '<div class="aviso">📑 <b>Licitações chegando:</b> ' + prox.map(function (l) {
+      return esc(l.orgao + (l.numero ? " " + l.numero : "")) + " — abre " + esc(quando(l.abertura));
+    }).join("; ") + '. Veja em <a href="#prefeitura">Prefeitura → Licitações</a>.</div>';
+    var venc = (S.docs || []).filter(function (d) { return d.validade && diasAte(d.validade + "T12:00:00") <= 15; });
+    if (venc.length) h += '<div class="aviso erro">📄 <b>Documentos vencidos ou vencendo:</b> ' + venc.map(function (d) {
+      var n = diasAte(d.validade + "T12:00:00"); return esc(d.nome) + (n < 0 ? " (vencido)" : " (vence em " + n + " dia(s))");
+    }).join(", ") + '. Renove e atualize em <a href="#prefeitura">Prefeitura → Documentos</a>.</div>';
+    return h;
+  }
+
+  function verLicitacoes(c) {
+    var S = P.S;
+    c.innerHTML = '<div class="cab-secao"><h3 style="margin:0">Licitações</h3><button class="prim dir" id="pf-nova-lic">+ Nova licitação</button></div>' +
+      '<div class="filtros"><select id="lc-f" aria-label="Situação"><option value="ativas">Em andamento</option><option value="encerradas">Encerradas</option><option value="todas">Todas</option></select></div><div id="lc-lista"></div>';
+    $("#lc-f", c).value = filtro.lic || "ativas";
+    $("#lc-f", c).onchange = function () { filtro.lic = this.value; listar(); };
+    $("#pf-nova-lic", c).onclick = function () { editarLicitacao(null); };
+    function listar() {
+      var f = filtro.lic || "ativas";
+      var lista = S.lic.filter(function (l) { var at = LIC_ATIVA.indexOf(l.status) >= 0; return f === "todas" || (f === "ativas") === at; })
+        .sort(function (a, b) {
+          var aa = LIC_ATIVA.indexOf(a.status) >= 0, ab = LIC_ATIVA.indexOf(b.status) >= 0;
+          if (aa !== ab) return aa ? -1 : 1;
+          var x = a.abertura ? new Date(a.abertura).getTime() : 9e15, y = b.abertura ? new Date(b.abertura).getTime() : 9e15;
+          return aa ? x - y : y - x;
+        });
+      var l = $("#lc-lista", c);
+      if (!lista.length) { l.innerHTML = '<div class="cartao vazio">' + (f === "ativas" ? "Nenhuma licitação em andamento. Cadastre o edital que a AGE vai disputar." : "Nada aqui.") + "</div>"; return; }
+      l.innerHTML = lista.map(function (x) {
+        var docs = x.documentos || [], okd = docs.filter(function (d) { return d.ok; }).length, ativa = LIC_ATIVA.indexOf(x.status) >= 0;
+        var n = x.abertura ? diasAte(x.abertura) : null;
+        return '<div class="cartao clic" data-lic="' + x.id + '" style="cursor:pointer"><div class="linha"><h3>' + esc(x.orgao) + "</h3>" +
+          '<span class="selo ' + COR_LIC[x.status] + '">' + STATUS_LIC[x.status] + "</span>" +
+          (ativa && n !== null && n >= 0 && n <= 3 ? '<span class="selo critico">abre ' + (n === 0 ? "HOJE" : n === 1 ? "amanhã" : "em " + n + " dias") + "</span>" : "") + "</div>" +
+          '<div class="peq">' + esc([MODALIDADE[x.modalidade], x.numero].filter(Boolean).join(" nº ")) + (x.objeto ? " · " + esc(x.objeto.length > 120 ? x.objeto.slice(0, 120) + "…" : x.objeto) : "") + "</div>" +
+          '<div class="peq mudo">' + (x.abertura ? "📅 Abertura " + esc(quando(x.abertura)) : "Sem data de abertura") +
+          (x.visita && ativa && diasAte(x.visita) >= 0 ? " · visita técnica " + esc(quando(x.visita)) : "") + "</div>" +
+          '<div class="linha" style="margin-top:6px">' + (docs.length ? '<span class="selo ' + (okd === docs.length ? "bom" : "atencao") + '">documentos ' + okd + "/" + docs.length + "</span>" : "") +
+          (x.proposta ? '<span class="selo">proposta ' + A.dinheiro(x.proposta) + "</span>" : "") +
+          (x.valor_estimado ? '<span class="peq mudo">estimado ' + A.dinheiro(x.valor_estimado) + "</span>" : "") +
+          (x.contrato_id ? '<span class="selo bom">contrato criado</span>' : "") + "</div></div>";
+      }).join("");
+      $$("[data-lic]", l).forEach(function (d) { d.onclick = function () { editarLicitacao(d.dataset.lic); }; });
+    }
+    listar();
+  }
+
+  function editarLicitacao(id) {
+    var S = P.S, x = id ? P.porId(S.lic, id) : null;
+    var docs = x ? JSON.parse(JSON.stringify(x.documentos || [])) :
+      DOCS_PADRAO.concat(S.docs.map(function (d) { return d.nome; })).filter(function (n, i, a) {
+        return a.findIndex(function (m) { return semAcento(m) === semAcento(n); }) === i;
+      }).map(function (n) { return { nome: n, ok: false }; });
+    var j = A.janela(
+      '<div class="duas"><div><label for="lc-orgao">Órgão *</label><input id="lc-orgao" list="lc-dl-pref" maxlength="200" placeholder="Ex.: Prefeitura Municipal de Contagem">' +
+      '<datalist id="lc-dl-pref">' + S.pref.map(function (p) { return '<option value="' + esc(p.nome) + '">'; }).join("") + "</datalist></div>" +
+      '<div><label for="lc-mod">Modalidade</label><select id="lc-mod"><option value="">—</option>' + Object.keys(MODALIDADE).map(function (m) { return '<option value="' + m + '">' + MODALIDADE[m] + "</option>"; }).join("") + "</select></div></div>" +
+      '<div class="duas"><div><label for="lc-num">Nº do edital / processo</label><input id="lc-num" maxlength="120"></div>' +
+      '<div><label for="lc-st">Situação</label><select id="lc-st">' + Object.keys(STATUS_LIC).map(function (m) { return '<option value="' + m + '">' + STATUS_LIC[m] + "</option>"; }).join("") + "</select></div></div>" +
+      '<label for="lc-obj">Objeto</label><textarea id="lc-obj" rows="2" maxlength="2000"></textarea>' +
+      '<label for="lc-link">Link do edital / portal</label><input id="lc-link" type="url" maxlength="500" placeholder="https://...">' +
+      '<div class="duas"><div><label for="lc-ab">Abertura das propostas</label><input type="datetime-local" id="lc-ab"></div>' +
+      '<div><label for="lc-vis">Visita técnica</label><input type="datetime-local" id="lc-vis"></div></div>' +
+      '<div class="duas"><div><label for="lc-duv">Prazo para dúvidas / impugnação</label><input type="datetime-local" id="lc-duv"></div>' +
+      '<div><label for="lc-est">Valor estimado pelo órgão (R$)</label><input id="lc-est" inputmode="decimal"></div></div>' +
+      '<h3 style="margin-top:14px">Documentos de habilitação</h3><p class="mudo peq" style="margin:0 0 4px">Marque o que já está separado. A validade vem da aba <b>Documentos</b>.</p>' +
+      '<div id="lc-docs"></div><div class="linha" style="margin-top:6px;flex-wrap:nowrap"><input id="lc-doc-novo" maxlength="150" placeholder="Outro documento exigido no edital"><button class="peq" id="lc-doc-add">+ Incluir</button></div>' +
+      '<h3 style="margin-top:14px">Proposta de preços</h3><p class="mudo peq" style="margin:0 0 4px">Cole do Excel: <b>código · descrição · unidade · quantidade · preço unitário (sem BDI)</b>.</p>' +
+      '<textarea id="lc-itens" rows="6" style="font-family:monospace;font-size:13px;white-space:pre"></textarea>' +
+      '<div class="duas"><div><label for="lc-bdi">BDI (%)</label><input id="lc-bdi" inputmode="decimal" placeholder="0"></div>' +
+      '<div><label for="lc-prop">Valor da proposta (R$)</label><input id="lc-prop" inputmode="decimal" placeholder="sai da planilha"></div></div>' +
+      '<div id="lc-prev" class="peq"></div>' +
+      '<div class="duas"><div><label for="lc-val">Validade da proposta (dias)</label><input id="lc-val" type="number" min="1" max="365"></div>' +
+      '<div><label for="lc-prazo">Prazo de execução</label><input id="lc-prazo" maxlength="200" placeholder="Ex.: 12 meses"></div></div>' +
+      '<label for="lc-res">Resultado (vencedor, valor, colocação)</label><input id="lc-res" maxlength="300">' +
+      '<label for="lc-obs">Observações</label><textarea id="lc-obs" rows="2"></textarea>' +
+      '<div id="lc-erro"></div><div class="acoes"><button class="prim" id="lc-salvar">Salvar</button><button id="lc-pdf">📄 Proposta em PDF</button>' +
+      '<a class="botao oculto" id="lc-agenda" target="_blank" rel="noopener">📅 Pôr na agenda</a><a class="botao oculto" id="lc-edital" target="_blank" rel="noopener">🔗 Abrir edital</a></div>' +
+      '<div class="acoes" style="margin-top:8px"><button class="bom oculto" id="lc-ganhou">🏆 Ganhou: criar o contrato</button>' + (x ? '<button class="perigo" id="lc-apagar">Apagar</button>' : "") + "</div>",
+      { titulo: x ? "Licitação " + (x.numero || "") : "Nova licitação", larga: true, fixa: true });
+    var el = j.el;
+    if (x) {
+      $("#lc-orgao", el).value = x.orgao; $("#lc-mod", el).value = x.modalidade || ""; $("#lc-num", el).value = x.numero || ""; $("#lc-st", el).value = x.status;
+      $("#lc-obj", el).value = x.objeto || ""; $("#lc-link", el).value = x.link || ""; $("#lc-ab", el).value = dataHoraLocal(x.abertura);
+      $("#lc-vis", el).value = dataHoraLocal(x.visita); $("#lc-duv", el).value = dataHoraLocal(x.prazo_duvidas);
+      $("#lc-est", el).value = x.valor_estimado ? A.numero(x.valor_estimado) : ""; $("#lc-itens", el).value = planilhaTexto(x.itens);
+      $("#lc-bdi", el).value = x.bdi ? A.numero(x.bdi) : ""; $("#lc-prop", el).value = x.proposta && !(x.itens || []).length ? A.numero(x.proposta) : "";
+      $("#lc-val", el).value = x.validade_dias || 60; $("#lc-prazo", el).value = x.prazo_execucao || ""; $("#lc-res", el).value = x.resultado || ""; $("#lc-obs", el).value = x.observacoes || "";
+    } else $("#lc-val", el).value = 60;
+
+    function desenharDocs() {
+      $("#lc-docs", el).innerHTML = docs.map(function (d, i) {
+        return '<div class="linha" style="padding:4px 0;border-bottom:1px solid var(--borda)"><label class="marca-linha" style="margin:0;font-weight:400;flex:1"><input type="checkbox" data-doc="' + i + '"' + (d.ok ? " checked" : "") + "> " + esc(d.nome) + "</label>" +
+          seloValidade(docPorNome(d.nome)) + '<button class="peq texto" data-doc-tirar="' + i + '" aria-label="Tirar documento">✕</button></div>';
+      }).join("");
+      $$("[data-doc]", el).forEach(function (cb) { cb.onchange = function () { docs[Number(cb.dataset.doc)].ok = cb.checked; }; });
+      $$("[data-doc-tirar]", el).forEach(function (b) { b.onclick = function () { docs.splice(Number(b.dataset.docTirar), 1); desenharDocs(); }; });
+    }
+    desenharDocs();
+    $("#lc-doc-add", el).onclick = function () { var n = P.val(el, "#lc-doc-novo"); if (!n) return; docs.push({ nome: n, ok: false }); $("#lc-doc-novo", el).value = ""; desenharDocs(); };
+
+    function calc() {
+      var r = lerPlanilha($("#lc-itens", el).value), bdi = A.lerNumero($("#lc-bdi", el).value);
+      var total = r.itens.length ? totalProposta(r.itens, bdi) : A.lerNumero($("#lc-prop", el).value), est = A.lerNumero($("#lc-est", el).value);
+      $("#lc-prop", el).disabled = r.itens.length > 0;
+      if (r.itens.length) $("#lc-prop", el).value = A.numero(total);
+      $("#lc-prev", el).innerHTML = (r.itens.length ? r.itens.length + " itens" + (bdi ? " · preços com BDI de " + A.numero(bdi) + "%" : "") + " · " : "") +
+        (total ? "<b>Proposta: " + A.dinheiro(total) + "</b>" : "") +
+        (total && est ? " · " + (total <= est ? A.numero((1 - total / est) * 100, 1) + "% abaixo do estimado" : '<span style="color:var(--critico)">' + A.numero((total / est - 1) * 100, 1) + "% ACIMA do estimado</span>") : "") +
+        (r.ignoradas ? ' · <span class="mudo">' + r.ignoradas + " linha(s) ignorada(s)</span>" : "");
+      return { itens: r.itens, bdi: bdi, total: total };
+    }
+    ["#lc-itens", "#lc-bdi", "#lc-prop", "#lc-est"].forEach(function (s2) { $(s2, el).oninput = calc; });
+    calc();
+    function botoes() {
+      var ab = $("#lc-ab", el).value, ln = P.val(el, "#lc-link");
+      $("#lc-agenda", el).classList.toggle("oculto", !ab);
+      if (ab) $("#lc-agenda", el).href = linkAgenda({ abertura: new Date(ab), numero: P.val(el, "#lc-num"), orgao: P.val(el, "#lc-orgao"), objeto: P.val(el, "#lc-obj"), link: ln });
+      $("#lc-edital", el).classList.toggle("oculto", !/^https?:\/\//i.test(ln));
+      if (/^https?:\/\//i.test(ln)) $("#lc-edital", el).href = ln;
+      $("#lc-ganhou", el).classList.toggle("oculto", !($("#lc-st", el).value === "ganhou" && !(x && x.contrato_id)));
+    }
+    ["#lc-ab", "#lc-link", "#lc-st", "#lc-num", "#lc-orgao"].forEach(function (s2) { $(s2, el).addEventListener("input", botoes); $(s2, el).addEventListener("change", botoes); });
+    botoes();
+
+    function salvar() {
+      if (!P.val(el, "#lc-orgao")) return Promise.reject(new Error("Informe o órgão."));
+      var cc = calc(), orgao = P.val(el, "#lc-orgao");
+      var pf = S.pref.filter(function (p) { return semAcento(p.nome) === semAcento(orgao); })[0];
+      var dados = { orgao: orgao, prefeitura_id: pf ? pf.id : (x ? x.prefeitura_id : null), modalidade: P.nulo($("#lc-mod", el).value), numero: P.nulo(P.val(el, "#lc-num")),
+        status: $("#lc-st", el).value, objeto: P.nulo(P.val(el, "#lc-obj")), link: P.nulo(P.val(el, "#lc-link")),
+        abertura: lerDataHora($("#lc-ab", el).value), visita: lerDataHora($("#lc-vis", el).value), prazo_duvidas: lerDataHora($("#lc-duv", el).value),
+        valor_estimado: P.val(el, "#lc-est") ? arred(A.lerNumero(P.val(el, "#lc-est"))) : null, itens: cc.itens, bdi: arred(cc.bdi), proposta: cc.total ? arred(cc.total) : null,
+        validade_dias: Math.max(1, parseInt($("#lc-val", el).value, 10) || 60), prazo_execucao: P.nulo(P.val(el, "#lc-prazo")),
+        documentos: docs, resultado: P.nulo(P.val(el, "#lc-res")), observacoes: P.nulo(P.val(el, "#lc-obs")) };
+      var q = x ? P.sb.from("licitacoes").update(dados).eq("id", x.id).select().single() : P.sb.from("licitacoes").insert(dados).select().single();
+      return P.q(q).then(function (n) { P.trocar(S.lic, n); x = n; el.closest(".modal").querySelector(".cab h2").textContent = "Licitação " + (n.numero || ""); botoes(); return n; });
+    }
+    $("#lc-salvar", el).onclick = function () {
+      var b = this; A.ocupado(b, true, "Salvando...");
+      salvar().then(function () { A.ocupado(b, false); A.avisar("Licitação salva", "ok"); redesenhar(); })
+        .catch(function (e) { A.ocupado(b, false); $("#lc-erro", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
+    };
+    $("#lc-pdf", el).onclick = function () {
+      var b = this;
+      if (!lerPlanilha($("#lc-itens", el).value).itens.length) { A.avisar("Cole a planilha da proposta para gerar o PDF.", "erro"); return; }
+      A.ocupado(b, true, "Gerando PDF...");
+      salvar().then(function (n) { return P.carregarJsPdf().then(function (JsPDF) { return pdfProposta(JsPDF, n); }).then(function (blob) {
+        A.ocupado(b, false); redesenhar();
+        entregarPdf(blob, "Proposta-" + (nomeArq(n.numero) || "licitacao") + "-" + nomeArq(n.orgao) + ".pdf", "Proposta de preços");
+      }); }).catch(function (e) { A.ocupado(b, false); P.falhou(e); });
+    };
+    $("#lc-ganhou", el).onclick = function () {
+      var b = this;
+      var num = window.prompt("Nº do contrato assinado com o órgão:", P.val(el, "#lc-num"));
+      if (num === null) return;
+      A.ocupado(b, true, "Criando contrato...");
+      salvar().then(function (n) {
+        var pf = P.porId(S.pref, n.prefeitura_id);
+        var pPref = pf ? Promise.resolve(pf) : P.q(P.sb.from("prefeituras").insert({ nome: n.orgao }).select().single()).then(function (np) {
+          P.trocar(S.pref, np); S.pref.sort(function (a, c2) { return a.nome.localeCompare(c2.nome); }); return np;
+        });
+        return pPref.then(function (p2) {
+          // os preços do contrato já levam o BDI da proposta (a medição não aplica de novo)
+          var itens = linhasProposta(n.itens, n.bdi).map(function (l) { return { codigo: l.codigo, descricao: l.descricao, un: l.un, qtd: l.qtd, valor: l.pu }; });
+          return P.q(P.sb.from("contratos").insert({ prefeitura_id: p2.id, numero: String(num).trim() || n.numero || "a definir",
+            processo: [MODALIDADE[n.modalidade], n.numero].filter(Boolean).join(" ") || null, objeto: n.objeto, valor_total: n.proposta, bdi: 0, itens: itens,
+            observacoes: "Criado da licitação " + (n.numero || "") + (Number(n.bdi) ? " (preços já com BDI de " + A.numero(n.bdi) + "%)" : "") }).select().single())
+            .then(function (k) {
+              P.trocar(S.contr, k);
+              return P.q(P.sb.from("licitacoes").update({ contrato_id: k.id, prefeitura_id: p2.id }).eq("id", n.id).select().single()).then(function (n2) { P.trocar(S.lic, n2); return k; });
+            });
+        });
+      }).then(function (k) {
+        j.fechar(); sub = "contratos"; redesenhar(); A.avisar("Contrato criado. Confira as datas de vigência.", "ok"); editarContrato(k.id);
+      }).catch(function (e) { A.ocupado(b, false); P.falhou(e); });
+    };
+    if (x) $("#lc-apagar", el).onclick = function () {
+      if (!A.confirmar("Apagar esta licitação?")) return;
+      P.q(P.sb.from("licitacoes").delete().eq("id", x.id)).then(function () { P.tirar(S.lic, x.id); j.fechar(); A.avisar("Apagada", "ok"); redesenhar(); }).catch(P.falhou);
+    };
+  }
+
+  function pdfProposta(JsPDF, l) {
+    var doc = new JsPDF({ unit: "mm", format: "a4" }), L = 15, R = 195, y = 18, E = A.CFG.EMPRESA || {}, linhas = linhasProposta(l.itens, l.bdi);
+    function cab() {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(90);
+      doc.text("ITEM", L + 1, y); doc.text("DESCRIÇÃO", L + 17, y); doc.text("UN", 120, y); doc.text("QTD", 145, y, { align: "right" });
+      doc.text("PREÇO UN.", 168, y, { align: "right" }); doc.text("TOTAL", R - 1, y, { align: "right" });
+      y += 2; doc.setDrawColor(200); doc.setLineWidth(0.3); doc.line(L, y, R, y); y += 4; doc.setTextColor(20, 20, 20);
+    }
+    function espaco(alt) { if (y + alt > 278) { doc.addPage(); y = 18; cab(); return true; } return false; }
+    y = cabecalhoPdf(doc, "PROPOSTA DE PREÇOS", ["Data: " + A.data(new Date())], L, R, y);
+    y = caixaInfo(doc, [["Ao órgão:", l.orgao], ["Licitação:", [MODALIDADE[l.modalidade], l.numero].filter(Boolean).join(" nº ")], ["Objeto:", l.objeto]], L, R, y, 22);
+    cab();
+    linhas.forEach(function (i) {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.8);
+      var d = doc.splitTextToSize(tx(i.descricao), 98), alt = d.length * 4 + 2.2;
+      espaco(alt);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.8);
+      doc.text(tx(i.codigo), L + 1, y); doc.text(d, L + 17, y); doc.text(tx(i.un), 120, y);
+      doc.text(tx(A.numero(i.qtd, 3)), 145, y, { align: "right" }); doc.text(tx(A.dinheiro(i.pu)), 168, y, { align: "right" }); doc.text(tx(A.dinheiro(i.total)), R - 1, y, { align: "right" });
+      y += alt - 2.2; doc.setDrawColor(225); doc.setLineWidth(0.2); doc.line(L, y - 1.4, R, y - 1.4); y += 3;
+    });
+    espaco(14); y += 2;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text("VALOR GLOBAL DA PROPOSTA", 100, y); doc.text(tx(A.dinheiro(totalProposta(l.itens, l.bdi))), R - 1, y, { align: "right" }); y += 9;
+    var cond = ["Validade da proposta: " + (l.validade_dias || 60) + " dias a contar da data de abertura."];
+    if (l.prazo_execucao) cond.push("Prazo de execução: " + l.prazo_execucao + ".");
+    if (Number(l.bdi)) cond.push("Preços unitários com BDI de " + A.numero(l.bdi) + "% incluído.");
+    cond.push("Declaramos que nos preços propostos estão incluídos todos os custos diretos e indiretos, tributos, encargos sociais e trabalhistas, materiais, mão de obra, equipamentos e demais despesas necessárias à execução do objeto.");
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+    cond.forEach(function (t) { var ls = doc.splitTextToSize(tx(t), R - L); espaco(ls.length * 4.6 + 2); doc.text(ls, L, y); y += ls.length * 4.6 + 2; });
+    if (espaco(36)) y += 6; else y += 10;
+    doc.text(tx((E.cidade ? E.cidade + ", " : "") + new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }) + "."), L, y); y += 22;
+    doc.setDrawColor(60); doc.setLineWidth(0.3); doc.line(60, y, 150, y);
+    doc.text(tx(E.nome || "AGE Elétrica e Pintura"), 105, y + 4.5, { align: "center" });
+    doc.setFontSize(8.5); doc.text(tx("Representante legal" + (E.documento ? " - " + E.documento : "")), 105, y + 9, { align: "center" });
+    rodapePdf(doc, "Proposta de preços - " + l.orgao + (l.numero ? " - " + l.numero : ""), 210, 297);
+    doc.setProperties({ title: tx("Proposta " + (l.numero || "") + " - " + l.orgao), author: tx(E.nome || "AGE Elétrica e Pintura") });
+    return doc.output("blob");
+  }
+
+  function verDocumentos(c) {
+    var S = P.S;
+    var lista = S.docs.slice().sort(function (a, b) { return (a.validade || "9999") < (b.validade || "9999") ? -1 : (a.validade || "9999") > (b.validade || "9999") ? 1 : a.nome.localeCompare(b.nome); });
+    c.innerHTML = '<div class="cab-secao"><h3 style="margin:0">Documentos de habilitação</h3><button class="prim dir" id="dc-novo">+ Documento</button></div>' +
+      '<p class="mudo peq" style="margin-top:-4px">Certidões e documentos pedidos nas licitações. Cadastre a validade: o painel avisa na aba Hoje quando faltar 15 dias.</p>' +
+      (lista.length ? lista.map(function (d) {
+        return '<div class="cartao clic" data-doc-id="' + d.id + '" style="cursor:pointer"><div class="linha"><b>' + esc(d.nome) + "</b>" + seloValidade(d) +
+          (d.link ? '<a class="dir peq" href="' + esc(d.link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 abrir</a>' : "") + "</div>" +
+          (d.observacao ? '<div class="peq mudo">' + esc(d.observacao) + "</div>" : "") + "</div>";
+      }).join("") : '<div class="cartao vazio">Nenhum documento cadastrado.<div class="acoes" style="justify-content:center"><button class="prim" id="dc-padrao">Cadastrar a lista padrão (' + DOCS_PADRAO.length + " documentos)</button></div></div>");
+    $("#dc-novo", c).onclick = function () { editarDocumento(null); };
+    if ($("#dc-padrao", c)) $("#dc-padrao", c).onclick = function () {
+      var b = this; A.ocupado(b, true, "Cadastrando...");
+      P.q(P.sb.from("documentos").insert(DOCS_PADRAO.map(function (n) { return { nome: n }; })).select()).then(function (ns) {
+        ns.forEach(function (n) { S.docs.push(n); }); A.avisar("Lista criada. Abra cada documento e coloque a validade.", "ok"); redesenhar();
+      }).catch(function (e) { A.ocupado(b, false); P.falhou(e); });
+    };
+    $$("[data-doc-id]", c).forEach(function (d) { d.onclick = function () { editarDocumento(d.dataset.docId); }; });
+  }
+
+  function editarDocumento(id) {
+    var S = P.S, d = id ? P.porId(S.docs, id) : null;
+    var j = A.janela('<label for="dc-nome">Documento *</label><input id="dc-nome" maxlength="150" placeholder="Ex.: CND Federal">' +
+      '<label for="dc-val">Válido até</label><input type="date" id="dc-val">' +
+      '<label for="dc-link">Link do arquivo (Google Drive, site do órgão...)</label><input id="dc-link" type="url" maxlength="500" placeholder="https://...">' +
+      '<label for="dc-obs">Observação</label><input id="dc-obs" maxlength="300" placeholder="Ex.: emitir em receita.fazenda.gov.br">' +
+      '<div class="acoes"><button class="prim" id="dc-salvar">Salvar</button>' + (d ? '<button class="perigo" id="dc-apagar">Apagar</button>' : "") + "</div>",
+      { titulo: d ? d.nome : "Novo documento" });
+    var el = j.el;
+    if (d) { $("#dc-nome", el).value = d.nome; $("#dc-val", el).value = d.validade || ""; $("#dc-link", el).value = d.link || ""; $("#dc-obs", el).value = d.observacao || ""; }
+    $("#dc-salvar", el).onclick = function () {
+      var b = this;
+      if (!P.val(el, "#dc-nome")) { A.avisar("Informe o documento.", "erro"); return; }
+      var dados = { nome: P.val(el, "#dc-nome"), validade: $("#dc-val", el).value || null, link: P.nulo(P.val(el, "#dc-link")), observacao: P.nulo(P.val(el, "#dc-obs")) };
+      A.ocupado(b, true, "Salvando...");
+      var q = d ? P.sb.from("documentos").update(dados).eq("id", d.id).select().single() : P.sb.from("documentos").insert(dados).select().single();
+      P.q(q).then(function (n) { P.trocar(S.docs, n); j.fechar(); A.avisar("Salvo", "ok"); redesenhar(); }).catch(function (e) { A.ocupado(b, false); P.falhou(e); });
+    };
+    if (d) $("#dc-apagar", el).onclick = function () {
+      if (!A.confirmar("Apagar " + d.nome + "?")) return;
+      P.q(P.sb.from("documentos").delete().eq("id", d.id)).then(function () { P.tirar(S.docs, d.id); j.fechar(); A.avisar("Apagado", "ok"); redesenhar(); }).catch(P.falhou);
+    };
+  }
+
+  window.AGE_PREF = { ver: ver, avisosHoje: avisosHoje, lerPlanilha: lerPlanilha, totalMed: totalMed, totalProposta: totalProposta };
 })();

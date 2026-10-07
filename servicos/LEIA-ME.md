@@ -148,6 +148,21 @@ Para OS de prefeituras e outros órgãos públicos: prédios públicos, ilumina�
    acumulado anterior, saldo de cada item e saldo do contrato. Gera o **PDF do boletim de medição** (com campos de
    assinatura da AGE, fiscal e gestor) e a **planilha para Excel**. Uma OS medida não entra em outra medição.
 
+### Licitações (Prefeitura → Licitações e Documentos)
+1. **Documentos** → *Cadastrar a lista padrão* (contrato social, CNDs, FGTS, trabalhista, balanço, CREA/CFT, atestados...).
+   Abra cada um e coloque **até quando vale** e, se quiser, o link do arquivo (Google Drive). A aba **Hoje** avisa
+   quando um documento venceu ou vence em até 15 dias.
+2. **Licitações** → *+ Nova licitação*: órgão, modalidade, nº do edital, objeto, link do edital, **data de abertura**,
+   visita técnica, prazo para dúvidas e valor estimado. Toque **📅 Pôr na agenda** para lembrar no celular.
+   A aba **Hoje** avisa as licitações que abrem nos próximos 7 dias.
+3. **Checklist de documentos**: marque o que já está separado (a validade de cada um aparece ao lado) e inclua o que
+   o edital pedir a mais.
+4. **Proposta**: cole a planilha do Excel (código · descrição · unidade · quantidade · preço **sem** BDI) e informe o BDI.
+   O app calcula o preço unitário com BDI, o valor global e quanto fica abaixo (ou acima) do estimado.
+   **📄 Proposta em PDF** gera a proposta de preços com validade, prazo, declaração e campo de assinatura.
+5. Resultado: mude a situação. Se **ganhou**, toque **🏆 Ganhou: criar o contrato** — o contrato já nasce com os itens e
+   os preços da proposta (com o BDI incluído), pronto para as OS e as medições.
+
 ### Segurança e controle do ponto
 - A **hora** de cada registro é a do servidor, não a do celular (não dá para adiantar o relógio).
 - Toda foto sai **carimbada** com tipo, nome, data/hora e coordenadas; no ponto o app pede foto tirada na hora e recusa foto antiga da galeria (quando o celular informa a data do arquivo).

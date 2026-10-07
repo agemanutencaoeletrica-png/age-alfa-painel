@@ -5,7 +5,7 @@
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var app = $("#app");
   var sb = null;
-  var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [], pref: [], contr: [], med: [], semPref: false };
+  var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [], pref: [], contr: [], med: [], lic: [], docs: [], semPref: false };
   var urls = {};        // caminho da foto -> { url, vence }
   var infoFoto = {};    // caminho da foto -> html com detalhes (hora, GPS...)
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "" };
@@ -153,11 +153,14 @@
       Promise.all([
         q(sb.from("prefeituras").select("*").order("nome")),
         q(sb.from("contratos").select("*").order("criado_em", { ascending: false })),
-        q(sb.from("medicoes").select("*").order("numero", { ascending: false }).limit(500))
+        q(sb.from("medicoes").select("*").order("numero", { ascending: false }).limit(500)),
+        q(sb.from("licitacoes").select("*").order("abertura", { ascending: false }).limit(500)),
+        q(sb.from("documentos").select("*").order("nome"))
       ]).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
+      S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
     });
   }
 
@@ -215,6 +218,7 @@
       if (daEquipe.length) h += '<div class="aviso">🆕 A equipe cadastrou ' + (daEquipe.length === 1 ? "1 serviço" : daEquipe.length + " serviços") +
         ' hoje: ' + daEquipe.slice(0, 5).map(function (s) { var o = porId(S.obras, s.obra_id); return esc((o ? o.cliente : "") + " (" + nomeFunc(s.funcionario_id) + ")"); }).join(", ") +
         '. Veja em <a href="#servicos">Serviços</a>.</div>';
+      if (window.AGE_PREF) h += window.AGE_PREF.avisosHoje(S);
       h += '<div class="cab-secao"><h2>Equipe hoje</h2><span class="mudo peq">' + A.data(new Date()) + "</span></div>";
       var equipe = S.func.filter(function (f) { return f.ativo || pts.some(function (p) { return p.funcionario_id === f.id; }); });
       if (!equipe.length) h += '<div class="cartao vazio">Cadastre sua equipe na aba <a href="#equipe">Equipe</a>.</div>';
