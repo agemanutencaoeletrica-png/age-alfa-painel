@@ -1,7 +1,7 @@
 // Service worker do app de serviços da AGE (só vale dentro da pasta servicos/).
 // Sempre busca a versão nova na internet; se estiver sem sinal, abre a última
 // versão guardada. Dados do Supabase e fotos NUNCA ficam guardados aqui.
-var CACHE = "age-servicos-v5";
+var CACHE = "age-servicos-v6";
 var BASICOS = ["./index.html", "./funcionario.html", "./estilo.css", "./comum.js", "./admin.js", "./funcionario.js", "./geo.js", "./lojas-doc.js", "./prefeitura.js", "./config.js",
   "./icone.svg", "./icone-192.png", "./icone-512.png", "./manifest.webmanifest", "./manifest-funcionario.webmanifest"];
 
@@ -21,7 +21,9 @@ self.addEventListener("fetch", function (e) {
   var u = new URL(r.url);
   // só os arquivos do próprio app; Supabase (dados e fotos) e bibliotecas vão direto para a internet
   if (u.origin !== self.location.origin) return;
-  e.respondWith(fetch(r).then(function (resp) {
+  // "no-cache": sempre confere com o servidor (o GitHub Pages manda guardar por 10 min,
+  // o que fazia a versão nova demorar a aparecer depois de uma atualização)
+  e.respondWith(fetch(r.url, { cache: "no-cache", credentials: "same-origin" }).then(function (resp) {
     if (resp.ok) {
       var copia = resp.clone();
       caches.open(CACHE).then(function (c) { c.put(r, copia); });
