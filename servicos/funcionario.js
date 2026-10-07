@@ -291,6 +291,62 @@
     });
   }
 
+  // ---------- Quadro de assinatura (dedo ou caneta na tela) ----------
+  function quadroAssinatura(cv, aoMudar) {
+    var cx = cv.getContext("2d"), tracos = [], atual = null;
+    function ajustar() {
+      var r = cv.getBoundingClientRect(), k = window.devicePixelRatio || 1;
+      if (!r.width) return;
+      cv.width = Math.round(r.width * k); cv.height = Math.round(r.height * k);
+      cx.setTransform(k, 0, 0, k, 0, 0);
+      redesenhar();
+    }
+    function redesenhar() {
+      var r = cv.getBoundingClientRect();
+      cx.clearRect(0, 0, r.width, r.height);
+      cx.lineWidth = 2.6; cx.lineCap = "round"; cx.lineJoin = "round"; cx.strokeStyle = "#0d1b33";
+      tracos.forEach(function (t) {
+        cx.beginPath();
+        t.forEach(function (p, i) { if (i) cx.lineTo(p[0], p[1]); else cx.moveTo(p[0], p[1]); });
+        if (t.length === 1) cx.lineTo(t[0][0] + 0.1, t[0][1] + 0.1);
+        cx.stroke();
+      });
+    }
+    function ponto(ev) { var r = cv.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; }
+    cv.addEventListener("pointerdown", function (ev) {
+      ev.preventDefault();
+      if (cv.setPointerCapture) cv.setPointerCapture(ev.pointerId);
+      atual = [ponto(ev)]; tracos.push(atual); redesenhar();
+    });
+    cv.addEventListener("pointermove", function (ev) { if (!atual) return; ev.preventDefault(); atual.push(ponto(ev)); redesenhar(); });
+    function soltar() { if (atual) { atual = null; aoMudar(tracos.length === 0); } }
+    cv.addEventListener("pointerup", soltar); cv.addEventListener("pointercancel", soltar); cv.addEventListener("pointerleave", soltar);
+    window.addEventListener("resize", ajustar);
+    setTimeout(ajustar, 0);
+    return {
+      ajustar: ajustar,
+      vazio: function () { return !tracos.some(function (t) { return t.length > 1; }); },
+      limpar: function () { tracos = []; redesenhar(); aoMudar(true); },
+      // imagem JPEG (fundo branco) com o carimbo de quem assinou e quando
+      paraJpeg: function (linhas) {
+        var r = cv.getBoundingClientRect(), esc2 = Math.max(1, 900 / r.width), w = Math.round(r.width * esc2), hA = Math.round(r.height * esc2);
+        var fs = 22, hT = linhas.length * fs * 1.4 + 16, out = document.createElement("canvas");
+        out.width = w; out.height = hA + hT;
+        var c = out.getContext("2d");
+        c.fillStyle = "#fff"; c.fillRect(0, 0, w, out.height);
+        c.scale(esc2, esc2);
+        c.lineWidth = 2.6; c.lineCap = "round"; c.lineJoin = "round"; c.strokeStyle = "#0d1b33";
+        tracos.forEach(function (t) { c.beginPath(); t.forEach(function (p, i) { if (i) c.lineTo(p[0], p[1]); else c.moveTo(p[0], p[1]); }); c.stroke(); });
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.strokeStyle = "#c9ced6"; c.lineWidth = 2; c.beginPath(); c.moveTo(20, hA - 30); c.lineTo(w - 20, hA - 30); c.stroke();
+        c.fillStyle = "#f1f3f6"; c.fillRect(0, hA, w, hT);
+        c.fillStyle = "#222"; c.textBaseline = "top";
+        linhas.forEach(function (l, i) { c.font = (i ? "" : "bold ") + fs + "px sans-serif"; c.fillText(l, 12, hA + 8 + i * fs * 1.4, w - 24); });
+        return new Promise(function (ok, falha) { out.toBlob(function (b) { b ? ok(b) : falha(new Error("Falha ao preparar a assinatura.")); }, "image/jpeg", 0.9); });
+      }
+    };
+  }
+
   // ---------- Serviço que não estava cadastrado ----------
   // O funcionário cria o serviço pelo app; no painel ele aparece marcado "criado pela equipe".
   function novoServico(depois, aviso) {
@@ -344,6 +400,12 @@
       '<label>Fotos (até 6)</label><input type="file" accept="image/*" multiple id="fr-arq" class="oculto">' +
       '<div class="fotos" id="fr-fotos"></div><button class="peq" id="fr-add-foto" style="margin-top:8px">📷 Adicionar fotos</button>' +
       '<label class="marca-linha"><input type="checkbox" id="fr-concl"> Serviço concluído</label>' +
+      '<div id="fr-assin" class="cartao oculto" style="margin-top:10px">' +
+      '<h3>✍️ Assinatura do responsável no local</h3><p class="mudo peq" style="margin:4px 0 8px">Peça ao gerente (ou ao cliente) para assinar com o dedo.</p>' +
+      '<div class="quadro-assin"><canvas id="fr-canvas" aria-label="Quadro de assinatura"></canvas><span class="linha-assin">assine aqui</span></div>' +
+      '<div class="linha" style="margin-top:6px"><button class="peq" id="fr-limpar">↺ Limpar</button><span class="mudo mini dir" id="fr-assin-status"></span></div>' +
+      '<label for="fr-assin-nome">Nome de quem assinou</label><input id="fr-assin-nome" maxlength="120" placeholder="Ex.: Carlos (gerente da loja)">' +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="fr-sem-assin"> Responsável não está no local (enviar sem assinatura)</label></div>' +
       '<div id="fr-erro"></div><div class="acoes"><button class="bom grande" id="fr-enviar">✔ Enviar relatório</button></div>',
       { titulo: "Relatório e materiais", fixa: true });
     var el = j.el;
@@ -395,6 +457,18 @@
       }, Promise.resolve()).catch(function (e) { A.avisar(A.msgErro(e), "erro"); }).then(function () { A.ocupado(b, false); desenharFotos(); });
     };
 
+    var quadro = quadroAssinatura($("#fr-canvas", el), function (vazio) {
+      assin = null;  // mudou o desenho: gera a imagem de novo no envio
+      $("#fr-assin-status", el).textContent = vazio ? "" : "✔ assinado";
+    });
+    var assin = null;
+    $("#fr-concl", el).onchange = function () {
+      $("#fr-assin", el).classList.toggle("oculto", !this.checked);
+      if (this.checked) { quadro.ajustar(); $("#fr-assin", el).scrollIntoView({ behavior: "smooth", block: "center" }); }
+    };
+    $("#fr-limpar", el).onclick = function () { quadro.limpar(); };
+    $("#fr-sem-assin", el).onchange = function () { $(".quadro-assin", el).style.opacity = this.checked ? ".35" : "1"; };
+
     $("#fr-enviar", el).onclick = function () {
       var b = this;
       var materiais = $$(".mat", el).map(function (d) {
@@ -403,15 +477,29 @@
       var tipoServ = $("#fr-tipo", el).value.trim(), desc = $("#fr-desc", el).value.trim();
       var concl = $("#fr-concl", el).checked;
       if (!tipoServ && !desc) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o tipo de serviço ou a descrição.</div>'; return; }
+      var semAssin = $("#fr-sem-assin", el).checked, nomeAssin = $("#fr-assin-nome", el).value.trim();
+      var usarAssin = concl && !semAssin && !quadro.vazio();
+      if (concl && !semAssin) {
+        if (quadro.vazio()) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Falta a assinatura do responsável. Se ele não estiver, marque “Responsável não está no local”.</div>'; return; }
+        if (!nomeAssin) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o nome de quem assinou.</div>'; $("#fr-assin-nome", el).focus(); return; }
+      }
       if (concl && !A.confirmar("Marcar o serviço como CONCLUÍDO? Ele sai da sua lista.")) return;
       $("#fr-erro", el).innerHTML = "";
       A.ocupado(b, true, "Enviando...");
       var hoje = A.isoLocal(new Date());
       fotos.forEach(function (f) { if (!f.caminho) f.caminho = TOKEN + "/" + hoje + "/rel-" + A.uuid() + ".jpg"; });
-      fotos.reduce(function (p, f) { return p.then(function () { return enviarFoto(f); }); }, Promise.resolve()).then(function () {
+      var s0 = servicoPorId($("#fr-serv", el).value);
+      var pAssin = !usarAssin ? Promise.resolve(null) : (assin ? Promise.resolve(assin) : quadro.paraJpeg([
+        "Assinado por " + nomeAssin + " · " + new Date().toLocaleString("pt-BR"),
+        (s0 ? s0.cliente + " · " : "") + "Funcionário: " + D.funcionario.nome
+      ]).then(function (blob) { assin = { blob: blob, caminho: TOKEN + "/" + hoje + "/assin-" + A.uuid() + ".jpg", enviada: false }; return assin; }));
+      pAssin.then(function (a) {
+        return fotos.concat(a ? [a] : []).reduce(function (p, f) { return p.then(function () { return enviarFoto(f); }); }, Promise.resolve()).then(function () { return a; });
+      }).then(function (a) {
         return sb.rpc("enviar_relatorio", {
           p_token: TOKEN, p_servico_id: $("#fr-serv", el).value, p_tipo_servico: tipoServ, p_descricao: desc,
-          p_materiais: materiais, p_fotos: fotos.map(function (f) { return f.caminho; }), p_concluido: concl
+          p_materiais: materiais, p_fotos: fotos.map(function (f) { return f.caminho; }), p_concluido: concl,
+          p_assinatura: a ? a.caminho : null, p_assinado_por: a ? nomeAssin : null
         });
       }).then(function (r) {
         if (r.error) throw r.error;

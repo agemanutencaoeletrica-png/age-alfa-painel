@@ -130,6 +130,10 @@ alter table public.obras      add column if not exists email text;
 alter table public.orcamentos add column if not exists email text;
 alter table public.obras      add column if not exists loja_id uuid references public.lojas (id) on delete set null;
 alter table public.servicos   add column if not exists criado_pelo_funcionario boolean not null default false;
+-- assinatura do responsável no local (gerente da loja / cliente) ao concluir
+alter table public.relatorios add column if not exists assinatura   text;
+alter table public.relatorios add column if not exists assinado_por text;
+alter table public.relatorios add column if not exists assinado_em  timestamptz;
 
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
@@ -311,6 +315,9 @@ begin
   return jsonb_build_object('id', v_id, 'criado_em', v_quando);
 end $$;
 
+-- versão antiga (sem assinatura): removida para não ficar duas funções com o mesmo nome
+drop function if exists public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean);
+
 create or replace function public.enviar_relatorio(
   p_token        text,
   p_servico_id   uuid,
@@ -318,7 +325,9 @@ create or replace function public.enviar_relatorio(
   p_descricao    text,
   p_materiais    jsonb   default '[]'::jsonb,
   p_fotos        text[]  default '{}',
-  p_concluido    boolean default false
+  p_concluido    boolean default false,
+  p_assinatura   text    default null,
+  p_assinado_por text    default null
 ) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
@@ -342,10 +351,23 @@ begin
      or exists (select 1 from unnest(p_fotos) x where split_part(x, '/', 1) <> p_token) then
     raise exception 'Fotos inválidas.';
   end if;
+  p_assinatura := nullif(trim(coalesce(p_assinatura, '')), '');
+  if p_assinatura is not null then
+    if split_part(p_assinatura, '/', 1) <> p_token
+       or not exists (select 1 from storage.objects where bucket_id = 'fotos' and name = p_assinatura) then
+      raise exception 'A assinatura não chegou ao servidor. Tente de novo.';
+    end if;
+    if coalesce(trim(p_assinado_por), '') = '' then
+      raise exception 'Escreva o nome de quem assinou.';
+    end if;
+  end if;
 
-  insert into public.relatorios (servico_id, funcionario_id, tipo_servico, descricao, materiais, fotos, concluido)
+  insert into public.relatorios (servico_id, funcionario_id, tipo_servico, descricao, materiais, fotos, concluido,
+                                 assinatura, assinado_por, assinado_em)
   values (p_servico_id, f.id, left(trim(p_tipo_servico), 200), left(trim(p_descricao), 5000),
-          p_materiais, p_fotos, coalesce(p_concluido, false))
+          p_materiais, p_fotos, coalesce(p_concluido, false),
+          p_assinatura, case when p_assinatura is not null then left(trim(p_assinado_por), 120) end,
+          case when p_assinatura is not null then now() end)
   returning id into v_id;
 
   if coalesce(p_concluido, false) then
@@ -423,7 +445,7 @@ grant execute on function public.token_valido(text) to anon, authenticated;
 grant execute on function public.func_dados(text) to anon, authenticated;
 grant execute on function public.registrar_ponto(text, text, text, uuid, double precision, double precision,
                                                 double precision, timestamptz, text) to anon, authenticated;
-grant execute on function public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean) to anon, authenticated;
+grant execute on function public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean, text, text) to anon, authenticated;
 grant execute on function public.criar_servico_func(text, text, text, text, text, text) to anon, authenticated;
 
 -- ---------- Fotos (Storage) ----------

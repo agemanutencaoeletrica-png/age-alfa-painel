@@ -79,6 +79,10 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
    **➕ Serviço não cadastrado** no app, informa o nº da loja (o endereço entra sozinho) ou o cliente, e o que
    vai fazer. No painel ele aparece marcado **“criado pela equipe”**, com aviso na aba **Hoje** e o filtro
    **Criados pela equipe** em Serviços.
+   **Assinatura do responsável:** ao marcar **Serviço concluído** no relatório, o gerente da loja (ou o cliente)
+   assina com o dedo na tela e o funcionário escreve o nome. No painel a assinatura aparece no relatório, com nome,
+   data e hora. Se o responsável não estiver, o funcionário marca “Responsável não está no local” e o relatório
+   aparece como **sem assinatura**.
 3. O funcionário, na obra: **📍 Chegada** → tira a foto → enviar. Durante o serviço: **📷 Foto do serviço**.
    No fim: **📝 Relatório e materiais** (o que fez, medidas, lista de materiais, fotos, "concluído")
    e **🏁 Saída**.

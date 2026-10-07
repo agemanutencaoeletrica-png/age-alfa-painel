@@ -556,6 +556,7 @@
     var s = porId(S.serv, r.servico_id), o = s ? porId(S.obras, s.obra_id) : null;
     return '<div class="cartao clic" data-rel="' + r.id + '"' + (r.lido ? "" : ' style="border-left:4px solid var(--critico)"') + '><div class="linha">' +
       (s ? A.seloCategoria(s.categoria) : "") + (r.lido ? "" : '<span class="selo critico">novo</span>') + (r.concluido ? '<span class="selo bom">concluído</span>' : "") +
+      (r.assinatura ? '<span class="selo bom">✍️ assinado</span>' : (r.concluido ? '<span class="selo atencao">sem assinatura</span>' : "")) +
       '<span class="dir mudo peq">' + A.dataHora(r.criado_em) + "</span></div>" +
       '<div style="margin-top:6px"><b>' + esc(r.tipo_servico || "Relatório") + "</b> · " + esc(o ? o.cliente : "serviço apagado") + "</div>" +
       '<div class="peq mudo">👷 ' + esc(nomeFunc(r.funcionario_id)) + " · " + (r.materiais || []).length + " materiais · " + (r.fotos || []).length + " fotos</div></div>";
@@ -584,11 +585,17 @@
         mats.map(function (m) { return "<tr><td>" + esc(m.item) + '</td><td class="num">' + A.numero(m.qtd) + "</td><td>" + esc(m.un) + "</td></tr>"; }).join("") +
         "</tbody></table></div>" : '<p class="mudo peq">Nenhum material.</p>') +
       ((r.fotos || []).length ? '<h3 style="margin-top:12px">Fotos</h3><div class="fotos">' + r.fotos.map(function (f) { return htmlFoto(f, ""); }).join("") + "</div>" : "") +
+      (r.assinatura ? '<h3 style="margin-top:12px">✍️ Assinatura do responsável</h3><div class="linha"><button class="foto" data-foto="' + esc(r.assinatura) +
+        '" style="width:220px;height:110px;background:#fff" aria-label="Ver assinatura"><img alt="Assinatura" style="object-fit:contain"></button>' +
+        '<div class="peq"><b>' + esc(r.assinado_por || "") + "</b><br>" + (r.assinado_em ? A.dataHora(r.assinado_em) : "") + "</div></div>"
+        : (r.concluido ? '<div class="aviso" style="margin-top:12px">Concluído <b>sem assinatura</b> do responsável no local.</div>' : "")) +
       '<div class="acoes"><button class="prim" id="er-orc">💲 Gerar orçamento</button>' + (s ? '<button id="er-serv">Abrir serviço</button>' : "") +
       '<button id="er-lido">' + (r.lido ? "Marcar como novo" : "Marcar como lido") + "</button></div>",
       { titulo: "Relatório", larga: true, aoFechar: function () { if (location.hash.slice(1) === "relatorios") rota(); } });
     var el = j.el;
     (r.fotos || []).forEach(function (f) { infoFoto[f] = "Foto do relatório · " + esc(nomeFunc(r.funcionario_id)) + " · " + A.dataHora(r.criado_em); });
+    if (r.assinatura) infoFoto[r.assinatura] = "<b>Assinatura</b> de " + esc(r.assinado_por || "") + " · " + (r.assinado_em ? A.dataHora(r.assinado_em) : "") +
+      " · coletada por " + esc(nomeFunc(r.funcionario_id));
     hidratarFotos(el);
     function marcar(lido) {
       return q(sb.from("relatorios").update({ lido: lido }).eq("id", id).select().single()).then(function (n) { trocar(S.rel, n); r = n; });
