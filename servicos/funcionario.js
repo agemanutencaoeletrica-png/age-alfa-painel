@@ -111,8 +111,9 @@
         }).join("") + "</div>";
     });
 
-    h += '<div class="cab-secao" style="margin-top:18px"><h2>Meus serviços</h2><span class="mudo peq">' + D.servicos.length + "</span></div>";
-    if (!D.servicos.length) h += '<div class="cartao vazio">Nenhum serviço aberto para você agora.</div>';
+    h += '<div class="cab-secao" style="margin-top:18px"><h2>Meus serviços</h2><span class="mudo peq">' + D.servicos.length + "</span>" +
+      '<button class="peq dir" id="b-novo-serv">➕ Serviço não cadastrado</button></div>';
+    if (!D.servicos.length) h += '<div class="cartao vazio">Nenhum serviço aberto para você agora.<br>Vai fazer um serviço que não está aqui? Toque em <b>➕ Serviço não cadastrado</b>.</div>';
     D.servicos.forEach(function (s) {
       h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
         (s.data_prevista ? '<span class="dir mudo peq">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
@@ -120,7 +121,7 @@
         (s.endereco ? '<div class="peq"><a href="' + A.linkEndereco(s.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(s.endereco) + "</a></div>" : "") +
         (s.telefone ? '<div class="peq"><a href="tel:' + esc(A.soDigitos(s.telefone)) + '">📞 ' + esc(s.telefone) + "</a></div>" : "") +
         (s.descricao ? '<p style="white-space:pre-wrap;margin:8px 0 0">' + esc(s.descricao) + "</p>" : "") +
-        (s.observacoes ? '<p class="mudo peq" style="white-space:pre-wrap;margin:6px 0 0">Obs.: ' + esc(s.observacoes) + "</p>" : "") +
+        (s.observacoes && !/^Criado por .* pelo app$/.test(s.observacoes) ? '<p class="mudo peq" style="white-space:pre-wrap;margin:6px 0 0">Obs.: ' + esc(s.observacoes) + "</p>" : "") +
         '<div class="acoes"><button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui</button>' +
         '<button class="peq" data-ponto="servico" data-serv="' + s.id + '">📷 Foto</button>' +
         '<button class="peq" data-relatorio="' + s.id + '">📝 Relatório</button></div></div>';
@@ -139,6 +140,7 @@
 
     A.ligarInstalar($("#b-instalar"));
     $("#b-atualizar").onclick = function () { carregar().then(function () { A.avisar("Atualizado"); }); };
+    $("#b-novo-serv").onclick = function () { novoServico(null); };
     $$("[data-ponto]").forEach(function (b) { b.onclick = function () { fluxoPonto(b.dataset.ponto, b.dataset.serv || null); }; });
     $$("[data-relatorio]").forEach(function (b) { b.onclick = function () { fluxoRelatorio(b.dataset.relatorio || null); }; });
   }
@@ -167,6 +169,7 @@
       (tipo === "saida" && !D.pontos_hoje.some(function (p) { return p.tipo === "chegada"; }) ?
         '<div class="aviso">Você não registrou a chegada hoje. Se esqueceu, avise o responsável.</div>' : "") +
       "<label for=\"fp-serv\">Serviço</label><select id=\"fp-serv\">" + opcoesServico(servicoId, true) + "</select>" +
+      '<button class="texto peq" id="fp-novo">➕ Não está na lista? Cadastrar o serviço</button>' +
       '<div id="fp-gps" class="aviso">📡 Procurando sua localização...</div>' +
       '<button class="texto peq" id="fp-gps-de-novo">↻ Tentar localização de novo</button>' +
       '<label for="fp-obs">Observação (opcional)</label><textarea id="fp-obs" rows="2" maxlength="1000" placeholder="Ex.: cliente pediu para voltar amanhã"></textarea>' +
@@ -209,6 +212,12 @@
     function pararGps() { if (vigia !== null && navigator.geolocation) navigator.geolocation.clearWatch(vigia); vigia = null; }
     iniciarGps();
     $("#fp-gps-de-novo", el).onclick = iniciarGps;
+    $("#fp-novo", el).onclick = function () {
+      novoServico(function (id) {
+        var sel = $("#fp-serv", el);
+        if (sel) { sel.innerHTML = opcoesServico(id, true); sel.value = id; }
+      });
+    };
 
     var arq = $("#fp-arq", el);
     $("#fp-foto", el).onclick = function () { arq.value = ""; arq.click(); };
@@ -282,10 +291,45 @@
     });
   }
 
+  // ---------- Serviço que não estava cadastrado ----------
+  // O funcionário cria o serviço pelo app; no painel ele aparece marcado "criado pela equipe".
+  function novoServico(depois, aviso) {
+    var area = D.funcionario.area === "pintura" ? "pintura" : "eletrica";
+    var j = A.janela((aviso ? '<div class="aviso">' + esc(aviso) + "</div>" : "") +
+      '<label for="ns-cat">Tipo de serviço</label><select id="ns-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
+      '<label for="ns-loja">Nº da loja (se for loja da rede)</label><input id="ns-loja" inputmode="numeric" maxlength="10" placeholder="Ex.: 236">' +
+      '<p class="mudo peq" style="margin:4px 0 0">Com o nº da loja, o nome e o endereço entram sozinhos.</p>' +
+      '<label for="ns-cli">Cliente (se não for loja)</label><input id="ns-cli" maxlength="200" placeholder="Ex.: Casa do Sr. João">' +
+      '<label for="ns-end">Endereço</label><input id="ns-end" maxlength="300" placeholder="Rua, número, bairro, cidade">' +
+      '<label for="ns-desc">O que vai ser feito *</label><textarea id="ns-desc" rows="3" maxlength="2000" placeholder="Ex.: Instalação de interruptor"></textarea>' +
+      '<div id="ns-erro"></div><div class="acoes"><button class="bom grande" id="ns-ok">✔ Cadastrar serviço</button></div>',
+      { titulo: "Serviço não cadastrado", fixa: true });
+    var el = j.el;
+    $("#ns-cat", el).value = area;
+    $("#ns-ok", el).onclick = function () {
+      var b = this, loja = $("#ns-loja", el).value.trim(), cli = $("#ns-cli", el).value.trim(), desc = $("#ns-desc", el).value.trim();
+      var erro = function (m) { $("#ns-erro", el).innerHTML = '<div class="aviso erro">' + esc(m) + "</div>"; };
+      if (!loja && !cli) { erro("Escreva o nº da loja ou o nome do cliente."); return; }
+      if (!desc) { erro("Escreva o que vai ser feito."); return; }
+      A.ocupado(b, true, "Cadastrando...");
+      sb.rpc("criar_servico_func", {
+        p_token: TOKEN, p_categoria: $("#ns-cat", el).value, p_descricao: desc,
+        p_cliente: cli || null, p_endereco: $("#ns-end", el).value.trim() || null, p_loja_codigo: loja || null
+      }).then(function (r) {
+        if (r.error) throw r.error;
+        return carregar().then(function () {
+          j.fechar();
+          A.avisar("Serviço cadastrado. O responsável já consegue ver.", "ok");
+          if (depois) depois(r.data.id);
+        });
+      }).catch(function (e) { A.ocupado(b, false); erro(A.msgErro(e)); });
+    };
+  }
+
   // ---------- Relatório do serviço e lista de materiais ----------
   function fluxoRelatorio(servicoId) {
     if (!D.servicos.length) {
-      A.janela('<p>Você não tem serviço aberto. Peça ao responsável para cadastrar o serviço e depois envie o relatório.</p>', { titulo: "Relatório" });
+      novoServico(function (id) { fluxoRelatorio(id); }, "Para enviar o relatório, primeiro diga qual é o serviço.");
       return;
     }
     if (!servicoId) servicoId = D.servicos[0].id;

@@ -129,6 +129,7 @@ create table if not exists public.orcamentos (
 alter table public.obras      add column if not exists email text;
 alter table public.orcamentos add column if not exists email text;
 alter table public.obras      add column if not exists loja_id uuid references public.lojas (id) on delete set null;
+alter table public.servicos   add column if not exists criado_pelo_funcionario boolean not null default false;
 
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
@@ -357,6 +358,64 @@ begin
   return jsonb_build_object('id', v_id);
 end $$;
 
+-- Serviço que não estava cadastrado: o funcionário cria pelo app (fica marcado
+-- "criado pela equipe" no painel). Se ele informar o nº de uma loja da rede, o
+-- serviço já fica ligado à loja, com o endereço dela.
+create or replace function public.criar_servico_func(
+  p_token       text,
+  p_categoria   text,
+  p_descricao   text,
+  p_cliente     text default null,
+  p_endereco    text default null,
+  p_loja_codigo text default null
+) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  f       public.funcionarios;
+  l       public.lojas;
+  v_cod   text := nullif(ltrim(trim(coalesce(p_loja_codigo, '')), '0'), '');
+  v_cli   text;
+  v_end   text;
+  v_obra  uuid;
+  v_serv  uuid;
+begin
+  f := public._func_por_token(p_token);
+  if p_categoria is null or p_categoria not in ('eletrica', 'pintura') then
+    raise exception 'Escolha elétrica ou pintura.';
+  end if;
+  if coalesce(trim(p_descricao), '') = '' then
+    raise exception 'Escreva o que vai ser feito.';
+  end if;
+  if v_cod is not null then
+    select * into l from public.lojas where codigo = v_cod and ativo order by (tipo = 'loja') desc limit 1;
+    if not found then
+      raise exception 'Loja % não encontrada. Confira o número ou escreva o nome do cliente.', v_cod;
+    end if;
+  end if;
+  v_cli := coalesce(nullif(trim(p_cliente), ''),
+                    case when l.id is not null then
+                      case when l.tipo = 'loja' then 'Loja ' || l.codigo || ' – ' || l.nome else l.codigo || ' – ' || l.nome end
+                    end);
+  if v_cli is null then
+    raise exception 'Informe o cliente ou o número da loja.';
+  end if;
+  v_end := coalesce(nullif(trim(p_endereco), ''),
+                    case when l.id is not null then
+                      concat_ws(' - ', nullif(concat_ws(', ', l.endereco, l.numero), ''), l.bairro, l.cidade || coalesce('/' || l.uf, ''))
+                    end);
+
+  insert into public.obras (cliente, endereco, observacoes, loja_id)
+  values (left(v_cli, 200), left(v_end, 300), 'Criado por ' || f.nome || ' pelo app', l.id)
+  returning id into v_obra;
+
+  insert into public.servicos (obra_id, categoria, funcionario_id, descricao, data_prevista, status, criado_pelo_funcionario)
+  values (v_obra, p_categoria, f.id, left(trim(p_descricao), 2000),
+          (now() at time zone 'America/Sao_Paulo')::date, 'em_andamento', true)
+  returning id into v_serv;
+
+  return jsonb_build_object('id', v_serv);
+end $$;
+
 revoke execute on function public._func_por_token(text) from public, anon, authenticated;
 revoke execute on function public._tocar_atualizado_em() from public, anon, authenticated;
 grant execute on function public.eh_admin() to anon, authenticated;
@@ -365,6 +424,7 @@ grant execute on function public.func_dados(text) to anon, authenticated;
 grant execute on function public.registrar_ponto(text, text, text, uuid, double precision, double precision,
                                                 double precision, timestamptz, text) to anon, authenticated;
 grant execute on function public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean) to anon, authenticated;
+grant execute on function public.criar_servico_func(text, text, text, text, text, text) to anon, authenticated;
 
 -- ---------- Fotos (Storage) ----------
 -- Pasta privada "fotos". O funcionário só consegue ENVIAR fotos para a

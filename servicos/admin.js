@@ -202,6 +202,10 @@
         '<div class="ladrilho"><div class="r">Relatórios</div><div class="v">' + novos + '</div><div class="d">novos para ler</div></div>' +
         '<div class="ladrilho"><div class="r">Orçamentos</div><div class="v">' + aguard.length + '</div><div class="d">' +
         A.dinheiro(aguard.reduce(function (t, o) { return t + Number(o.total); }, 0)) + " aguardando cliente</div></div></div>";
+      var daEquipe = S.serv.filter(function (s) { return s.criado_pelo_funcionario && new Date(s.criado_em) >= ini; });
+      if (daEquipe.length) h += '<div class="aviso">🆕 A equipe cadastrou ' + (daEquipe.length === 1 ? "1 serviço" : daEquipe.length + " serviços") +
+        ' hoje: ' + daEquipe.slice(0, 5).map(function (s) { var o = porId(S.obras, s.obra_id); return esc((o ? o.cliente : "") + " (" + nomeFunc(s.funcionario_id) + ")"); }).join(", ") +
+        '. Veja em <a href="#servicos">Serviços</a>.</div>';
       h += '<div class="cab-secao"><h2>Equipe hoje</h2><span class="mudo peq">' + A.data(new Date()) + "</span></div>";
       var equipe = S.func.filter(function (f) { return f.ativo || pts.some(function (p) { return p.funcionario_id === f.id; }); });
       if (!equipe.length) h += '<div class="cartao vazio">Cadastre sua equipe na aba <a href="#equipe">Equipe</a>.</div>';
@@ -241,7 +245,7 @@
     var h = '<div class="cab-secao"><h2>Serviços</h2><button class="prim" id="b-novo-serv">+ Novo serviço</button></div>' +
       '<div class="filtros"><select id="fs-cat" aria-label="Categoria"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
       '<select id="fs-st" aria-label="Situação"><option value="ativos">Abertos e em andamento</option><option value="aberto">Abertos</option><option value="em_andamento">Em andamento</option>' +
-      '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="todos">Todos</option></select>' +
+      '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="equipe">Criados pela equipe</option><option value="todos">Todos</option></select>' +
       '<select id="fs-func" aria-label="Funcionário"><option value="">Todos os funcionários</option><option value="-">Sem funcionário</option>' +
       S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
       '<input id="fs-busca" type="search" placeholder="Buscar cliente ou endereço"></div><div id="lista-serv"></div>';
@@ -255,7 +259,8 @@
     function passa(s) {
       if (F.cat && s.categoria !== F.cat) return false;
       if (F.st === "ativos" && !(s.status === "aberto" || s.status === "em_andamento")) return false;
-      if (F.st !== "ativos" && F.st !== "todos" && s.status !== F.st) return false;
+      if (F.st === "equipe" && !s.criado_pelo_funcionario) return false;
+      if (F.st !== "ativos" && F.st !== "todos" && F.st !== "equipe" && s.status !== F.st) return false;
       if (F.func === "-" && s.funcionario_id) return false;
       if (F.func && F.func !== "-" && s.funcionario_id !== F.func) return false;
       return true;
@@ -278,6 +283,7 @@
           (o.telefone || o.email ? '<div class="peq mudo">' + (o.telefone ? "📞 " + esc(o.telefone) + " " : "") + (o.email ? "✉ " + esc(o.email) : "") + "</div>" : "") +
           partes.map(function (s) {
             return '<div class="parte ' + s.categoria + '" data-serv="' + s.id + '" role="button" tabindex="0"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
+              (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe</span>' : "") +
               '<span class="peq">' + (s.funcionario_id ? "👷 " + esc(nomeFunc(s.funcionario_id)) : '<span class="selo critico">sem funcionário</span>') + "</span>" +
               (s.data_prevista ? '<span class="dir peq mudo">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
               (s.descricao ? '<div class="peq" style="margin-top:4px;white-space:pre-wrap">' + esc(s.descricao.length > 220 ? s.descricao.slice(0, 220) + "…" : s.descricao) + "</div>" : "") +
@@ -404,7 +410,9 @@
   function abrirServico(id) {
     var s = porId(S.serv, id), o = porId(S.obras, s.obra_id);
     var j = A.janela(
-      '<div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) + '<span class="dir mudo peq">criado ' + A.data(s.criado_em) + "</span></div>" +
+      '<div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
+      (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe' + (s.funcionario_id ? " (" + esc(nomeFunc(s.funcionario_id)) + ")" : "") + "</span>" : "") +
+      '<span class="dir mudo peq">criado ' + A.data(s.criado_em) + "</span></div>" +
       "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" +
       (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
       '<div class="duas"><div><label for="es-func">Funcionário</label><select id="es-func">' + opcoesFunc(s.categoria, s.funcionario_id) + "</select></div>" +

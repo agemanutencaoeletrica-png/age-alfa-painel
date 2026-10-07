@@ -75,6 +75,10 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
    O funcionário abre o link e usa *Adicionar à tela inicial* para virar um ícone de app.
 2. **Serviços** → *+ Novo serviço* → dados do cliente → marque **Parte ELÉTRICA** e/ou
    **Parte PINTURA**, escolha o funcionário de cada parte → salvar → **Avisar no WhatsApp**.
+   **Serviço que não estava cadastrado** (o cliente pediu na hora): o próprio funcionário toca em
+   **➕ Serviço não cadastrado** no app, informa o nº da loja (o endereço entra sozinho) ou o cliente, e o que
+   vai fazer. No painel ele aparece marcado **“criado pela equipe”**, com aviso na aba **Hoje** e o filtro
+   **Criados pela equipe** em Serviços.
 3. O funcionário, na obra: **📍 Chegada** → tira a foto → enviar. Durante o serviço: **📷 Foto do serviço**.
    No fim: **📝 Relatório e materiais** (o que fez, medidas, lista de materiais, fotos, "concluído")
    e **🏁 Saída**.
