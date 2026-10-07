@@ -10,7 +10,7 @@
   var infoFoto = {};    // caminho da foto -> html com detalhes (hora, GPS...)
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "" };
   var filtroPonto = null;
-  var filtroRel = "nao_lidos";
+  var filtroRel = "nao_lidos", filtroRelTipo = "";
   var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
@@ -27,6 +27,9 @@
   function porId(lista, id) { for (var i = 0; i < lista.length; i++) if (lista[i].id === id) return lista[i]; return null; }
   function trocar(lista, item) { var i = lista.findIndex(function (x) { return x.id === item.id; }); if (i >= 0) lista[i] = item; else lista.unshift(item); }
   function tirar(lista, id) { var i = lista.findIndex(function (x) { return x.id === id; }); if (i >= 0) lista.splice(i, 1); }
+  // serviço/obra de prefeitura fica só na aba Prefeitura
+  function ehPrefObra(o) { return !!(o && o.prefeitura_id); }
+  function ehPrefServ(s) { return ehPrefObra(porId(S.obras, s.obra_id)); }
   function nomeFunc(id) { var f = porId(S.func, id); return f ? f.nome : "—"; }
   function carregando() { return '<div class="vazio"><span class="carregando"></span> Carregando...</div>'; }
   function val(el, sel) { var x = $(sel, el); return x ? x.value.trim() : ""; }
@@ -203,7 +206,9 @@
     c.innerHTML = carregando();
     var ini = A.inicioDia(new Date());
     q(sb.from("pontos").select("*").gte("criado_em", ini.toISOString()).order("criado_em")).then(function (pts) {
-      var ativos = S.serv.filter(function (s) { return s.status === "aberto" || s.status === "em_andamento"; });
+      var ativosTodos = S.serv.filter(function (s) { return s.status === "aberto" || s.status === "em_andamento"; });
+      var ativos = ativosTodos.filter(function (s) { return !ehPrefServ(s); });
+      var osPref = S.obras.filter(function (o) { return ehPrefObra(o) && ativosTodos.some(function (s) { return s.obra_id === o.id; }); }).length;
       var abE = ativos.filter(function (s) { return s.categoria === "eletrica"; }).length;
       var abP = ativos.filter(function (s) { return s.categoria === "pintura"; }).length;
       var novos = S.rel.filter(function (r) { return !r.lido; }).length;
@@ -211,6 +216,7 @@
       var h = '<div class="grade">' +
         '<div class="ladrilho"><div class="r">⚡ Elétrica</div><div class="v">' + abE + '</div><div class="d">serviços ativos</div></div>' +
         '<div class="ladrilho"><div class="r">🖌️ Pintura</div><div class="v">' + abP + '</div><div class="d">serviços ativos</div></div>' +
+        (S.pref.length || osPref ? '<a class="ladrilho" href="#prefeitura" style="text-decoration:none;color:inherit"><div class="r">🏛️ Prefeitura</div><div class="v">' + osPref + '</div><div class="d">OS em aberto</div></a>' : "") +
         '<div class="ladrilho"><div class="r">Relatórios</div><div class="v">' + novos + '</div><div class="d">novos para ler</div></div>' +
         '<div class="ladrilho"><div class="r">Orçamentos</div><div class="v">' + aguard.length + '</div><div class="d">' +
         A.dinheiro(aguard.reduce(function (t, o) { return t + Number(o.total); }, 0)) + " aguardando cliente</div></div></div>";
@@ -261,7 +267,9 @@
       '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="equipe">Criados pela equipe</option><option value="todos">Todos</option></select>' +
       '<select id="fs-func" aria-label="Funcionário"><option value="">Todos os funcionários</option><option value="-">Sem funcionário</option>' +
       S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
-      '<input id="fs-busca" type="search" placeholder="Buscar cliente ou endereço"></div><div id="lista-serv"></div>';
+      '<input id="fs-busca" type="search" placeholder="Buscar cliente ou endereço"></div>' +
+      (S.pref.length ? '<p class="mudo peq" style="margin:-4px 0 10px">Aqui ficam os clientes particulares e as lojas. As OS da prefeitura ficam na aba <a href="#prefeitura">🏛️ Prefeitura</a>.</p>' : "") +
+      '<div id="lista-serv"></div>';
     c.innerHTML = h;
     $("#fs-cat").value = F.cat; $("#fs-st").value = F.st; $("#fs-func").value = F.func; $("#fs-busca").value = F.busca;
     ["#fs-cat", "#fs-st", "#fs-func"].forEach(function (s) { $(s).onchange = function () { lerFiltro(); listar(); }; });
@@ -280,6 +288,7 @@
     }
     function listar() {
       var obras = S.obras.filter(function (o) {
+        if (ehPrefObra(o)) return false;
         if (F.busca && ((o.cliente || "") + " " + (o.endereco || "") + " " + (o.telefone || "")).toLowerCase().indexOf(F.busca) < 0) return false;
         var partes = S.serv.filter(function (s) { return s.obra_id === o.id; });
         if (!partes.length) return F.st === "todos" && !F.cat && !F.func;
@@ -592,11 +601,19 @@
   }
 
   function verRelatorios(c) {
-    var lista = S.rel.filter(function (r) { return filtroRel === "todos" || !r.lido; });
-    c.innerHTML = '<div class="cab-secao"><h2>Relatórios da equipe</h2><select id="fr-filtro" style="width:auto" aria-label="Filtro">' +
+    var lista = S.rel.filter(function (r) {
+      if (filtroRel !== "todos" && r.lido) return false;
+      if (!filtroRelTipo) return true;
+      var s = porId(S.serv, r.servico_id), pr = !!(s && ehPrefServ(s));
+      return filtroRelTipo === "prefeitura" ? pr : !pr;
+    });
+    c.innerHTML = '<div class="cab-secao"><h2>Relatórios da equipe</h2>' +
+      (S.pref.length ? '<select id="fr-tipo-f" style="width:auto" aria-label="Tipo"><option value="">Particulares e prefeitura</option><option value="particulares">Só particulares</option><option value="prefeitura">🏛️ Só prefeitura</option></select>' : "") +
+      '<select id="fr-filtro" style="width:auto" aria-label="Filtro">' +
       '<option value="nao_lidos">Novos</option><option value="todos">Todos</option></select></div>' +
       (lista.length ? lista.map(htmlCartaoRel).join("") : '<div class="cartao vazio">' + (filtroRel === "todos" ? "Nenhum relatório ainda." : "Nenhum relatório novo.") + "</div>");
     $("#fr-filtro").value = filtroRel;
+    if ($("#fr-tipo-f")) { $("#fr-tipo-f").value = filtroRelTipo; $("#fr-tipo-f").onchange = function () { filtroRelTipo = this.value; verRelatorios(c); }; }
     $("#fr-filtro").onchange = function () { filtroRel = this.value; verRelatorios(c); };
     $$("[data-rel]", c).forEach(function (d) { d.onclick = function () { abrirRelatorio(d.dataset.rel); }; });
   }

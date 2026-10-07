@@ -126,6 +126,9 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
 
 ### Serviços para prefeituras (aba 🏛️ Prefeitura)
 Para OS de prefeituras e outros órgãos públicos: prédios públicos, iluminação pública e obras/reformas.
+**É uma área separada:** as OS da prefeitura ficam só nesta aba (não se misturam com os clientes particulares e as lojas da aba
+Serviços). A aba **Hoje** mostra o quadro **🏛️ Prefeitura** com as OS em aberto, **Relatórios** tem o filtro *Só prefeitura* /
+*Só particulares*, e no app do funcionário elas aparecem na seção própria **🏛️ Serviços da prefeitura**.
 **Antes de usar, rode de novo o `supabase.sql`** (cria as tabelas de prefeituras, contratos e medições sem apagar nada).
 
 1. **Prefeituras** → *+ Nova prefeitura* (nome, CNPJ, cidade, contato). Cadastre quantas precisar.

@@ -114,28 +114,49 @@
         }).join("") + "</div>";
     });
 
-    h += '<div class="cab-secao" style="margin-top:18px"><h2>Meus serviços</h2><span class="mudo peq">' + D.servicos.length + "</span>" +
+    // OS da prefeitura numa área separada dos serviços particulares
+    var dePref = D.servicos.filter(function (s) { return s.prefeitura; }), particulares = D.servicos.filter(function (s) { return !s.prefeitura; });
+    if (dePref.length) {
+      h += '<div class="cab-secao" style="margin-top:18px"><h2>🏛️ Serviços da prefeitura</h2><span class="mudo peq">' + dePref.length + "</span></div>";
+      dePref.forEach(function (s) { h += cartaoServico(s); });
+    }
+    h += '<div class="cab-secao" style="margin-top:18px"><h2>' + (dePref.length ? "Outros serviços" : "Meus serviços") + '</h2><span class="mudo peq">' + particulares.length + "</span>" +
       '<button class="peq dir" id="b-novo-serv">➕ Serviço não cadastrado</button></div>';
-    if (!D.servicos.length) h += '<div class="cartao vazio">Nenhum serviço aberto para você agora.<br>Vai fazer um serviço que não está aqui? Toque em <b>➕ Serviço não cadastrado</b>.</div>';
-    D.servicos.forEach(function (s) {
-      h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
-        (s.data_prevista ? '<span class="dir mudo peq">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
-        (s.prefeitura ? '<div class="aviso" style="margin:8px 0 0">🏛️ <b>' + esc(s.prefeitura) + "</b>" + (s.protocolo ? " · OS/Protocolo <b>" + esc(s.protocolo) + "</b>" : "") +
-          (s.tipo_publico ? "<br>" + esc(TIPO_PUBLICO[s.tipo_publico] || "") : "") + (s.secretaria ? " · " + esc(s.secretaria) : "") +
-          (s.fiscal ? "<br>Fiscal: " + esc(s.fiscal) : "") +
-          '<br><span class="peq">Tire fotos de <b>ANTES</b> e de <b>DEPOIS</b> e colha a assinatura do fiscal ao concluir.</span></div>' : "") +
-        '<h3 style="margin-top:8px">' + esc(s.cliente) + "</h3>" +
-        (s.referencia ? '<div class="peq">🔖 ' + esc(s.referencia) + "</div>" : "") +
-        (s.endereco ? '<div class="peq"><a href="' + A.linkEndereco(s.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(s.endereco) + "</a></div>" : "") +
-        (s.telefone ? '<div class="peq"><a href="tel:' + esc(A.soDigitos(s.telefone)) + '">📞 ' + esc(s.telefone) + "</a></div>" : "") +
-        (s.descricao ? '<p style="white-space:pre-wrap;margin:8px 0 0">' + esc(s.descricao) + "</p>" : "") +
-        (s.observacoes && !/^Criado por .* pelo app$/.test(s.observacoes) ? '<p class="mudo peq" style="white-space:pre-wrap;margin:6px 0 0">Obs.: ' + esc(s.observacoes) + "</p>" : "") +
-        '<div class="acoes"><button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui</button>' +
-        '<button class="peq" data-ponto="servico" data-serv="' + s.id + '">📷 Foto</button>' +
-        '<button class="peq" data-relatorio="' + s.id + '">📝 Relatório</button></div></div>';
-    });
+    if (!particulares.length) h += '<div class="cartao vazio">Nenhum serviço' + (dePref.length ? " particular" : "") + ' aberto para você agora.<br>Vai fazer um serviço que não está aqui? Toque em <b>➕ Serviço não cadastrado</b>.</div>';
+    particulares.forEach(function (s) { h += cartaoServico(s); });
 
-    h += '<div class="cab-secao" style="margin-top:18px"><h2>Registros de hoje</h2></div><div class="cartao">';
+    h += registrosHoje();
+    app.innerHTML = h;
+
+    A.ligarInstalar($("#b-instalar"));
+    $("#b-atualizar").onclick = function () { carregar().then(function () { A.avisar("Atualizado"); }); };
+    $("#b-novo-serv").onclick = function () { novoServico(null); };
+    $$("[data-ponto]").forEach(function (b) { b.onclick = function () { fluxoPonto(b.dataset.ponto, b.dataset.serv || null); }; });
+    $$("[data-relatorio]").forEach(function (b) { b.onclick = function () { fluxoRelatorio(b.dataset.relatorio || null); }; });
+  }
+
+  function cartaoServico(s) {
+    var h = "";
+    h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
+      (s.data_prevista ? '<span class="dir mudo peq">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
+      (s.prefeitura ? '<div class="aviso" style="margin:8px 0 0">🏛️ <b>' + esc(s.prefeitura) + "</b>" + (s.protocolo ? " · OS/Protocolo <b>" + esc(s.protocolo) + "</b>" : "") +
+        (s.tipo_publico ? "<br>" + esc(TIPO_PUBLICO[s.tipo_publico] || "") : "") + (s.secretaria ? " · " + esc(s.secretaria) : "") +
+        (s.fiscal ? "<br>Fiscal: " + esc(s.fiscal) : "") +
+        '<br><span class="peq">Tire fotos de <b>ANTES</b> e de <b>DEPOIS</b> e colha a assinatura do fiscal ao concluir.</span></div>' : "") +
+      '<h3 style="margin-top:8px">' + esc(s.cliente) + "</h3>" +
+      (s.referencia ? '<div class="peq">🔖 ' + esc(s.referencia) + "</div>" : "") +
+      (s.endereco ? '<div class="peq"><a href="' + A.linkEndereco(s.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(s.endereco) + "</a></div>" : "") +
+      (s.telefone ? '<div class="peq"><a href="tel:' + esc(A.soDigitos(s.telefone)) + '">📞 ' + esc(s.telefone) + "</a></div>" : "") +
+      (s.descricao ? '<p style="white-space:pre-wrap;margin:8px 0 0">' + esc(s.descricao) + "</p>" : "") +
+      (s.observacoes && !/^Criado por .* pelo app$/.test(s.observacoes) ? '<p class="mudo peq" style="white-space:pre-wrap;margin:6px 0 0">Obs.: ' + esc(s.observacoes) + "</p>" : "") +
+      '<div class="acoes"><button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui</button>' +
+      '<button class="peq" data-ponto="servico" data-serv="' + s.id + '">📷 Foto</button>' +
+      '<button class="peq" data-relatorio="' + s.id + '">📝 Relatório</button></div></div>';
+    return h;
+  }
+
+  function registrosHoje() {
+    var h = '<div class="cab-secao" style="margin-top:18px"><h2>Registros de hoje</h2></div><div class="cartao">';
     if (!D.pontos_hoje.length) h += '<div class="vazio">Nada registrado hoje.</div>';
     D.pontos_hoje.slice().reverse().forEach(function (p) {
       var s = p.servico_id ? servicoPorId(p.servico_id) : null;
@@ -144,13 +165,7 @@
         (p.tem_gps ? "" : ' <span class="selo critico dir">sem GPS</span>') + "</div>";
     });
     h += '</div><p class="mudo mini" style="text-align:center">A hora do registro é a do servidor da AGE. As fotos vão direto para o responsável.</p></main>';
-    app.innerHTML = h;
-
-    A.ligarInstalar($("#b-instalar"));
-    $("#b-atualizar").onclick = function () { carregar().then(function () { A.avisar("Atualizado"); }); };
-    $("#b-novo-serv").onclick = function () { novoServico(null); };
-    $$("[data-ponto]").forEach(function (b) { b.onclick = function () { fluxoPonto(b.dataset.ponto, b.dataset.serv || null); }; });
-    $$("[data-relatorio]").forEach(function (b) { b.onclick = function () { fluxoRelatorio(b.dataset.relatorio || null); }; });
+    return h;
   }
 
   function opcoesServico(selecionado, comVazio) {
