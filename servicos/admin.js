@@ -355,7 +355,7 @@
       '<div id="ns-' + cat + '-campos" class="oculto"><div class="duas"><div><label for="ns-' + cat + '-func">Funcionário</label><select id="ns-' + cat + '-func">' + opcoesFunc(cat, null) + "</select></div>" +
       '<div><label for="ns-' + cat + '-data">Data prevista</label><input type="date" id="ns-' + cat + '-data"></div></div>' +
       '<label for="ns-' + cat + '-desc">O que fazer</label><textarea id="ns-' + cat + '-desc" rows="3"></textarea>' +
-      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="ns-' + cat + '-assin"> ✍️ Pedir assinatura do responsável ao concluir</label></div></div>';
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="ns-' + cat + '-assin"> ✍️ Liberar assinatura do responsável neste serviço <span class="mudo peq">(desligado: o funcionário não vê o quadro de assinatura)</span></label></div></div>';
   }
 
   function novoServico(obraId) {
@@ -456,7 +456,7 @@
         return '<option value="' + k + '"' + (k === s.status ? " selected" : "") + ">" + A.STATUS[k] + "</option>";
       }).join("") + "</select>" +
       '<label for="es-desc">O que fazer</label><textarea id="es-desc" rows="4">' + esc(s.descricao || "") + "</textarea>" +
-      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="es-assin"' + (s.pede_assinatura ? " checked" : "") + '> ✍️ Pedir assinatura do responsável ao concluir</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="es-assin"' + (s.pede_assinatura ? " checked" : "") + '> ✍️ Liberar assinatura do responsável neste serviço <span class="mudo peq">(desligado: o funcionário não vê o quadro de assinatura)</span></label>' +
       '<div class="acoes"><button class="prim" id="es-salvar">Salvar</button><span id="es-zap">' + botaoZap(s) + '</span><button class="perigo" id="es-apagar">Apagar parte</button></div>' +
       '<hr class="sep"><h3>Registros de ponto neste serviço</h3><div id="es-pontos">' + carregando() + "</div>" +
       '<hr class="sep"><h3>Relatórios</h3><div id="es-rels"></div>',

@@ -79,12 +79,13 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
    **➕ Serviço não cadastrado** no app, informa o nº da loja (o endereço entra sozinho) ou o cliente, e o que
    vai fazer. No painel ele aparece marcado **“criado pela equipe”**, com aviso na aba **Hoje** e o filtro
    **Criados pela equipe** em Serviços.
-   **Assinatura do responsável (liga quando precisar):** no serviço, marque **✍️ Pedir assinatura do responsável
-   ao concluir**. Nesses serviços, ao marcar **Serviço concluído** no relatório, o gerente da loja (ou o cliente)
-   assina com o dedo na tela e o funcionário escreve o nome. Nos outros, a assinatura fica desligada (o funcionário
-   ainda pode coletar se quiser, pelo botão “Coletar assinatura (opcional)”). No painel a assinatura aparece no relatório, com nome,
-   data e hora. Se o responsável não estiver, o funcionário marca “Responsável não está no local” e o relatório
-   aparece como **sem assinatura**.
+   **Assinatura do responsável (só quando você liberar):** vem **desligada** em todo serviço — o funcionário não vê
+   quadro nem botão de assinatura, e ninguém aborda o gerente da loja para assinar. Para um cliente avulso que deve
+   assinar, marque no serviço **✍️ Liberar assinatura do responsável neste serviço** (na criação ou depois, em
+   Serviços → abrir a parte). Só nesses serviços, ao marcar **Serviço concluído**, o cliente assina com o dedo na tela
+   e o funcionário escreve o nome. No painel a assinatura aparece no relatório, com nome, data e hora. Se o responsável
+   não estiver, o funcionário marca “Responsável não está no local” e o relatório aparece como **sem assinatura**.
+   (Nas OS da prefeitura a assinatura do fiscal já vem ligada; dá para desligar do mesmo jeito.)
 3. O funcionário, na obra: **📍 Chegada** → tira a foto → enviar. Durante o serviço: **📷 Foto do serviço**.
    No fim: **📝 Relatório e materiais** (o que fez, medidas, lista de materiais, fotos, "concluído")
    e **🏁 Saída**.

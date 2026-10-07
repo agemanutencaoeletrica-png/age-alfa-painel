@@ -427,7 +427,6 @@
       '<div class="fotos" id="fr-fotos"></div><button class="peq" id="fr-add-foto" style="margin-top:8px">📷 Adicionar fotos</button>' +
       '<label class="marca-linha"><input type="checkbox" id="fr-concl"> Serviço concluído</label>' +
       '<div id="fr-assin-aviso" class="aviso oculto" style="margin-top:8px">✍️ Este serviço pede a <b>assinatura do responsável</b> no local.</div>' +
-      '<button class="peq oculto" id="fr-assin-opc" style="margin-top:8px">✍️ Coletar assinatura (opcional)</button>' +
       '<div id="fr-assin" class="cartao oculto" style="margin-top:10px">' +
       '<h3 id="fr-assin-tit">✍️ Assinatura do responsável no local</h3><p class="mudo peq" id="fr-assin-txt" style="margin:4px 0 8px">Peça ao gerente (ou ao cliente) para assinar com o dedo.</p>' +
       '<div class="quadro-assin"><canvas id="fr-canvas" aria-label="Quadro de assinatura"></canvas><span class="linha-assin">assine aqui</span></div>' +
@@ -532,20 +531,18 @@
       assin = null;  // mudou o desenho: gera a imagem de novo no envio
       $("#fr-assin-status", el).textContent = vazio ? "" : "✔ assinado";
     });
-    var assin = null, assinOpcional = false;
-    // a assinatura só é obrigatória nos serviços em que o dono ligou "pedir assinatura"
+    var assin = null;
+    // a assinatura só aparece nos serviços em que o dono ligou "pedir assinatura" no painel
     function pedeAssin() { var sv = servicoPorId($("#fr-serv", el).value); return !!(sv && sv.pede_assinatura); }
     function mostrarAssin(rolar) {
-      var concl = $("#fr-concl", el).checked, obrig = pedeAssin(), ver = concl && (obrig || assinOpcional);
+      var concl = $("#fr-concl", el).checked, obrig = pedeAssin(), ver = concl && obrig;
       $("#fr-assin", el).classList.toggle("oculto", !ver);
       $("#fr-assin-aviso", el).classList.toggle("oculto", !(concl && obrig));
-      $("#fr-assin-opc", el).classList.toggle("oculto", !(concl && !obrig && !assinOpcional));
       $("#fr-sem-assin-l", el).classList.toggle("oculto", !obrig);
       if (ver) { quadro.ajustar(); if (rolar) $("#fr-assin", el).scrollIntoView({ behavior: "smooth", block: "center" }); }
     }
     $("#fr-concl", el).onchange = function () { mostrarAssin(true); };
     $("#fr-serv", el).addEventListener("change", function () { mostrarAssin(false); });
-    $("#fr-assin-opc", el).onclick = function () { assinOpcional = true; mostrarAssin(true); };
     $("#fr-limpar", el).onclick = function () { quadro.limpar(); };
     $("#fr-sem-assin", el).onchange = function () { $(".quadro-assin", el).style.opacity = this.checked ? ".35" : "1"; };
 
@@ -564,7 +561,7 @@
       if (pref && concl && !fotos.length) {
         $("#fr-erro", el).innerHTML = '<div class="aviso erro">OS da prefeitura: falta a foto de <b>DEPOIS</b> (serviço pronto).</div>'; return;
       }
-      var obrig = pedeAssin(), visivel = concl && (obrig || assinOpcional);
+      var obrig = pedeAssin(), visivel = concl && obrig;
       var semAssin = obrig && $("#fr-sem-assin", el).checked, nomeAssin = $("#fr-assin-nome", el).value.trim();
       var usarAssin = visivel && !semAssin && !quadro.vazio();
       if (concl && obrig && !semAssin && quadro.vazio()) {
