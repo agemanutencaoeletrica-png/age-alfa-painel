@@ -285,6 +285,7 @@
             return '<div class="parte ' + s.categoria + '" data-serv="' + s.id + '" role="button" tabindex="0"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
               (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe</span>' : "") +
               '<span class="peq">' + (s.funcionario_id ? "👷 " + esc(nomeFunc(s.funcionario_id)) : '<span class="selo critico">sem funcionário</span>') + "</span>" +
+              (s.pede_assinatura ? '<span class="selo">✍️ pede assinatura</span>' : "") +
               (s.data_prevista ? '<span class="dir peq mudo">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
               (s.descricao ? '<div class="peq" style="margin-top:4px;white-space:pre-wrap">' + esc(s.descricao.length > 220 ? s.descricao.slice(0, 220) + "…" : s.descricao) + "</div>" : "") +
               "</div>";
@@ -305,7 +306,8 @@
     var o = porId(S.obras, s.obra_id), f = porId(S.func, s.funcionario_id);
     var t = "*AGE Elétrica e Pintura*\nServiço de " + (A.CATEG[s.categoria].icone + " *" + A.CATEG[s.categoria].nome.toUpperCase()) + "*\n\n" +
       "Cliente: " + o.cliente + "\n" + (o.endereco ? "Endereço: " + o.endereco + "\n" : "") + (o.telefone ? "Telefone: " + o.telefone + "\n" : "") +
-      (s.data_prevista ? "Data: " + A.dataSimples(s.data_prevista) + "\n" : "") + (s.descricao ? "\nO que fazer:\n" + s.descricao + "\n" : "");
+      (s.data_prevista ? "Data: " + A.dataSimples(s.data_prevista) + "\n" : "") + (s.descricao ? "\nO que fazer:\n" + s.descricao + "\n" : "") +
+      (s.pede_assinatura ? "\n✍️ Ao concluir, colher a ASSINATURA do responsável no local (no relatório do app).\n" : "");
     if (f) t += "\nRegistre a chegada, as fotos do serviço e a saída pelo seu link:\n" + linkFunc(f);
     return t;
   }
@@ -321,7 +323,8 @@
       '<label class="marca-linha" style="margin:0"><input type="checkbox" id="ns-' + cat + '"> ' + rotulo + "</label>" +
       '<div id="ns-' + cat + '-campos" class="oculto"><div class="duas"><div><label for="ns-' + cat + '-func">Funcionário</label><select id="ns-' + cat + '-func">' + opcoesFunc(cat, null) + "</select></div>" +
       '<div><label for="ns-' + cat + '-data">Data prevista</label><input type="date" id="ns-' + cat + '-data"></div></div>' +
-      '<label for="ns-' + cat + '-desc">O que fazer</label><textarea id="ns-' + cat + '-desc" rows="3"></textarea></div></div>';
+      '<label for="ns-' + cat + '-desc">O que fazer</label><textarea id="ns-' + cat + '-desc" rows="3"></textarea>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="ns-' + cat + '-assin"> ✍️ Pedir assinatura do responsável ao concluir</label></div></div>';
   }
 
   function novoServico(obraId) {
@@ -364,7 +367,8 @@
       pObra.then(function (o) {
         return q(sb.from("servicos").insert(cats.map(function (cat) {
           return { obra_id: o.id, categoria: cat, funcionario_id: nulo(val(el, "#ns-" + cat + "-func")),
-            data_prevista: nulo(val(el, "#ns-" + cat + "-data")), descricao: nulo(val(el, "#ns-" + cat + "-desc")) };
+            data_prevista: nulo(val(el, "#ns-" + cat + "-data")), descricao: nulo(val(el, "#ns-" + cat + "-desc")),
+            pede_assinatura: $("#ns-" + cat + "-assin", el).checked };
         })).select());
       }).then(function (novos) {
         novos.forEach(function (s) { S.serv.unshift(s); });
@@ -421,6 +425,7 @@
         return '<option value="' + k + '"' + (k === s.status ? " selected" : "") + ">" + A.STATUS[k] + "</option>";
       }).join("") + "</select>" +
       '<label for="es-desc">O que fazer</label><textarea id="es-desc" rows="4">' + esc(s.descricao || "") + "</textarea>" +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="es-assin"' + (s.pede_assinatura ? " checked" : "") + '> ✍️ Pedir assinatura do responsável ao concluir</label>' +
       '<div class="acoes"><button class="prim" id="es-salvar">Salvar</button><span id="es-zap">' + botaoZap(s) + '</span><button class="perigo" id="es-apagar">Apagar parte</button></div>' +
       '<hr class="sep"><h3>Registros de ponto neste serviço</h3><div id="es-pontos">' + carregando() + "</div>" +
       '<hr class="sep"><h3>Relatórios</h3><div id="es-rels"></div>',
@@ -441,7 +446,8 @@
 
     $("#es-salvar", el).onclick = function () {
       var b = this, st = $("#es-st", el).value;
-      var dados = { funcionario_id: nulo($("#es-func", el).value), data_prevista: nulo($("#es-data", el).value), status: st, descricao: nulo(val(el, "#es-desc")) };
+      var dados = { funcionario_id: nulo($("#es-func", el).value), data_prevista: nulo($("#es-data", el).value), status: st, descricao: nulo(val(el, "#es-desc")),
+        pede_assinatura: $("#es-assin", el).checked };
       if (st === "concluido" && s.status !== "concluido") dados.concluido_em = new Date().toISOString();
       if (st !== "concluido") dados.concluido_em = null;
       var trocouFunc = dados.funcionario_id && dados.funcionario_id !== s.funcionario_id;
@@ -556,7 +562,7 @@
     var s = porId(S.serv, r.servico_id), o = s ? porId(S.obras, s.obra_id) : null;
     return '<div class="cartao clic" data-rel="' + r.id + '"' + (r.lido ? "" : ' style="border-left:4px solid var(--critico)"') + '><div class="linha">' +
       (s ? A.seloCategoria(s.categoria) : "") + (r.lido ? "" : '<span class="selo critico">novo</span>') + (r.concluido ? '<span class="selo bom">concluído</span>' : "") +
-      (r.assinatura ? '<span class="selo bom">✍️ assinado</span>' : (r.concluido ? '<span class="selo atencao">sem assinatura</span>' : "")) +
+      (r.assinatura ? '<span class="selo bom">✍️ assinado</span>' : (r.concluido && s && s.pede_assinatura ? '<span class="selo atencao">sem assinatura</span>' : "")) +
       '<span class="dir mudo peq">' + A.dataHora(r.criado_em) + "</span></div>" +
       '<div style="margin-top:6px"><b>' + esc(r.tipo_servico || "Relatório") + "</b> · " + esc(o ? o.cliente : "serviço apagado") + "</div>" +
       '<div class="peq mudo">👷 ' + esc(nomeFunc(r.funcionario_id)) + " · " + (r.materiais || []).length + " materiais · " + (r.fotos || []).length + " fotos</div></div>";
@@ -588,7 +594,7 @@
       (r.assinatura ? '<h3 style="margin-top:12px">✍️ Assinatura do responsável</h3><div class="linha"><button class="foto" data-foto="' + esc(r.assinatura) +
         '" style="width:220px;height:110px;background:#fff" aria-label="Ver assinatura"><img alt="Assinatura" style="object-fit:contain"></button>' +
         '<div class="peq"><b>' + esc(r.assinado_por || "") + "</b><br>" + (r.assinado_em ? A.dataHora(r.assinado_em) : "") + "</div></div>"
-        : (r.concluido ? '<div class="aviso" style="margin-top:12px">Concluído <b>sem assinatura</b> do responsável no local.</div>' : "")) +
+        : (r.concluido && s && s.pede_assinatura ? '<div class="aviso" style="margin-top:12px">Este serviço pedia assinatura, mas foi concluído <b>sem assinatura</b> (responsável não estava no local).</div>' : "")) +
       '<div class="acoes"><button class="prim" id="er-orc">💲 Gerar orçamento</button>' + (s ? '<button id="er-serv">Abrir serviço</button>' : "") +
       '<button id="er-lido">' + (r.lido ? "Marcar como novo" : "Marcar como lido") + "</button></div>",
       { titulo: "Relatório", larga: true, aoFechar: function () { if (location.hash.slice(1) === "relatorios") rota(); } });

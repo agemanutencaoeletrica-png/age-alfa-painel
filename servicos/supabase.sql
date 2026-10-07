@@ -134,6 +134,8 @@ alter table public.servicos   add column if not exists criado_pelo_funcionario b
 alter table public.relatorios add column if not exists assinatura   text;
 alter table public.relatorios add column if not exists assinado_por text;
 alter table public.relatorios add column if not exists assinado_em  timestamptz;
+-- o dono liga por serviço quando precisa da assinatura do responsável
+alter table public.servicos   add column if not exists pede_assinatura boolean not null default false;
 
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
@@ -226,7 +228,7 @@ begin
     'servicos', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id', s.id, 'categoria', s.categoria, 'descricao', s.descricao,
-               'data_prevista', s.data_prevista, 'status', s.status,
+               'data_prevista', s.data_prevista, 'status', s.status, 'pede_assinatura', s.pede_assinatura,
                'cliente', o.cliente, 'telefone', o.telefone, 'endereco', o.endereco,
                'observacoes', o.observacoes)
              order by s.data_prevista nulls last, s.criado_em)

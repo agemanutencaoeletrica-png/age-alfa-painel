@@ -400,12 +400,14 @@
       '<label>Fotos (até 6)</label><input type="file" accept="image/*" multiple id="fr-arq" class="oculto">' +
       '<div class="fotos" id="fr-fotos"></div><button class="peq" id="fr-add-foto" style="margin-top:8px">📷 Adicionar fotos</button>' +
       '<label class="marca-linha"><input type="checkbox" id="fr-concl"> Serviço concluído</label>' +
+      '<div id="fr-assin-aviso" class="aviso oculto" style="margin-top:8px">✍️ Este serviço pede a <b>assinatura do responsável</b> no local.</div>' +
+      '<button class="peq oculto" id="fr-assin-opc" style="margin-top:8px">✍️ Coletar assinatura (opcional)</button>' +
       '<div id="fr-assin" class="cartao oculto" style="margin-top:10px">' +
       '<h3>✍️ Assinatura do responsável no local</h3><p class="mudo peq" style="margin:4px 0 8px">Peça ao gerente (ou ao cliente) para assinar com o dedo.</p>' +
       '<div class="quadro-assin"><canvas id="fr-canvas" aria-label="Quadro de assinatura"></canvas><span class="linha-assin">assine aqui</span></div>' +
       '<div class="linha" style="margin-top:6px"><button class="peq" id="fr-limpar">↺ Limpar</button><span class="mudo mini dir" id="fr-assin-status"></span></div>' +
       '<label for="fr-assin-nome">Nome de quem assinou</label><input id="fr-assin-nome" maxlength="120" placeholder="Ex.: Carlos (gerente da loja)">' +
-      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="fr-sem-assin"> Responsável não está no local (enviar sem assinatura)</label></div>' +
+      '<label class="marca-linha" id="fr-sem-assin-l" style="font-weight:400"><input type="checkbox" id="fr-sem-assin"> Responsável não está no local (enviar sem assinatura)</label></div>' +
       '<div id="fr-erro"></div><div class="acoes"><button class="bom grande" id="fr-enviar">✔ Enviar relatório</button></div>',
       { titulo: "Relatório e materiais", fixa: true });
     var el = j.el;
@@ -461,11 +463,20 @@
       assin = null;  // mudou o desenho: gera a imagem de novo no envio
       $("#fr-assin-status", el).textContent = vazio ? "" : "✔ assinado";
     });
-    var assin = null;
-    $("#fr-concl", el).onchange = function () {
-      $("#fr-assin", el).classList.toggle("oculto", !this.checked);
-      if (this.checked) { quadro.ajustar(); $("#fr-assin", el).scrollIntoView({ behavior: "smooth", block: "center" }); }
-    };
+    var assin = null, assinOpcional = false;
+    // a assinatura só é obrigatória nos serviços em que o dono ligou "pedir assinatura"
+    function pedeAssin() { var sv = servicoPorId($("#fr-serv", el).value); return !!(sv && sv.pede_assinatura); }
+    function mostrarAssin(rolar) {
+      var concl = $("#fr-concl", el).checked, obrig = pedeAssin(), ver = concl && (obrig || assinOpcional);
+      $("#fr-assin", el).classList.toggle("oculto", !ver);
+      $("#fr-assin-aviso", el).classList.toggle("oculto", !(concl && obrig));
+      $("#fr-assin-opc", el).classList.toggle("oculto", !(concl && !obrig && !assinOpcional));
+      $("#fr-sem-assin-l", el).classList.toggle("oculto", !obrig);
+      if (ver) { quadro.ajustar(); if (rolar) $("#fr-assin", el).scrollIntoView({ behavior: "smooth", block: "center" }); }
+    }
+    $("#fr-concl", el).onchange = function () { mostrarAssin(true); };
+    $("#fr-serv", el).addEventListener("change", function () { mostrarAssin(false); });
+    $("#fr-assin-opc", el).onclick = function () { assinOpcional = true; mostrarAssin(true); };
     $("#fr-limpar", el).onclick = function () { quadro.limpar(); };
     $("#fr-sem-assin", el).onchange = function () { $(".quadro-assin", el).style.opacity = this.checked ? ".35" : "1"; };
 
@@ -477,12 +488,13 @@
       var tipoServ = $("#fr-tipo", el).value.trim(), desc = $("#fr-desc", el).value.trim();
       var concl = $("#fr-concl", el).checked;
       if (!tipoServ && !desc) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o tipo de serviço ou a descrição.</div>'; return; }
-      var semAssin = $("#fr-sem-assin", el).checked, nomeAssin = $("#fr-assin-nome", el).value.trim();
-      var usarAssin = concl && !semAssin && !quadro.vazio();
-      if (concl && !semAssin) {
-        if (quadro.vazio()) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Falta a assinatura do responsável. Se ele não estiver, marque “Responsável não está no local”.</div>'; return; }
-        if (!nomeAssin) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o nome de quem assinou.</div>'; $("#fr-assin-nome", el).focus(); return; }
+      var obrig = pedeAssin(), visivel = concl && (obrig || assinOpcional);
+      var semAssin = obrig && $("#fr-sem-assin", el).checked, nomeAssin = $("#fr-assin-nome", el).value.trim();
+      var usarAssin = visivel && !semAssin && !quadro.vazio();
+      if (concl && obrig && !semAssin && quadro.vazio()) {
+        $("#fr-erro", el).innerHTML = '<div class="aviso erro">Falta a assinatura do responsável. Se ele não estiver, marque “Responsável não está no local”.</div>'; return;
       }
+      if (usarAssin && !nomeAssin) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o nome de quem assinou.</div>'; $("#fr-assin-nome", el).focus(); return; }
       if (concl && !A.confirmar("Marcar o serviço como CONCLUÍDO? Ele sai da sua lista.")) return;
       $("#fr-erro", el).innerHTML = "";
       A.ocupado(b, true, "Enviando...");
