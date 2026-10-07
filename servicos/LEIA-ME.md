@@ -4,7 +4,7 @@ Dois endereços:
 
 | Quem | Página | O que faz |
 |---|---|---|
-| **Você (dono)** | `servicos/index.html` | Entra com e-mail e senha. Cadastra equipe, cria serviços (partes de **elétrica** e **pintura** separadas), vê o **cartão de ponto** com fotos e GPS, lê os relatórios e faz os **orçamentos** (só você vê valores). |
+| **Você (dono)** | `servicos/index.html` | Entra com e-mail e senha. Cadastra equipe, cria serviços (partes de **elétrica** e **pintura** separadas), vê o **cartão de ponto** com fotos e GPS, lê os relatórios, faz os **orçamentos** (só você vê valores) e cuida das **OS de prefeituras** (fotos antes/depois, assinatura do fiscal, relatório fotográfico e medição). |
 | **Funcionário** | `servicos/funcionario.html#t=...` | Abre pelo link pessoal que você manda no WhatsApp. Vê só os serviços dele, registra **chegada**, **foto do serviço** e **saída** (foto + GPS) e envia **relatório com materiais**. Nunca vê preços. |
 
 **Separado do AGE BOT:** este app não usa nada do bot — banco de dados, login, arquivos e
@@ -123,6 +123,30 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
      **nunca** caem no mesmo dia; cada dia sai na melhor ordem (menos quilômetros).
    - Cada dia mostra o mapa, a ordem, os km estimados, o botão **Google Maps** (com todas as paradas) e
      **💾 Salvar / enviar ao funcionário**: a rota vai para o app dele (botões *Ir* e *Waze* em cada loja) e pelo WhatsApp.
+
+### Serviços para prefeituras (aba 🏛️ Prefeitura)
+Para OS de prefeituras e outros órgãos públicos: prédios públicos, iluminação pública e obras/reformas.
+**Antes de usar, rode de novo o `supabase.sql`** (cria as tabelas de prefeituras, contratos e medições sem apagar nada).
+
+1. **Prefeituras** → *+ Nova prefeitura* (nome, CNPJ, cidade, contato). Cadastre quantas precisar.
+2. **Contratos** → *+ Novo contrato* (ou ata de registro de preços): nº, processo/licitação, objeto, vigência,
+   valor total e BDI. Na **planilha de itens**, copie do Excel e cole as 5 colunas nesta ordem:
+   **código · descrição · unidade · quantidade contratada · preço unitário**. O app mostra a prévia antes de salvar.
+   O funcionário vê só a descrição dos itens (nunca o preço) para lançar as quantidades.
+3. **Ordens de serviço** → *+ Nova OS*: prefeitura, contrato, **nº da OS/protocolo**, tipo (prédio público,
+   iluminação pública, obra/reforma), secretaria, local, referência (nº do poste, sala, bloco), endereço e **fiscal**.
+   Marque as partes (elétrica/pintura) e o funcionário de cada uma — a assinatura do fiscal já vem ligada. Avise pelo WhatsApp.
+4. **No app do funcionário** a OS aparece com a prefeitura, o nº e o fiscal. No relatório ele tira as
+   **fotos de ANTES** (no começo — pode mandar um relatório só com elas) e as **fotos de DEPOIS**, lança as quantidades
+   escolhendo os itens do contrato e, ao concluir, colhe a **assinatura do fiscal** na tela. As fotos saem carimbadas com
+   ANTES/DEPOIS, nº da OS, data/hora e GPS. **Sem foto de antes e de depois a OS não pode ser concluída.**
+5. Na lista de OS você vê o que falta em cada uma (✔/✖ fotos antes, fotos depois, assinatura do fiscal, medida ou não)
+   e gera o **📄 Relatório fotográfico (PDF)**: dados da OS, execução (chegada/saída com GPS), serviços, quantidades,
+   fotos antes e depois e a assinatura do fiscal.
+6. **Medições** → *+ Medição* no contrato: escolha o período, as OS concluídas já vêm marcadas, toque
+   **⬇ Puxar quantidades dos relatórios** (entra com o preço do contrato), confira e ajuste. O app calcula BDI,
+   acumulado anterior, saldo de cada item e saldo do contrato. Gera o **PDF do boletim de medição** (com campos de
+   assinatura da AGE, fiscal e gestor) e a **planilha para Excel**. Uma OS medida não entra em outra medição.
 
 ### Segurança e controle do ponto
 - A **hora** de cada registro é a do servidor, não a do celular (não dá para adiantar o relógio).

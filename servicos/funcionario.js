@@ -22,6 +22,7 @@
       "Thinner", "Aguarrás", "Bandeja"]
   };
   var UNIDADES = ["un", "m", "m²", "rolo", "L", "galão", "lata", "balde", "kg", "cx", "pç", "par"];
+  var TIPO_PUBLICO = { predio: "Prédio público", iluminacao: "Iluminação pública", obra: "Obra / reforma" };
 
   function lerToken() {
     var m = /(?:^|[#&?])t=([A-Za-z0-9_-]+)/.exec(location.hash.slice(1) + "&" + location.search.slice(1));
@@ -73,7 +74,9 @@
     for (var i = 0; i < D.servicos.length; i++) if (D.servicos[i].id === id) return D.servicos[i];
     return null;
   }
-  function nomeServico(s) { return (A.CATEG[s.categoria] || {}).icone + " " + s.cliente + (s.endereco ? " — " + s.endereco : ""); }
+  function nomeServico(s) {
+    return (A.CATEG[s.categoria] || {}).icone + " " + (s.prefeitura ? "🏛️ " + (s.protocolo ? s.protocolo + " · " : "") : "") + s.cliente + (s.endereco ? " — " + s.endereco : "");
+  }
 
   function resumoHoje() {
     var p = D.pontos_hoje || [];
@@ -117,7 +120,12 @@
     D.servicos.forEach(function (s) {
       h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
         (s.data_prevista ? '<span class="dir mudo peq">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
+        (s.prefeitura ? '<div class="aviso" style="margin:8px 0 0">🏛️ <b>' + esc(s.prefeitura) + "</b>" + (s.protocolo ? " · OS/Protocolo <b>" + esc(s.protocolo) + "</b>" : "") +
+          (s.tipo_publico ? "<br>" + esc(TIPO_PUBLICO[s.tipo_publico] || "") : "") + (s.secretaria ? " · " + esc(s.secretaria) : "") +
+          (s.fiscal ? "<br>Fiscal: " + esc(s.fiscal) : "") +
+          '<br><span class="peq">Tire fotos de <b>ANTES</b> e de <b>DEPOIS</b> e colha a assinatura do fiscal ao concluir.</span></div>' : "") +
         '<h3 style="margin-top:8px">' + esc(s.cliente) + "</h3>" +
+        (s.referencia ? '<div class="peq">🔖 ' + esc(s.referencia) + "</div>" : "") +
         (s.endereco ? '<div class="peq"><a href="' + A.linkEndereco(s.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(s.endereco) + "</a></div>" : "") +
         (s.telefone ? '<div class="peq"><a href="tel:' + esc(A.soDigitos(s.telefone)) + '">📞 ' + esc(s.telefone) + "</a></div>" : "") +
         (s.descricao ? '<p style="white-space:pre-wrap;margin:8px 0 0">' + esc(s.descricao) + "</p>" : "") +
@@ -234,7 +242,7 @@
         "AGE ELÉTRICA E PINTURA · " + A.TIPO_PONTO[tipo].toUpperCase(),
         D.funcionario.nome + " · " + quando.toLocaleString("pt-BR"),
         pos ? "GPS " + pos.coords.latitude.toFixed(6) + ", " + pos.coords.longitude.toFixed(6) + " (±" + Math.round(pos.coords.accuracy) + " m)" : "SEM GPS",
-        s ? s.cliente : ""
+        s ? (s.protocolo ? "OS " + s.protocolo + " · " : "") + s.cliente : ""
       ];
       var bFoto = $("#fp-foto", el);
       A.ocupado(bFoto, true, "Preparando foto...");
@@ -395,30 +403,60 @@
       '<label for="fr-tipo">Tipo de serviço</label><input id="fr-tipo" list="fr-tipos" maxlength="200" placeholder="Escolha ou escreva"><datalist id="fr-tipos"></datalist>' +
       '<label for="fr-desc">O que foi feito / o que precisa ser feito</label>' +
       '<textarea id="fr-desc" rows="4" maxlength="5000" placeholder="Descreva o serviço, medidas (m², metros de fio, número de pontos), problemas encontrados..."></textarea>' +
-      '<label>Materiais necessários</label><div id="fr-mats"></div><datalist id="fr-dl-mat"></datalist>' +
+      '<label id="fr-mats-r">Materiais necessários</label><div id="fr-mats"></div><datalist id="fr-dl-mat"></datalist>' +
       '<button class="peq" id="fr-mais">+ Adicionar material</button>' +
-      '<label>Fotos (até 6)</label><input type="file" accept="image/*" multiple id="fr-arq" class="oculto">' +
+      '<div id="fr-antes-caixa" class="oculto"><label>🏛️ Fotos ANTES do serviço (até 6)</label><input type="file" accept="image/*" multiple id="fr-arq-antes" class="oculto">' +
+      '<div class="fotos" id="fr-fotos-antes"></div><button class="peq" id="fr-add-antes" style="margin-top:8px">📷 Fotos de ANTES</button>' +
+      '<div id="fr-antes-ok" class="mudo peq oculto" style="margin-top:4px">✔ As fotos de antes já foram enviadas num relatório anterior.</div></div>' +
+      '<label id="fr-fotos-r">Fotos (até 6)</label><input type="file" accept="image/*" multiple id="fr-arq" class="oculto">' +
       '<div class="fotos" id="fr-fotos"></div><button class="peq" id="fr-add-foto" style="margin-top:8px">📷 Adicionar fotos</button>' +
       '<label class="marca-linha"><input type="checkbox" id="fr-concl"> Serviço concluído</label>' +
       '<div id="fr-assin-aviso" class="aviso oculto" style="margin-top:8px">✍️ Este serviço pede a <b>assinatura do responsável</b> no local.</div>' +
       '<button class="peq oculto" id="fr-assin-opc" style="margin-top:8px">✍️ Coletar assinatura (opcional)</button>' +
       '<div id="fr-assin" class="cartao oculto" style="margin-top:10px">' +
-      '<h3>✍️ Assinatura do responsável no local</h3><p class="mudo peq" style="margin:4px 0 8px">Peça ao gerente (ou ao cliente) para assinar com o dedo.</p>' +
+      '<h3 id="fr-assin-tit">✍️ Assinatura do responsável no local</h3><p class="mudo peq" id="fr-assin-txt" style="margin:4px 0 8px">Peça ao gerente (ou ao cliente) para assinar com o dedo.</p>' +
       '<div class="quadro-assin"><canvas id="fr-canvas" aria-label="Quadro de assinatura"></canvas><span class="linha-assin">assine aqui</span></div>' +
       '<div class="linha" style="margin-top:6px"><button class="peq" id="fr-limpar">↺ Limpar</button><span class="mudo mini dir" id="fr-assin-status"></span></div>' +
       '<label for="fr-assin-nome">Nome de quem assinou</label><input id="fr-assin-nome" maxlength="120" placeholder="Ex.: Carlos (gerente da loja)">' +
-      '<label class="marca-linha" id="fr-sem-assin-l" style="font-weight:400"><input type="checkbox" id="fr-sem-assin"> Responsável não está no local (enviar sem assinatura)</label></div>' +
+      '<label class="marca-linha" id="fr-sem-assin-l" style="font-weight:400"><input type="checkbox" id="fr-sem-assin"> <span id="fr-sem-assin-t">Responsável não está no local (enviar sem assinatura)</span></label></div>' +
       '<div id="fr-erro"></div><div class="acoes"><button class="bom grande" id="fr-enviar">✔ Enviar relatório</button></div>',
       { titulo: "Relatório e materiais", fixa: true });
     var el = j.el;
 
+    // OS de prefeitura: itens do contrato (sem preço) entram primeiro na lista de materiais
+    function itensContrato(s) { return (s && s.contrato_id && (D.itens_contrato || {})[s.contrato_id]) || []; }
+    function ehPref() { var s = servicoPorId($("#fr-serv", el).value); return !!(s && s.prefeitura); }
     function atualizarListas() {
-      var s = servicoPorId($("#fr-serv", el).value), c = s ? s.categoria : "eletrica";
+      var s = servicoPorId($("#fr-serv", el).value), c = s ? s.categoria : "eletrica", pref = !!(s && s.prefeitura);
       $("#fr-tipos", el).innerHTML = TIPOS_SERVICO[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
-      $("#fr-dl-mat", el).innerHTML = MATERIAIS[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
+      $("#fr-dl-mat", el).innerHTML = itensContrato(s).map(function (t) {
+        return '<option value="' + esc(t.descricao) + '">' + esc((t.codigo ? t.codigo + " · " : "") + (t.un || "")) + "</option>";
+      }).join("") + MATERIAIS[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
+      $("#fr-mats-r", el).textContent = pref ? "Serviços executados e materiais usados (quantidades)" : "Materiais necessários";
+      $("#fr-antes-caixa", el).classList.toggle("oculto", !pref);
+      $("#fr-antes-ok", el).classList.toggle("oculto", !(pref && s.tem_fotos_antes));
+      $("#fr-fotos-r", el).textContent = pref ? "🏛️ Fotos DEPOIS (serviço pronto, até 6)" : "Fotos (até 6)";
+      $("#fr-add-foto", el).textContent = pref ? "📷 Fotos de DEPOIS" : "📷 Adicionar fotos";
+      $("#fr-assin-tit", el).textContent = pref ? "✍️ Assinatura do fiscal da prefeitura" : "✍️ Assinatura do responsável no local";
+      $("#fr-assin-txt", el).textContent = pref ? "Peça ao fiscal da prefeitura para assinar com o dedo." : "Peça ao gerente (ou ao cliente) para assinar com o dedo.";
+      $("#fr-assin-nome", el).placeholder = pref ? "Nome do fiscal" : "Ex.: Carlos (gerente da loja)";
+      if (pref && s.fiscal && !$("#fr-assin-nome", el).value) $("#fr-assin-nome", el).value = s.fiscal;
+      $("#fr-sem-assin-t", el).textContent = pref ? "Fiscal não está no local (enviar sem assinatura)" : "Responsável não está no local (enviar sem assinatura)";
+      $("#fr-assin-aviso", el).innerHTML = pref ? "✍️ OS da prefeitura: colha a <b>assinatura do fiscal</b>." : "✍️ Este serviço pede a <b>assinatura do responsável</b> no local.";
+      // unidade do item do contrato entra sozinha ao escolher o item
+      $$(".mat", el).forEach(ligarUnidade);
     }
-    atualizarListas();
-    $("#fr-serv", el).onchange = atualizarListas;
+    function ligarUnidade(d) {
+      var inp = $(".m-item", d);
+      inp.onchange = function () {
+        var it = itensContrato(servicoPorId($("#fr-serv", el).value)).filter(function (t) { return t.descricao === inp.value.trim(); })[0];
+        var sel = $(".m-un", d);
+        if (it && it.un) {
+          if (!Array.prototype.some.call(sel.options, function (o) { return o.value === it.un; })) sel.insertAdjacentHTML("beforeend", "<option>" + esc(it.un) + "</option>");
+          sel.value = it.un;
+        }
+      };
+    }
 
     function novaLinha() {
       var d = document.createElement("div");
@@ -429,35 +467,51 @@
         '<button class="m-tirar" aria-label="Remover material">✕</button>';
       $(".m-tirar", d).onclick = function () { d.remove(); };
       $("#fr-mats", el).appendChild(d);
+      ligarUnidade(d);
       return d;
     }
     novaLinha();
+    atualizarListas();
+    $("#fr-serv", el).onchange = atualizarListas;
+    // GPS no carimbo das fotos da OS da prefeitura (comprova o local)
+    var posRel = null;
+    if (navigator.geolocation && D.servicos.some(function (x) { return x.prefeitura; })) navigator.geolocation.getCurrentPosition(function (p) { posRel = p; }, function () {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
     $("#fr-mais", el).onclick = function () { $(".m-item", novaLinha()).focus(); };
 
-    function desenharFotos() {
-      $("#fr-fotos", el).innerHTML = fotos.map(function (f, i) {
-        return '<div class="foto"><img alt="" src="' + f.url + '"><button class="et" data-tirar="' + i + '" style="border:0;width:100%;min-height:0;padding:2px;border-radius:0">remover</button></div>';
-      }).join("");
-      $$("[data-tirar]", el).forEach(function (b) {
-        b.onclick = function () { var f = fotos.splice(Number(b.dataset.tirar), 1)[0]; URL.revokeObjectURL(f.url); desenharFotos(); };
-      });
-      $("#fr-add-foto", el).classList.toggle("oculto", fotos.length >= 6);
-    }
-    var arq = $("#fr-arq", el);
-    $("#fr-add-foto", el).onclick = function () { arq.value = ""; arq.click(); };
-    arq.onchange = function () {
-      var lista = Array.prototype.slice.call(arq.files || [], 0, 6 - fotos.length);
-      var b = $("#fr-add-foto", el);
-      A.ocupado(b, true, "Preparando...");
-      var linhas = ["AGE ELÉTRICA E PINTURA · RELATÓRIO", D.funcionario.nome + " · " + new Date().toLocaleString("pt-BR")];
-      lista.reduce(function (p, f) {
-        return p.then(function () {
-          return A.prepararFoto(f, linhas, 1400).then(function (blob) {
-            fotos.push({ blob: blob, url: URL.createObjectURL(blob), caminho: null, enviada: false });
-          });
+    var fotosAntes = [];
+    function seletorFotos(lista, idCaixa, idArq, idBotao, rotulo) {
+      function desenhar() {
+        $(idCaixa, el).innerHTML = lista.map(function (f, i) {
+          return '<div class="foto"><img alt="" src="' + f.url + '"><button class="et" data-i="' + i + '" style="border:0;width:100%;min-height:0;padding:2px;border-radius:0">remover</button></div>';
+        }).join("");
+        $$("[data-i]", $(idCaixa, el)).forEach(function (b) {
+          b.onclick = function () { var f = lista.splice(Number(b.dataset.i), 1)[0]; URL.revokeObjectURL(f.url); desenhar(); };
         });
-      }, Promise.resolve()).catch(function (e) { A.avisar(A.msgErro(e), "erro"); }).then(function () { A.ocupado(b, false); desenharFotos(); });
-    };
+        $(idBotao, el).classList.toggle("oculto", lista.length >= 6);
+      }
+      var arq = $(idArq, el);
+      $(idBotao, el).onclick = function () { arq.value = ""; arq.click(); };
+      arq.onchange = function () {
+        var novas = Array.prototype.slice.call(arq.files || [], 0, 6 - lista.length);
+        var b = $(idBotao, el), txt = b.textContent, s = servicoPorId($("#fr-serv", el).value), pref = !!(s && s.prefeitura);
+        A.ocupado(b, true, "Preparando...");
+        var linhas = ["AGE ELÉTRICA E PINTURA · " + (pref ? "PREFEITURA · FOTO " + rotulo() : "RELATÓRIO"),
+          D.funcionario.nome + " · " + new Date().toLocaleString("pt-BR")];
+        if (pref) {
+          linhas.push((s.protocolo ? "OS " + s.protocolo + " · " : "") + s.cliente);
+          linhas.push(posRel ? "GPS " + posRel.coords.latitude.toFixed(6) + ", " + posRel.coords.longitude.toFixed(6) + " (±" + Math.round(posRel.coords.accuracy) + " m)" : "SEM GPS");
+        }
+        novas.reduce(function (p, f) {
+          return p.then(function () {
+            return A.prepararFoto(f, linhas, 1400).then(function (blob) {
+              lista.push({ blob: blob, url: URL.createObjectURL(blob), caminho: null, enviada: false });
+            });
+          });
+        }, Promise.resolve()).catch(function (e) { A.avisar(A.msgErro(e), "erro"); }).then(function () { A.ocupado(b, false); b.textContent = txt; desenhar(); });
+      };
+    }
+    seletorFotos(fotos, "#fr-fotos", "#fr-arq", "#fr-add-foto", function () { return "DEPOIS"; });
+    seletorFotos(fotosAntes, "#fr-fotos-antes", "#fr-arq-antes", "#fr-add-antes", function () { return "ANTES"; });
 
     var quadro = quadroAssinatura($("#fr-canvas", el), function (vazio) {
       assin = null;  // mudou o desenho: gera a imagem de novo no envio
@@ -488,11 +542,19 @@
       var tipoServ = $("#fr-tipo", el).value.trim(), desc = $("#fr-desc", el).value.trim();
       var concl = $("#fr-concl", el).checked;
       if (!tipoServ && !desc) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o tipo de serviço ou a descrição.</div>'; return; }
+      var sPref = servicoPorId($("#fr-serv", el).value), pref = !!(sPref && sPref.prefeitura);
+      if (pref && concl && !fotosAntes.length && !sPref.tem_fotos_antes) {
+        $("#fr-erro", el).innerHTML = '<div class="aviso erro">OS da prefeitura: falta a foto de <b>ANTES</b> do serviço.</div>'; return;
+      }
+      if (pref && concl && !fotos.length) {
+        $("#fr-erro", el).innerHTML = '<div class="aviso erro">OS da prefeitura: falta a foto de <b>DEPOIS</b> (serviço pronto).</div>'; return;
+      }
       var obrig = pedeAssin(), visivel = concl && (obrig || assinOpcional);
       var semAssin = obrig && $("#fr-sem-assin", el).checked, nomeAssin = $("#fr-assin-nome", el).value.trim();
       var usarAssin = visivel && !semAssin && !quadro.vazio();
       if (concl && obrig && !semAssin && quadro.vazio()) {
-        $("#fr-erro", el).innerHTML = '<div class="aviso erro">Falta a assinatura do responsável. Se ele não estiver, marque “Responsável não está no local”.</div>'; return;
+        $("#fr-erro", el).innerHTML = '<div class="aviso erro">' + (pref ? "Falta a assinatura do fiscal. Se ele não estiver, marque “Fiscal não está no local”." :
+          "Falta a assinatura do responsável. Se ele não estiver, marque “Responsável não está no local”.") + "</div>"; return;
       }
       if (usarAssin && !nomeAssin) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o nome de quem assinou.</div>'; $("#fr-assin-nome", el).focus(); return; }
       if (concl && !A.confirmar("Marcar o serviço como CONCLUÍDO? Ele sai da sua lista.")) return;
@@ -500,19 +562,23 @@
       A.ocupado(b, true, "Enviando...");
       var hoje = A.isoLocal(new Date());
       fotos.forEach(function (f) { if (!f.caminho) f.caminho = TOKEN + "/" + hoje + "/rel-" + A.uuid() + ".jpg"; });
+      if (!pref) fotosAntes.length = 0;
+      fotosAntes.forEach(function (f) { if (!f.caminho) f.caminho = TOKEN + "/" + hoje + "/antes-" + A.uuid() + ".jpg"; });
       var s0 = servicoPorId($("#fr-serv", el).value);
       var pAssin = !usarAssin ? Promise.resolve(null) : (assin ? Promise.resolve(assin) : quadro.paraJpeg([
-        "Assinado por " + nomeAssin + " · " + new Date().toLocaleString("pt-BR"),
-        (s0 ? s0.cliente + " · " : "") + "Funcionário: " + D.funcionario.nome
+        "Assinado por " + nomeAssin + (pref ? " (fiscal)" : "") + " · " + new Date().toLocaleString("pt-BR"),
+        (s0 ? (s0.protocolo ? "OS " + s0.protocolo + " · " : "") + s0.cliente + " · " : "") + "Funcionário: " + D.funcionario.nome
       ]).then(function (blob) { assin = { blob: blob, caminho: TOKEN + "/" + hoje + "/assin-" + A.uuid() + ".jpg", enviada: false }; return assin; }));
       pAssin.then(function (a) {
-        return fotos.concat(a ? [a] : []).reduce(function (p, f) { return p.then(function () { return enviarFoto(f); }); }, Promise.resolve()).then(function () { return a; });
+        return fotosAntes.concat(fotos, a ? [a] : []).reduce(function (p, f) { return p.then(function () { return enviarFoto(f); }); }, Promise.resolve()).then(function () { return a; });
       }).then(function (a) {
-        return sb.rpc("enviar_relatorio", {
+        var args = {
           p_token: TOKEN, p_servico_id: $("#fr-serv", el).value, p_tipo_servico: tipoServ, p_descricao: desc,
           p_materiais: materiais, p_fotos: fotos.map(function (f) { return f.caminho; }), p_concluido: concl,
           p_assinatura: a ? a.caminho : null, p_assinado_por: a ? nomeAssin : null
-        });
+        };
+        if (pref) args.p_fotos_antes = fotosAntes.map(function (f) { return f.caminho; });
+        return sb.rpc("enviar_relatorio", args);
       }).then(function (r) {
         if (r.error) throw r.error;
         j.fechar();

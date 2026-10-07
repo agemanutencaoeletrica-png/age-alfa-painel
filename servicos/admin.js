@@ -5,13 +5,13 @@
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var app = $("#app");
   var sb = null;
-  var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [] };
+  var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [], pref: [], contr: [], med: [], semPref: false };
   var urls = {};        // caminho da foto -> { url, vence }
   var infoFoto = {};    // caminho da foto -> html com detalhes (hora, GPS...)
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -148,8 +148,17 @@
       q(sb.from("relatorios").select("*").order("criado_em", { ascending: false }).limit(500)),
       q(sb.from("orcamentos").select("*").order("numero", { ascending: false }).limit(500)),
       q(sb.from("lojas").select("*").limit(5000)),
-      q(sb.from("rotas").select("*").order("criado_em", { ascending: false }).limit(300))
-    ]).then(function (r) { S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas(); });
+      q(sb.from("rotas").select("*").order("criado_em", { ascending: false }).limit(300)),
+      // prefeituras: se o supabase.sql novo ainda não foi rodado, o resto do painel continua funcionando
+      Promise.all([
+        q(sb.from("prefeituras").select("*").order("nome")),
+        q(sb.from("contratos").select("*").order("criado_em", { ascending: false })),
+        q(sb.from("medicoes").select("*").order("numero", { ascending: false }).limit(500))
+      ]).catch(function () { return null; })
+    ]).then(function (r) {
+      S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
+      S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
+    });
   }
 
   function montar() {
@@ -181,7 +190,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, rotas: verRotas, lojas: verLojas, ponto: verPonto, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -276,7 +285,7 @@
       if (!obras.length) { l.innerHTML = '<div class="cartao vazio">Nenhum serviço com este filtro.</div>'; return; }
       l.innerHTML = obras.map(function (o) {
         var partes = S.serv.filter(function (s) { return s.obra_id === o.id && passa(s); });
-        return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente) + "</h3>" +
+        return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente) + "</h3>" + seloOS(o) +
           '<span class="dir"><button class="peq" data-parte="' + o.id + '">+ Parte</button> <button class="peq" data-orc-obra="' + o.id + '">💲 Orçamento</button> ' +
           '<button class="peq" data-obra="' + o.id + '">Editar</button></span></div>' +
           (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
@@ -302,12 +311,21 @@
     listar();
   }
 
+  function seloOS(o) {
+    if (!o || !o.prefeitura_id) return "";
+    var p = porId(S.pref, o.prefeitura_id);
+    return '<span class="selo">🏛️ ' + esc(p ? p.nome : "Prefeitura") + (o.protocolo ? " · OS " + esc(o.protocolo) : "") + "</span>";
+  }
+
   function msgServico(s) {
     var o = porId(S.obras, s.obra_id), f = porId(S.func, s.funcionario_id);
     var t = "*AGE Elétrica e Pintura*\nServiço de " + (A.CATEG[s.categoria].icone + " *" + A.CATEG[s.categoria].nome.toUpperCase()) + "*\n\n" +
-      "Cliente: " + o.cliente + "\n" + (o.endereco ? "Endereço: " + o.endereco + "\n" : "") + (o.telefone ? "Telefone: " + o.telefone + "\n" : "") +
+      (o.prefeitura_id ? "🏛️ " + ((porId(S.pref, o.prefeitura_id) || {}).nome || "Prefeitura") + (o.protocolo ? " · OS/Protocolo " + o.protocolo : "") + "\n" +
+        (o.fiscal ? "Fiscal: " + o.fiscal + "\n" : "") : "") +
+      "Cliente: " + o.cliente + "\n" + (o.referencia ? "Referência: " + o.referencia + "\n" : "") + (o.endereco ? "Endereço: " + o.endereco + "\n" : "") + (o.telefone ? "Telefone: " + o.telefone + "\n" : "") +
       (s.data_prevista ? "Data: " + A.dataSimples(s.data_prevista) + "\n" : "") + (s.descricao ? "\nO que fazer:\n" + s.descricao + "\n" : "") +
-      (s.pede_assinatura ? "\n✍️ Ao concluir, colher a ASSINATURA do responsável no local (no relatório do app).\n" : "");
+      (o.prefeitura_id ? "\n📷 Fotos de ANTES e de DEPOIS são obrigatórias (no relatório do app).\n" : "") +
+      (s.pede_assinatura ? "\n✍️ Ao concluir, colher a ASSINATURA do " + (o.prefeitura_id ? "FISCAL" : "responsável no local") + " (no relatório do app).\n" : "");
     if (f) t += "\nRegistre a chegada, as fotos do serviço e a saída pelo seu link:\n" + linkFunc(f);
     return t;
   }
@@ -417,7 +435,7 @@
       '<div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
       (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe' + (s.funcionario_id ? " (" + esc(nomeFunc(s.funcionario_id)) + ")" : "") + "</span>" : "") +
       '<span class="dir mudo peq">criado ' + A.data(s.criado_em) + "</span></div>" +
-      "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" +
+      "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" + seloOS(o) +
       (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
       '<div class="duas"><div><label for="es-func">Funcionário</label><select id="es-func">' + opcoesFunc(s.categoria, s.funcionario_id) + "</select></div>" +
       '<div><label for="es-data">Data prevista</label><input type="date" id="es-data" value="' + esc(s.data_prevista || "") + '"></div></div>' +
@@ -565,7 +583,8 @@
       (r.assinatura ? '<span class="selo bom">✍️ assinado</span>' : (r.concluido && s && s.pede_assinatura ? '<span class="selo atencao">sem assinatura</span>' : "")) +
       '<span class="dir mudo peq">' + A.dataHora(r.criado_em) + "</span></div>" +
       '<div style="margin-top:6px"><b>' + esc(r.tipo_servico || "Relatório") + "</b> · " + esc(o ? o.cliente : "serviço apagado") + "</div>" +
-      '<div class="peq mudo">👷 ' + esc(nomeFunc(r.funcionario_id)) + " · " + (r.materiais || []).length + " materiais · " + (r.fotos || []).length + " fotos</div></div>";
+      '<div class="peq mudo">👷 ' + esc(nomeFunc(r.funcionario_id)) + " · " + (r.materiais || []).length + " materiais · " +
+        ((r.fotos_antes || []).length ? (r.fotos_antes || []).length + " fotos antes · " + (r.fotos || []).length + " depois" : (r.fotos || []).length + " fotos") + "</div></div>";
   }
 
   function verRelatorios(c) {
@@ -580,18 +599,19 @@
 
   function abrirRelatorio(id) {
     var r = porId(S.rel, id), s = porId(S.serv, r.servico_id), o = s ? porId(S.obras, s.obra_id) : null;
-    var mats = r.materiais || [];
+    var mats = r.materiais || [], pref = !!(o && o.prefeitura_id);
     var j = A.janela(
       '<div class="linha">' + (s ? A.seloCategoria(s.categoria) : "") + (r.concluido ? '<span class="selo bom">funcionário marcou como concluído</span>' : "") +
       '<span class="dir mudo peq">' + A.dataHora(r.criado_em) + "</span></div>" +
-      '<p><b>Cliente:</b> ' + esc(o ? o.cliente : "serviço apagado") + (o && o.endereco ? " · " + esc(o.endereco) : "") + "<br><b>Funcionário:</b> " + esc(nomeFunc(r.funcionario_id)) +
+      (pref ? seloOS(o) : "") + '<p><b>Cliente:</b> ' + esc(o ? o.cliente : "serviço apagado") + (o && o.endereco ? " · " + esc(o.endereco) : "") + "<br><b>Funcionário:</b> " + esc(nomeFunc(r.funcionario_id)) +
       "<br><b>Tipo de serviço:</b> " + esc(r.tipo_servico || "—") + "</p>" +
       (r.descricao ? '<div class="cartao" style="white-space:pre-wrap">' + esc(r.descricao) + "</div>" : "") +
       "<h3>Materiais pedidos</h3>" + (mats.length ? '<div class="tabela-caixa"><table><thead><tr><th>Material</th><th class="num">Qtd</th><th>Un</th></tr></thead><tbody>' +
         mats.map(function (m) { return "<tr><td>" + esc(m.item) + '</td><td class="num">' + A.numero(m.qtd) + "</td><td>" + esc(m.un) + "</td></tr>"; }).join("") +
         "</tbody></table></div>" : '<p class="mudo peq">Nenhum material.</p>') +
-      ((r.fotos || []).length ? '<h3 style="margin-top:12px">Fotos</h3><div class="fotos">' + r.fotos.map(function (f) { return htmlFoto(f, ""); }).join("") + "</div>" : "") +
-      (r.assinatura ? '<h3 style="margin-top:12px">✍️ Assinatura do responsável</h3><div class="linha"><button class="foto" data-foto="' + esc(r.assinatura) +
+      ((r.fotos_antes || []).length ? '<h3 style="margin-top:12px">Fotos ANTES</h3><div class="fotos">' + r.fotos_antes.map(function (f) { return htmlFoto(f, "antes"); }).join("") + "</div>" : "") +
+      ((r.fotos || []).length ? '<h3 style="margin-top:12px">' + (pref ? "Fotos DEPOIS" : "Fotos") + '</h3><div class="fotos">' + r.fotos.map(function (f) { return htmlFoto(f, pref ? "depois" : ""); }).join("") + "</div>" : "") +
+      (r.assinatura ? '<h3 style="margin-top:12px">✍️ Assinatura ' + (pref ? "do fiscal" : "do responsável") + "</h3>" + '<div class="linha"><button class="foto" data-foto="' + esc(r.assinatura) +
         '" style="width:220px;height:110px;background:#fff" aria-label="Ver assinatura"><img alt="Assinatura" style="object-fit:contain"></button>' +
         '<div class="peq"><b>' + esc(r.assinado_por || "") + "</b><br>" + (r.assinado_em ? A.dataHora(r.assinado_em) : "") + "</div></div>"
         : (r.concluido && s && s.pede_assinatura ? '<div class="aviso" style="margin-top:12px">Este serviço pedia assinatura, mas foi concluído <b>sem assinatura</b> (responsável não estava no local).</div>' : "")) +
@@ -599,7 +619,8 @@
       '<button id="er-lido">' + (r.lido ? "Marcar como novo" : "Marcar como lido") + "</button></div>",
       { titulo: "Relatório", larga: true, aoFechar: function () { if (location.hash.slice(1) === "relatorios") rota(); } });
     var el = j.el;
-    (r.fotos || []).forEach(function (f) { infoFoto[f] = "Foto do relatório · " + esc(nomeFunc(r.funcionario_id)) + " · " + A.dataHora(r.criado_em); });
+    (r.fotos || []).forEach(function (f) { infoFoto[f] = (pref ? "Foto DEPOIS" : "Foto do relatório") + " · " + esc(nomeFunc(r.funcionario_id)) + " · " + A.dataHora(r.criado_em); });
+    (r.fotos_antes || []).forEach(function (f) { infoFoto[f] = "Foto ANTES · " + esc(nomeFunc(r.funcionario_id)) + " · " + A.dataHora(r.criado_em); });
     if (r.assinatura) infoFoto[r.assinatura] = "<b>Assinatura</b> de " + esc(r.assinado_por || "") + " · " + (r.assinado_em ? A.dataHora(r.assinado_em) : "") +
       " · coletada por " + esc(nomeFunc(r.funcionario_id));
     hidratarFotos(el);
@@ -1724,6 +1745,14 @@
       });
     };
   }
+
+  // o módulo da prefeitura (prefeitura.js) usa as mesmas funções do painel
+  var P = {
+    get sb() { return sb; }, S: S, q: q, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
+    val: val, nulo: nulo, htmlFoto: htmlFoto, hidratarFotos: hidratarFotos, infoFoto: infoFoto, registrarInfoPonto: registrarInfoPonto,
+    opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,
+    rota: rota, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES
+  };
 
   iniciar();
 })();
