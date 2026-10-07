@@ -22,6 +22,7 @@
       "Thinner", "Aguarrás", "Bandeja"]
   };
   var UNIDADES = ["un", "m", "m²", "rolo", "L", "galão", "lata", "balde", "kg", "cx", "pç", "par"];
+  var TIPO_PUBLICO = { predio: "Prédio público", iluminacao: "Iluminação pública", obra: "Obra / reforma" };
 
   function lerToken() {
     var m = /(?:^|[#&?])t=([A-Za-z0-9_-]+)/.exec(location.hash.slice(1) + "&" + location.search.slice(1));
@@ -73,7 +74,9 @@
     for (var i = 0; i < D.servicos.length; i++) if (D.servicos[i].id === id) return D.servicos[i];
     return null;
   }
-  function nomeServico(s) { return (A.CATEG[s.categoria] || {}).icone + " " + s.cliente + (s.endereco ? " — " + s.endereco : ""); }
+  function nomeServico(s) {
+    return (A.CATEG[s.categoria] || {}).icone + " " + (s.prefeitura ? "🏛️ " + (s.protocolo ? s.protocolo + " · " : "") : "") + s.cliente + (s.endereco ? " — " + s.endereco : "");
+  }
 
   function resumoHoje() {
     var p = D.pontos_hoje || [];
@@ -111,22 +114,49 @@
         }).join("") + "</div>";
     });
 
-    h += '<div class="cab-secao" style="margin-top:18px"><h2>Meus serviços</h2><span class="mudo peq">' + D.servicos.length + "</span></div>";
-    if (!D.servicos.length) h += '<div class="cartao vazio">Nenhum serviço aberto para você agora.</div>';
-    D.servicos.forEach(function (s) {
-      h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
-        (s.data_prevista ? '<span class="dir mudo peq">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
-        '<h3 style="margin-top:8px">' + esc(s.cliente) + "</h3>" +
-        (s.endereco ? '<div class="peq"><a href="' + A.linkEndereco(s.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(s.endereco) + "</a></div>" : "") +
-        (s.telefone ? '<div class="peq"><a href="tel:' + esc(A.soDigitos(s.telefone)) + '">📞 ' + esc(s.telefone) + "</a></div>" : "") +
-        (s.descricao ? '<p style="white-space:pre-wrap;margin:8px 0 0">' + esc(s.descricao) + "</p>" : "") +
-        (s.observacoes ? '<p class="mudo peq" style="white-space:pre-wrap;margin:6px 0 0">Obs.: ' + esc(s.observacoes) + "</p>" : "") +
-        '<div class="acoes"><button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui</button>' +
-        '<button class="peq" data-ponto="servico" data-serv="' + s.id + '">📷 Foto</button>' +
-        '<button class="peq" data-relatorio="' + s.id + '">📝 Relatório</button></div></div>';
-    });
+    // OS da prefeitura numa área separada dos serviços particulares
+    var dePref = D.servicos.filter(function (s) { return s.prefeitura; }), particulares = D.servicos.filter(function (s) { return !s.prefeitura; });
+    if (dePref.length) {
+      h += '<div class="cab-secao" style="margin-top:18px"><h2>🏛️ Serviços da prefeitura</h2><span class="mudo peq">' + dePref.length + "</span></div>";
+      dePref.forEach(function (s) { h += cartaoServico(s); });
+    }
+    h += '<div class="cab-secao" style="margin-top:18px"><h2>' + (dePref.length ? "Outros serviços" : "Meus serviços") + '</h2><span class="mudo peq">' + particulares.length + "</span>" +
+      '<button class="peq dir" id="b-novo-serv">➕ Serviço não cadastrado</button></div>';
+    if (!particulares.length) h += '<div class="cartao vazio">Nenhum serviço' + (dePref.length ? " particular" : "") + ' aberto para você agora.<br>Vai fazer um serviço que não está aqui? Toque em <b>➕ Serviço não cadastrado</b>.</div>';
+    particulares.forEach(function (s) { h += cartaoServico(s); });
 
-    h += '<div class="cab-secao" style="margin-top:18px"><h2>Registros de hoje</h2></div><div class="cartao">';
+    h += registrosHoje();
+    app.innerHTML = h;
+
+    A.ligarInstalar($("#b-instalar"));
+    $("#b-atualizar").onclick = function () { carregar().then(function () { A.avisar("Atualizado"); }); };
+    $("#b-novo-serv").onclick = function () { novoServico(null); };
+    $$("[data-ponto]").forEach(function (b) { b.onclick = function () { fluxoPonto(b.dataset.ponto, b.dataset.serv || null); }; });
+    $$("[data-relatorio]").forEach(function (b) { b.onclick = function () { fluxoRelatorio(b.dataset.relatorio || null); }; });
+  }
+
+  function cartaoServico(s) {
+    var h = "";
+    h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
+      (s.data_prevista ? '<span class="dir mudo peq">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
+      (s.prefeitura ? '<div class="aviso" style="margin:8px 0 0">🏛️ <b>' + esc(s.prefeitura) + "</b>" + (s.protocolo ? " · OS/Protocolo <b>" + esc(s.protocolo) + "</b>" : "") +
+        (s.tipo_publico ? "<br>" + esc(TIPO_PUBLICO[s.tipo_publico] || "") : "") + (s.secretaria ? " · " + esc(s.secretaria) : "") +
+        (s.fiscal ? "<br>Fiscal: " + esc(s.fiscal) : "") +
+        '<br><span class="peq">Tire fotos de <b>ANTES</b> e de <b>DEPOIS</b> e colha a assinatura do fiscal ao concluir.</span></div>' : "") +
+      '<h3 style="margin-top:8px">' + esc(s.cliente) + "</h3>" +
+      (s.referencia ? '<div class="peq">🔖 ' + esc(s.referencia) + "</div>" : "") +
+      (s.endereco ? '<div class="peq"><a href="' + A.linkEndereco(s.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(s.endereco) + "</a></div>" : "") +
+      (s.telefone ? '<div class="peq"><a href="tel:' + esc(A.soDigitos(s.telefone)) + '">📞 ' + esc(s.telefone) + "</a></div>" : "") +
+      (s.descricao ? '<p style="white-space:pre-wrap;margin:8px 0 0">' + esc(s.descricao) + "</p>" : "") +
+      (s.observacoes && !/^Criado por .* pelo app$/.test(s.observacoes) ? '<p class="mudo peq" style="white-space:pre-wrap;margin:6px 0 0">Obs.: ' + esc(s.observacoes) + "</p>" : "") +
+      '<div class="acoes"><button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui</button>' +
+      '<button class="peq" data-ponto="servico" data-serv="' + s.id + '">📷 Foto</button>' +
+      '<button class="peq" data-relatorio="' + s.id + '">📝 Relatório</button></div></div>';
+    return h;
+  }
+
+  function registrosHoje() {
+    var h = '<div class="cab-secao" style="margin-top:18px"><h2>Registros de hoje</h2></div><div class="cartao">';
     if (!D.pontos_hoje.length) h += '<div class="vazio">Nada registrado hoje.</div>';
     D.pontos_hoje.slice().reverse().forEach(function (p) {
       var s = p.servico_id ? servicoPorId(p.servico_id) : null;
@@ -135,12 +165,7 @@
         (p.tem_gps ? "" : ' <span class="selo critico dir">sem GPS</span>') + "</div>";
     });
     h += '</div><p class="mudo mini" style="text-align:center">A hora do registro é a do servidor da AGE. As fotos vão direto para o responsável.</p></main>';
-    app.innerHTML = h;
-
-    A.ligarInstalar($("#b-instalar"));
-    $("#b-atualizar").onclick = function () { carregar().then(function () { A.avisar("Atualizado"); }); };
-    $$("[data-ponto]").forEach(function (b) { b.onclick = function () { fluxoPonto(b.dataset.ponto, b.dataset.serv || null); }; });
-    $$("[data-relatorio]").forEach(function (b) { b.onclick = function () { fluxoRelatorio(b.dataset.relatorio || null); }; });
+    return h;
   }
 
   function opcoesServico(selecionado, comVazio) {
@@ -167,6 +192,7 @@
       (tipo === "saida" && !D.pontos_hoje.some(function (p) { return p.tipo === "chegada"; }) ?
         '<div class="aviso">Você não registrou a chegada hoje. Se esqueceu, avise o responsável.</div>' : "") +
       "<label for=\"fp-serv\">Serviço</label><select id=\"fp-serv\">" + opcoesServico(servicoId, true) + "</select>" +
+      '<button class="texto peq" id="fp-novo">➕ Não está na lista? Cadastrar o serviço</button>' +
       '<div id="fp-gps" class="aviso">📡 Procurando sua localização...</div>' +
       '<button class="texto peq" id="fp-gps-de-novo">↻ Tentar localização de novo</button>' +
       '<label for="fp-obs">Observação (opcional)</label><textarea id="fp-obs" rows="2" maxlength="1000" placeholder="Ex.: cliente pediu para voltar amanhã"></textarea>' +
@@ -209,6 +235,12 @@
     function pararGps() { if (vigia !== null && navigator.geolocation) navigator.geolocation.clearWatch(vigia); vigia = null; }
     iniciarGps();
     $("#fp-gps-de-novo", el).onclick = iniciarGps;
+    $("#fp-novo", el).onclick = function () {
+      novoServico(function (id) {
+        var sel = $("#fp-serv", el);
+        if (sel) { sel.innerHTML = opcoesServico(id, true); sel.value = id; }
+      });
+    };
 
     var arq = $("#fp-arq", el);
     $("#fp-foto", el).onclick = function () { arq.value = ""; arq.click(); };
@@ -225,7 +257,7 @@
         "AGE ELÉTRICA E PINTURA · " + A.TIPO_PONTO[tipo].toUpperCase(),
         D.funcionario.nome + " · " + quando.toLocaleString("pt-BR"),
         pos ? "GPS " + pos.coords.latitude.toFixed(6) + ", " + pos.coords.longitude.toFixed(6) + " (±" + Math.round(pos.coords.accuracy) + " m)" : "SEM GPS",
-        s ? s.cliente : ""
+        s ? (s.protocolo ? "OS " + s.protocolo + " · " : "") + s.cliente : ""
       ];
       var bFoto = $("#fp-foto", el);
       A.ocupado(bFoto, true, "Preparando foto...");
@@ -282,10 +314,101 @@
     });
   }
 
+  // ---------- Quadro de assinatura (dedo ou caneta na tela) ----------
+  function quadroAssinatura(cv, aoMudar) {
+    var cx = cv.getContext("2d"), tracos = [], atual = null;
+    function ajustar() {
+      var r = cv.getBoundingClientRect(), k = window.devicePixelRatio || 1;
+      if (!r.width) return;
+      cv.width = Math.round(r.width * k); cv.height = Math.round(r.height * k);
+      cx.setTransform(k, 0, 0, k, 0, 0);
+      redesenhar();
+    }
+    function redesenhar() {
+      var r = cv.getBoundingClientRect();
+      cx.clearRect(0, 0, r.width, r.height);
+      cx.lineWidth = 2.6; cx.lineCap = "round"; cx.lineJoin = "round"; cx.strokeStyle = "#0d1b33";
+      tracos.forEach(function (t) {
+        cx.beginPath();
+        t.forEach(function (p, i) { if (i) cx.lineTo(p[0], p[1]); else cx.moveTo(p[0], p[1]); });
+        if (t.length === 1) cx.lineTo(t[0][0] + 0.1, t[0][1] + 0.1);
+        cx.stroke();
+      });
+    }
+    function ponto(ev) { var r = cv.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; }
+    cv.addEventListener("pointerdown", function (ev) {
+      ev.preventDefault();
+      if (cv.setPointerCapture) cv.setPointerCapture(ev.pointerId);
+      atual = [ponto(ev)]; tracos.push(atual); redesenhar();
+    });
+    cv.addEventListener("pointermove", function (ev) { if (!atual) return; ev.preventDefault(); atual.push(ponto(ev)); redesenhar(); });
+    function soltar() { if (atual) { atual = null; aoMudar(tracos.length === 0); } }
+    cv.addEventListener("pointerup", soltar); cv.addEventListener("pointercancel", soltar); cv.addEventListener("pointerleave", soltar);
+    window.addEventListener("resize", ajustar);
+    setTimeout(ajustar, 0);
+    return {
+      ajustar: ajustar,
+      vazio: function () { return !tracos.some(function (t) { return t.length > 1; }); },
+      limpar: function () { tracos = []; redesenhar(); aoMudar(true); },
+      // imagem JPEG (fundo branco) com o carimbo de quem assinou e quando
+      paraJpeg: function (linhas) {
+        var r = cv.getBoundingClientRect(), esc2 = Math.max(1, 900 / r.width), w = Math.round(r.width * esc2), hA = Math.round(r.height * esc2);
+        var fs = 22, hT = linhas.length * fs * 1.4 + 16, out = document.createElement("canvas");
+        out.width = w; out.height = hA + hT;
+        var c = out.getContext("2d");
+        c.fillStyle = "#fff"; c.fillRect(0, 0, w, out.height);
+        c.scale(esc2, esc2);
+        c.lineWidth = 2.6; c.lineCap = "round"; c.lineJoin = "round"; c.strokeStyle = "#0d1b33";
+        tracos.forEach(function (t) { c.beginPath(); t.forEach(function (p, i) { if (i) c.lineTo(p[0], p[1]); else c.moveTo(p[0], p[1]); }); c.stroke(); });
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.strokeStyle = "#c9ced6"; c.lineWidth = 2; c.beginPath(); c.moveTo(20, hA - 30); c.lineTo(w - 20, hA - 30); c.stroke();
+        c.fillStyle = "#f1f3f6"; c.fillRect(0, hA, w, hT);
+        c.fillStyle = "#222"; c.textBaseline = "top";
+        linhas.forEach(function (l, i) { c.font = (i ? "" : "bold ") + fs + "px sans-serif"; c.fillText(l, 12, hA + 8 + i * fs * 1.4, w - 24); });
+        return new Promise(function (ok, falha) { out.toBlob(function (b) { b ? ok(b) : falha(new Error("Falha ao preparar a assinatura.")); }, "image/jpeg", 0.9); });
+      }
+    };
+  }
+
+  // ---------- Serviço que não estava cadastrado ----------
+  // O funcionário cria o serviço pelo app; no painel ele aparece marcado "criado pela equipe".
+  function novoServico(depois, aviso) {
+    var area = D.funcionario.area === "pintura" ? "pintura" : "eletrica";
+    var j = A.janela((aviso ? '<div class="aviso">' + esc(aviso) + "</div>" : "") +
+      '<label for="ns-cat">Tipo de serviço</label><select id="ns-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
+      '<label for="ns-loja">Nº da loja (se for loja da rede)</label><input id="ns-loja" inputmode="numeric" maxlength="10" placeholder="Ex.: 236">' +
+      '<p class="mudo peq" style="margin:4px 0 0">Com o nº da loja, o nome e o endereço entram sozinhos.</p>' +
+      '<label for="ns-cli">Cliente (se não for loja)</label><input id="ns-cli" maxlength="200" placeholder="Ex.: Casa do Sr. João">' +
+      '<label for="ns-end">Endereço</label><input id="ns-end" maxlength="300" placeholder="Rua, número, bairro, cidade">' +
+      '<label for="ns-desc">O que vai ser feito *</label><textarea id="ns-desc" rows="3" maxlength="2000" placeholder="Ex.: Instalação de interruptor"></textarea>' +
+      '<div id="ns-erro"></div><div class="acoes"><button class="bom grande" id="ns-ok">✔ Cadastrar serviço</button></div>',
+      { titulo: "Serviço não cadastrado", fixa: true });
+    var el = j.el;
+    $("#ns-cat", el).value = area;
+    $("#ns-ok", el).onclick = function () {
+      var b = this, loja = $("#ns-loja", el).value.trim(), cli = $("#ns-cli", el).value.trim(), desc = $("#ns-desc", el).value.trim();
+      var erro = function (m) { $("#ns-erro", el).innerHTML = '<div class="aviso erro">' + esc(m) + "</div>"; };
+      if (!loja && !cli) { erro("Escreva o nº da loja ou o nome do cliente."); return; }
+      if (!desc) { erro("Escreva o que vai ser feito."); return; }
+      A.ocupado(b, true, "Cadastrando...");
+      sb.rpc("criar_servico_func", {
+        p_token: TOKEN, p_categoria: $("#ns-cat", el).value, p_descricao: desc,
+        p_cliente: cli || null, p_endereco: $("#ns-end", el).value.trim() || null, p_loja_codigo: loja || null
+      }).then(function (r) {
+        if (r.error) throw r.error;
+        return carregar().then(function () {
+          j.fechar();
+          A.avisar("Serviço cadastrado. O responsável já consegue ver.", "ok");
+          if (depois) depois(r.data.id);
+        });
+      }).catch(function (e) { A.ocupado(b, false); erro(A.msgErro(e)); });
+    };
+  }
+
   // ---------- Relatório do serviço e lista de materiais ----------
   function fluxoRelatorio(servicoId) {
     if (!D.servicos.length) {
-      A.janela('<p>Você não tem serviço aberto. Peça ao responsável para cadastrar o serviço e depois envie o relatório.</p>', { titulo: "Relatório" });
+      novoServico(function (id) { fluxoRelatorio(id); }, "Para enviar o relatório, primeiro diga qual é o serviço.");
       return;
     }
     if (!servicoId) servicoId = D.servicos[0].id;
@@ -295,22 +418,59 @@
       '<label for="fr-tipo">Tipo de serviço</label><input id="fr-tipo" list="fr-tipos" maxlength="200" placeholder="Escolha ou escreva"><datalist id="fr-tipos"></datalist>' +
       '<label for="fr-desc">O que foi feito / o que precisa ser feito</label>' +
       '<textarea id="fr-desc" rows="4" maxlength="5000" placeholder="Descreva o serviço, medidas (m², metros de fio, número de pontos), problemas encontrados..."></textarea>' +
-      '<label>Materiais necessários</label><div id="fr-mats"></div><datalist id="fr-dl-mat"></datalist>' +
+      '<label id="fr-mats-r">Materiais necessários</label><div id="fr-mats"></div><datalist id="fr-dl-mat"></datalist>' +
       '<button class="peq" id="fr-mais">+ Adicionar material</button>' +
-      '<label>Fotos (até 6)</label><input type="file" accept="image/*" multiple id="fr-arq" class="oculto">' +
+      '<div id="fr-antes-caixa" class="oculto"><label>🏛️ Fotos ANTES do serviço (até 6)</label><input type="file" accept="image/*" multiple id="fr-arq-antes" class="oculto">' +
+      '<div class="fotos" id="fr-fotos-antes"></div><button class="peq" id="fr-add-antes" style="margin-top:8px">📷 Fotos de ANTES</button>' +
+      '<div id="fr-antes-ok" class="mudo peq oculto" style="margin-top:4px">✔ As fotos de antes já foram enviadas num relatório anterior.</div></div>' +
+      '<label id="fr-fotos-r">Fotos (até 6)</label><input type="file" accept="image/*" multiple id="fr-arq" class="oculto">' +
       '<div class="fotos" id="fr-fotos"></div><button class="peq" id="fr-add-foto" style="margin-top:8px">📷 Adicionar fotos</button>' +
       '<label class="marca-linha"><input type="checkbox" id="fr-concl"> Serviço concluído</label>' +
+      '<div id="fr-assin-aviso" class="aviso oculto" style="margin-top:8px">✍️ Este serviço pede a <b>assinatura do responsável</b> no local.</div>' +
+      '<div id="fr-assin" class="cartao oculto" style="margin-top:10px">' +
+      '<h3 id="fr-assin-tit">✍️ Assinatura do responsável no local</h3><p class="mudo peq" id="fr-assin-txt" style="margin:4px 0 8px">Peça ao gerente (ou ao cliente) para assinar com o dedo.</p>' +
+      '<div class="quadro-assin"><canvas id="fr-canvas" aria-label="Quadro de assinatura"></canvas><span class="linha-assin">assine aqui</span></div>' +
+      '<div class="linha" style="margin-top:6px"><button class="peq" id="fr-limpar">↺ Limpar</button><span class="mudo mini dir" id="fr-assin-status"></span></div>' +
+      '<label for="fr-assin-nome">Nome de quem assinou</label><input id="fr-assin-nome" maxlength="120" placeholder="Ex.: Carlos (gerente da loja)">' +
+      '<label class="marca-linha" id="fr-sem-assin-l" style="font-weight:400"><input type="checkbox" id="fr-sem-assin"> <span id="fr-sem-assin-t">Responsável não está no local (enviar sem assinatura)</span></label></div>' +
       '<div id="fr-erro"></div><div class="acoes"><button class="bom grande" id="fr-enviar">✔ Enviar relatório</button></div>',
       { titulo: "Relatório e materiais", fixa: true });
     var el = j.el;
 
+    // OS de prefeitura: itens do contrato (sem preço) entram primeiro na lista de materiais
+    function itensContrato(s) { return (s && s.contrato_id && (D.itens_contrato || {})[s.contrato_id]) || []; }
+    function ehPref() { var s = servicoPorId($("#fr-serv", el).value); return !!(s && s.prefeitura); }
     function atualizarListas() {
-      var s = servicoPorId($("#fr-serv", el).value), c = s ? s.categoria : "eletrica";
+      var s = servicoPorId($("#fr-serv", el).value), c = s ? s.categoria : "eletrica", pref = !!(s && s.prefeitura);
       $("#fr-tipos", el).innerHTML = TIPOS_SERVICO[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
-      $("#fr-dl-mat", el).innerHTML = MATERIAIS[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
+      $("#fr-dl-mat", el).innerHTML = itensContrato(s).map(function (t) {
+        return '<option value="' + esc(t.descricao) + '">' + esc((t.codigo ? t.codigo + " · " : "") + (t.un || "")) + "</option>";
+      }).join("") + MATERIAIS[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
+      $("#fr-mats-r", el).textContent = pref ? "Serviços executados e materiais usados (quantidades)" : "Materiais necessários";
+      $("#fr-antes-caixa", el).classList.toggle("oculto", !pref);
+      $("#fr-antes-ok", el).classList.toggle("oculto", !(pref && s.tem_fotos_antes));
+      $("#fr-fotos-r", el).textContent = pref ? "🏛️ Fotos DEPOIS (serviço pronto, até 6)" : "Fotos (até 6)";
+      $("#fr-add-foto", el).textContent = pref ? "📷 Fotos de DEPOIS" : "📷 Adicionar fotos";
+      $("#fr-assin-tit", el).textContent = pref ? "✍️ Assinatura do fiscal da prefeitura" : "✍️ Assinatura do responsável no local";
+      $("#fr-assin-txt", el).textContent = pref ? "Peça ao fiscal da prefeitura para assinar com o dedo." : "Peça ao gerente (ou ao cliente) para assinar com o dedo.";
+      $("#fr-assin-nome", el).placeholder = pref ? "Nome do fiscal" : "Ex.: Carlos (gerente da loja)";
+      if (pref && s.fiscal && !$("#fr-assin-nome", el).value) $("#fr-assin-nome", el).value = s.fiscal;
+      $("#fr-sem-assin-t", el).textContent = pref ? "Fiscal não está no local (enviar sem assinatura)" : "Responsável não está no local (enviar sem assinatura)";
+      $("#fr-assin-aviso", el).innerHTML = pref ? "✍️ OS da prefeitura: colha a <b>assinatura do fiscal</b>." : "✍️ Este serviço pede a <b>assinatura do responsável</b> no local.";
+      // unidade do item do contrato entra sozinha ao escolher o item
+      $$(".mat", el).forEach(ligarUnidade);
     }
-    atualizarListas();
-    $("#fr-serv", el).onchange = atualizarListas;
+    function ligarUnidade(d) {
+      var inp = $(".m-item", d);
+      inp.onchange = function () {
+        var it = itensContrato(servicoPorId($("#fr-serv", el).value)).filter(function (t) { return t.descricao === inp.value.trim(); })[0];
+        var sel = $(".m-un", d);
+        if (it && it.un) {
+          if (!Array.prototype.some.call(sel.options, function (o) { return o.value === it.un; })) sel.insertAdjacentHTML("beforeend", "<option>" + esc(it.un) + "</option>");
+          sel.value = it.un;
+        }
+      };
+    }
 
     function novaLinha() {
       var d = document.createElement("div");
@@ -321,35 +481,70 @@
         '<button class="m-tirar" aria-label="Remover material">✕</button>';
       $(".m-tirar", d).onclick = function () { d.remove(); };
       $("#fr-mats", el).appendChild(d);
+      ligarUnidade(d);
       return d;
     }
     novaLinha();
+    atualizarListas();
+    $("#fr-serv", el).onchange = atualizarListas;
+    // GPS no carimbo das fotos da OS da prefeitura (comprova o local)
+    var posRel = null;
+    if (navigator.geolocation && D.servicos.some(function (x) { return x.prefeitura; })) navigator.geolocation.getCurrentPosition(function (p) { posRel = p; }, function () {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
     $("#fr-mais", el).onclick = function () { $(".m-item", novaLinha()).focus(); };
 
-    function desenharFotos() {
-      $("#fr-fotos", el).innerHTML = fotos.map(function (f, i) {
-        return '<div class="foto"><img alt="" src="' + f.url + '"><button class="et" data-tirar="' + i + '" style="border:0;width:100%;min-height:0;padding:2px;border-radius:0">remover</button></div>';
-      }).join("");
-      $$("[data-tirar]", el).forEach(function (b) {
-        b.onclick = function () { var f = fotos.splice(Number(b.dataset.tirar), 1)[0]; URL.revokeObjectURL(f.url); desenharFotos(); };
-      });
-      $("#fr-add-foto", el).classList.toggle("oculto", fotos.length >= 6);
-    }
-    var arq = $("#fr-arq", el);
-    $("#fr-add-foto", el).onclick = function () { arq.value = ""; arq.click(); };
-    arq.onchange = function () {
-      var lista = Array.prototype.slice.call(arq.files || [], 0, 6 - fotos.length);
-      var b = $("#fr-add-foto", el);
-      A.ocupado(b, true, "Preparando...");
-      var linhas = ["AGE ELÉTRICA E PINTURA · RELATÓRIO", D.funcionario.nome + " · " + new Date().toLocaleString("pt-BR")];
-      lista.reduce(function (p, f) {
-        return p.then(function () {
-          return A.prepararFoto(f, linhas, 1400).then(function (blob) {
-            fotos.push({ blob: blob, url: URL.createObjectURL(blob), caminho: null, enviada: false });
-          });
+    var fotosAntes = [];
+    function seletorFotos(lista, idCaixa, idArq, idBotao, rotulo) {
+      function desenhar() {
+        $(idCaixa, el).innerHTML = lista.map(function (f, i) {
+          return '<div class="foto"><img alt="" src="' + f.url + '"><button class="et" data-i="' + i + '" style="border:0;width:100%;min-height:0;padding:2px;border-radius:0">remover</button></div>';
+        }).join("");
+        $$("[data-i]", $(idCaixa, el)).forEach(function (b) {
+          b.onclick = function () { var f = lista.splice(Number(b.dataset.i), 1)[0]; URL.revokeObjectURL(f.url); desenhar(); };
         });
-      }, Promise.resolve()).catch(function (e) { A.avisar(A.msgErro(e), "erro"); }).then(function () { A.ocupado(b, false); desenharFotos(); });
-    };
+        $(idBotao, el).classList.toggle("oculto", lista.length >= 6);
+      }
+      var arq = $(idArq, el);
+      $(idBotao, el).onclick = function () { arq.value = ""; arq.click(); };
+      arq.onchange = function () {
+        var novas = Array.prototype.slice.call(arq.files || [], 0, 6 - lista.length);
+        var b = $(idBotao, el), txt = b.textContent, s = servicoPorId($("#fr-serv", el).value), pref = !!(s && s.prefeitura);
+        A.ocupado(b, true, "Preparando...");
+        var linhas = ["AGE ELÉTRICA E PINTURA · " + (pref ? "PREFEITURA · FOTO " + rotulo() : "RELATÓRIO"),
+          D.funcionario.nome + " · " + new Date().toLocaleString("pt-BR")];
+        if (pref) {
+          linhas.push((s.protocolo ? "OS " + s.protocolo + " · " : "") + s.cliente);
+          linhas.push(posRel ? "GPS " + posRel.coords.latitude.toFixed(6) + ", " + posRel.coords.longitude.toFixed(6) + " (±" + Math.round(posRel.coords.accuracy) + " m)" : "SEM GPS");
+        }
+        novas.reduce(function (p, f) {
+          return p.then(function () {
+            return A.prepararFoto(f, linhas, 1400).then(function (blob) {
+              lista.push({ blob: blob, url: URL.createObjectURL(blob), caminho: null, enviada: false });
+            });
+          });
+        }, Promise.resolve()).catch(function (e) { A.avisar(A.msgErro(e), "erro"); }).then(function () { A.ocupado(b, false); b.textContent = txt; desenhar(); });
+      };
+    }
+    seletorFotos(fotos, "#fr-fotos", "#fr-arq", "#fr-add-foto", function () { return "DEPOIS"; });
+    seletorFotos(fotosAntes, "#fr-fotos-antes", "#fr-arq-antes", "#fr-add-antes", function () { return "ANTES"; });
+
+    var quadro = quadroAssinatura($("#fr-canvas", el), function (vazio) {
+      assin = null;  // mudou o desenho: gera a imagem de novo no envio
+      $("#fr-assin-status", el).textContent = vazio ? "" : "✔ assinado";
+    });
+    var assin = null;
+    // a assinatura só aparece nos serviços em que o dono ligou "pedir assinatura" no painel
+    function pedeAssin() { var sv = servicoPorId($("#fr-serv", el).value); return !!(sv && sv.pede_assinatura); }
+    function mostrarAssin(rolar) {
+      var concl = $("#fr-concl", el).checked, obrig = pedeAssin(), ver = concl && obrig;
+      $("#fr-assin", el).classList.toggle("oculto", !ver);
+      $("#fr-assin-aviso", el).classList.toggle("oculto", !(concl && obrig));
+      $("#fr-sem-assin-l", el).classList.toggle("oculto", !obrig);
+      if (ver) { quadro.ajustar(); if (rolar) $("#fr-assin", el).scrollIntoView({ behavior: "smooth", block: "center" }); }
+    }
+    $("#fr-concl", el).onchange = function () { mostrarAssin(true); };
+    $("#fr-serv", el).addEventListener("change", function () { mostrarAssin(false); });
+    $("#fr-limpar", el).onclick = function () { quadro.limpar(); };
+    $("#fr-sem-assin", el).onchange = function () { $(".quadro-assin", el).style.opacity = this.checked ? ".35" : "1"; };
 
     $("#fr-enviar", el).onclick = function () {
       var b = this;
@@ -359,16 +554,43 @@
       var tipoServ = $("#fr-tipo", el).value.trim(), desc = $("#fr-desc", el).value.trim();
       var concl = $("#fr-concl", el).checked;
       if (!tipoServ && !desc) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o tipo de serviço ou a descrição.</div>'; return; }
+      var sPref = servicoPorId($("#fr-serv", el).value), pref = !!(sPref && sPref.prefeitura);
+      if (pref && concl && !fotosAntes.length && !sPref.tem_fotos_antes) {
+        $("#fr-erro", el).innerHTML = '<div class="aviso erro">OS da prefeitura: falta a foto de <b>ANTES</b> do serviço.</div>'; return;
+      }
+      if (pref && concl && !fotos.length) {
+        $("#fr-erro", el).innerHTML = '<div class="aviso erro">OS da prefeitura: falta a foto de <b>DEPOIS</b> (serviço pronto).</div>'; return;
+      }
+      var obrig = pedeAssin(), visivel = concl && obrig;
+      var semAssin = obrig && $("#fr-sem-assin", el).checked, nomeAssin = $("#fr-assin-nome", el).value.trim();
+      var usarAssin = visivel && !semAssin && !quadro.vazio();
+      if (concl && obrig && !semAssin && quadro.vazio()) {
+        $("#fr-erro", el).innerHTML = '<div class="aviso erro">' + (pref ? "Falta a assinatura do fiscal. Se ele não estiver, marque “Fiscal não está no local”." :
+          "Falta a assinatura do responsável. Se ele não estiver, marque “Responsável não está no local”.") + "</div>"; return;
+      }
+      if (usarAssin && !nomeAssin) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o nome de quem assinou.</div>'; $("#fr-assin-nome", el).focus(); return; }
       if (concl && !A.confirmar("Marcar o serviço como CONCLUÍDO? Ele sai da sua lista.")) return;
       $("#fr-erro", el).innerHTML = "";
       A.ocupado(b, true, "Enviando...");
       var hoje = A.isoLocal(new Date());
       fotos.forEach(function (f) { if (!f.caminho) f.caminho = TOKEN + "/" + hoje + "/rel-" + A.uuid() + ".jpg"; });
-      fotos.reduce(function (p, f) { return p.then(function () { return enviarFoto(f); }); }, Promise.resolve()).then(function () {
-        return sb.rpc("enviar_relatorio", {
+      if (!pref) fotosAntes.length = 0;
+      fotosAntes.forEach(function (f) { if (!f.caminho) f.caminho = TOKEN + "/" + hoje + "/antes-" + A.uuid() + ".jpg"; });
+      var s0 = servicoPorId($("#fr-serv", el).value);
+      var pAssin = !usarAssin ? Promise.resolve(null) : (assin ? Promise.resolve(assin) : quadro.paraJpeg([
+        "Assinado por " + nomeAssin + (pref ? " (fiscal)" : "") + " · " + new Date().toLocaleString("pt-BR"),
+        (s0 ? (s0.protocolo ? "OS " + s0.protocolo + " · " : "") + s0.cliente + " · " : "") + "Funcionário: " + D.funcionario.nome
+      ]).then(function (blob) { assin = { blob: blob, caminho: TOKEN + "/" + hoje + "/assin-" + A.uuid() + ".jpg", enviada: false }; return assin; }));
+      pAssin.then(function (a) {
+        return fotosAntes.concat(fotos, a ? [a] : []).reduce(function (p, f) { return p.then(function () { return enviarFoto(f); }); }, Promise.resolve()).then(function () { return a; });
+      }).then(function (a) {
+        var args = {
           p_token: TOKEN, p_servico_id: $("#fr-serv", el).value, p_tipo_servico: tipoServ, p_descricao: desc,
-          p_materiais: materiais, p_fotos: fotos.map(function (f) { return f.caminho; }), p_concluido: concl
-        });
+          p_materiais: materiais, p_fotos: fotos.map(function (f) { return f.caminho; }), p_concluido: concl,
+          p_assinatura: a ? a.caminho : null, p_assinado_por: a ? nomeAssin : null
+        };
+        if (pref) args.p_fotos_antes = fotosAntes.map(function (f) { return f.caminho; });
+        return sb.rpc("enviar_relatorio", args);
       }).then(function (r) {
         if (r.error) throw r.error;
         j.fechar();

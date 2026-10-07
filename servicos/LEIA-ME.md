@@ -4,7 +4,7 @@ Dois endereços:
 
 | Quem | Página | O que faz |
 |---|---|---|
-| **Você (dono)** | `servicos/index.html` | Entra com e-mail e senha. Cadastra equipe, cria serviços (partes de **elétrica** e **pintura** separadas), vê o **cartão de ponto** com fotos e GPS, lê os relatórios e faz os **orçamentos** (só você vê valores). |
+| **Você (dono)** | `servicos/index.html` | Entra com e-mail e senha. Cadastra equipe, cria serviços (partes de **elétrica** e **pintura** separadas), vê o **cartão de ponto** com fotos e GPS, lê os relatórios, faz os **orçamentos** (só você vê valores) e cuida das **OS de prefeituras** (fotos antes/depois, assinatura do fiscal, relatório fotográfico e medição). |
 | **Funcionário** | `servicos/funcionario.html#t=...` | Abre pelo link pessoal que você manda no WhatsApp. Vê só os serviços dele, registra **chegada**, **foto do serviço** e **saída** (foto + GPS) e envia **relatório com materiais**. Nunca vê preços. |
 
 **Separado do AGE BOT:** este app não usa nada do bot — banco de dados, login, arquivos e
@@ -75,6 +75,17 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
    O funcionário abre o link e usa *Adicionar à tela inicial* para virar um ícone de app.
 2. **Serviços** → *+ Novo serviço* → dados do cliente → marque **Parte ELÉTRICA** e/ou
    **Parte PINTURA**, escolha o funcionário de cada parte → salvar → **Avisar no WhatsApp**.
+   **Serviço que não estava cadastrado** (o cliente pediu na hora): o próprio funcionário toca em
+   **➕ Serviço não cadastrado** no app, informa o nº da loja (o endereço entra sozinho) ou o cliente, e o que
+   vai fazer. No painel ele aparece marcado **“criado pela equipe”**, com aviso na aba **Hoje** e o filtro
+   **Criados pela equipe** em Serviços.
+   **Assinatura do responsável (só quando você liberar):** vem **desligada** em todo serviço — o funcionário não vê
+   quadro nem botão de assinatura, e ninguém aborda o gerente da loja para assinar. Para um cliente avulso que deve
+   assinar, marque no serviço **✍️ Liberar assinatura do responsável neste serviço** (na criação ou depois, em
+   Serviços → abrir a parte). Só nesses serviços, ao marcar **Serviço concluído**, o cliente assina com o dedo na tela
+   e o funcionário escreve o nome. No painel a assinatura aparece no relatório, com nome, data e hora. Se o responsável
+   não estiver, o funcionário marca “Responsável não está no local” e o relatório aparece como **sem assinatura**.
+   (Nas OS da prefeitura a assinatura do fiscal já vem ligada; dá para desligar do mesmo jeito.)
 3. O funcionário, na obra: **📍 Chegada** → tira a foto → enviar. Durante o serviço: **📷 Foto do serviço**.
    No fim: **📝 Relatório e materiais** (o que fez, medidas, lista de materiais, fotos, "concluído")
    e **🏁 Saída**.
@@ -113,6 +124,48 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
      **nunca** caem no mesmo dia; cada dia sai na melhor ordem (menos quilômetros).
    - Cada dia mostra o mapa, a ordem, os km estimados, o botão **Google Maps** (com todas as paradas) e
      **💾 Salvar / enviar ao funcionário**: a rota vai para o app dele (botões *Ir* e *Waze* em cada loja) e pelo WhatsApp.
+
+### Serviços para prefeituras (aba 🏛️ Prefeitura)
+Para OS de prefeituras e outros órgãos públicos: prédios públicos, iluminação pública e obras/reformas.
+**É uma área separada:** as OS da prefeitura ficam só nesta aba (não se misturam com os clientes particulares e as lojas da aba
+Serviços). A aba **Hoje** mostra o quadro **🏛️ Prefeitura** com as OS em aberto, **Relatórios** tem o filtro *Só prefeitura* /
+*Só particulares*, e no app do funcionário elas aparecem na seção própria **🏛️ Serviços da prefeitura**.
+**Antes de usar, rode de novo o `supabase.sql`** (cria as tabelas de prefeituras, contratos e medições sem apagar nada).
+
+1. **Prefeituras** → *+ Nova prefeitura* (nome, CNPJ, cidade, contato). Cadastre quantas precisar.
+2. **Contratos** → *+ Novo contrato* (ou ata de registro de preços): nº, processo/licitação, objeto, vigência,
+   valor total e BDI. Na **planilha de itens**, copie do Excel e cole as 5 colunas nesta ordem:
+   **código · descrição · unidade · quantidade contratada · preço unitário**. O app mostra a prévia antes de salvar.
+   O funcionário vê só a descrição dos itens (nunca o preço) para lançar as quantidades.
+3. **Ordens de serviço** → *+ Nova OS*: prefeitura, contrato, **nº da OS/protocolo**, tipo (prédio público,
+   iluminação pública, obra/reforma), secretaria, local, referência (nº do poste, sala, bloco), endereço e **fiscal**.
+   Marque as partes (elétrica/pintura) e o funcionário de cada uma — a assinatura do fiscal já vem ligada. Avise pelo WhatsApp.
+4. **No app do funcionário** a OS aparece com a prefeitura, o nº e o fiscal. No relatório ele tira as
+   **fotos de ANTES** (no começo — pode mandar um relatório só com elas) e as **fotos de DEPOIS**, lança as quantidades
+   escolhendo os itens do contrato e, ao concluir, colhe a **assinatura do fiscal** na tela. As fotos saem carimbadas com
+   ANTES/DEPOIS, nº da OS, data/hora e GPS. **Sem foto de antes e de depois a OS não pode ser concluída.**
+5. Na lista de OS você vê o que falta em cada uma (✔/✖ fotos antes, fotos depois, assinatura do fiscal, medida ou não)
+   e gera o **📄 Relatório fotográfico (PDF)**: dados da OS, execução (chegada/saída com GPS), serviços, quantidades,
+   fotos antes e depois e a assinatura do fiscal.
+6. **Medições** → *+ Medição* no contrato: escolha o período, as OS concluídas já vêm marcadas, toque
+   **⬇ Puxar quantidades dos relatórios** (entra com o preço do contrato), confira e ajuste. O app calcula BDI,
+   acumulado anterior, saldo de cada item e saldo do contrato. Gera o **PDF do boletim de medição** (com campos de
+   assinatura da AGE, fiscal e gestor) e a **planilha para Excel**. Uma OS medida não entra em outra medição.
+
+### Licitações (Prefeitura → Licitações e Documentos)
+1. **Documentos** → *Cadastrar a lista padrão* (contrato social, CNDs, FGTS, trabalhista, balanço, CREA/CFT, atestados...).
+   Abra cada um e coloque **até quando vale** e, se quiser, o link do arquivo (Google Drive). A aba **Hoje** avisa
+   quando um documento venceu ou vence em até 15 dias.
+2. **Licitações** → *+ Nova licitação*: órgão, modalidade, nº do edital, objeto, link do edital, **data de abertura**,
+   visita técnica, prazo para dúvidas e valor estimado. Toque **📅 Pôr na agenda** para lembrar no celular.
+   A aba **Hoje** avisa as licitações que abrem nos próximos 7 dias.
+3. **Checklist de documentos**: marque o que já está separado (a validade de cada um aparece ao lado) e inclua o que
+   o edital pedir a mais.
+4. **Proposta**: cole a planilha do Excel (código · descrição · unidade · quantidade · preço **sem** BDI) e informe o BDI.
+   O app calcula o preço unitário com BDI, o valor global e quanto fica abaixo (ou acima) do estimado.
+   **📄 Proposta em PDF** gera a proposta de preços com validade, prazo, declaração e campo de assinatura.
+5. Resultado: mude a situação. Se **ganhou**, toque **🏆 Ganhou: criar o contrato** — o contrato já nasce com os itens e
+   os preços da proposta (com o BDI incluído), pronto para as OS e as medições.
 
 ### Segurança e controle do ponto
 - A **hora** de cada registro é a do servidor, não a do celular (não dá para adiantar o relógio).

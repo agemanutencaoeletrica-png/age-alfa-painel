@@ -5,13 +5,13 @@
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var app = $("#app");
   var sb = null;
-  var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [] };
+  var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [], pref: [], contr: [], med: [], lic: [], docs: [], semPref: false };
   var urls = {};        // caminho da foto -> { url, vence }
   var infoFoto = {};    // caminho da foto -> html com detalhes (hora, GPS...)
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "" };
   var filtroPonto = null;
-  var filtroRel = "nao_lidos";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
+  var filtroRel = "nao_lidos", filtroRelTipo = "";
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -27,6 +27,9 @@
   function porId(lista, id) { for (var i = 0; i < lista.length; i++) if (lista[i].id === id) return lista[i]; return null; }
   function trocar(lista, item) { var i = lista.findIndex(function (x) { return x.id === item.id; }); if (i >= 0) lista[i] = item; else lista.unshift(item); }
   function tirar(lista, id) { var i = lista.findIndex(function (x) { return x.id === id; }); if (i >= 0) lista.splice(i, 1); }
+  // serviço/obra de prefeitura fica só na aba Prefeitura
+  function ehPrefObra(o) { return !!(o && o.prefeitura_id); }
+  function ehPrefServ(s) { return ehPrefObra(porId(S.obras, s.obra_id)); }
   function nomeFunc(id) { var f = porId(S.func, id); return f ? f.nome : "—"; }
   function carregando() { return '<div class="vazio"><span class="carregando"></span> Carregando...</div>'; }
   function val(el, sel) { var x = $(sel, el); return x ? x.value.trim() : ""; }
@@ -148,8 +151,20 @@
       q(sb.from("relatorios").select("*").order("criado_em", { ascending: false }).limit(500)),
       q(sb.from("orcamentos").select("*").order("numero", { ascending: false }).limit(500)),
       q(sb.from("lojas").select("*").limit(5000)),
-      q(sb.from("rotas").select("*").order("criado_em", { ascending: false }).limit(300))
-    ]).then(function (r) { S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas(); });
+      q(sb.from("rotas").select("*").order("criado_em", { ascending: false }).limit(300)),
+      // prefeituras: se o supabase.sql novo ainda não foi rodado, o resto do painel continua funcionando
+      Promise.all([
+        q(sb.from("prefeituras").select("*").order("nome")),
+        q(sb.from("contratos").select("*").order("criado_em", { ascending: false })),
+        q(sb.from("medicoes").select("*").order("numero", { ascending: false }).limit(500)),
+        q(sb.from("licitacoes").select("*").order("abertura", { ascending: false }).limit(500)),
+        q(sb.from("documentos").select("*").order("nome"))
+      ]).catch(function () { return null; })
+    ]).then(function (r) {
+      S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
+      S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
+      S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
+    });
   }
 
   function montar() {
@@ -181,7 +196,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, rotas: verRotas, lojas: verLojas, ponto: verPonto, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -191,7 +206,9 @@
     c.innerHTML = carregando();
     var ini = A.inicioDia(new Date());
     q(sb.from("pontos").select("*").gte("criado_em", ini.toISOString()).order("criado_em")).then(function (pts) {
-      var ativos = S.serv.filter(function (s) { return s.status === "aberto" || s.status === "em_andamento"; });
+      var ativosTodos = S.serv.filter(function (s) { return s.status === "aberto" || s.status === "em_andamento"; });
+      var ativos = ativosTodos.filter(function (s) { return !ehPrefServ(s); });
+      var osPref = S.obras.filter(function (o) { return ehPrefObra(o) && ativosTodos.some(function (s) { return s.obra_id === o.id; }); }).length;
       var abE = ativos.filter(function (s) { return s.categoria === "eletrica"; }).length;
       var abP = ativos.filter(function (s) { return s.categoria === "pintura"; }).length;
       var novos = S.rel.filter(function (r) { return !r.lido; }).length;
@@ -199,9 +216,15 @@
       var h = '<div class="grade">' +
         '<div class="ladrilho"><div class="r">⚡ Elétrica</div><div class="v">' + abE + '</div><div class="d">serviços ativos</div></div>' +
         '<div class="ladrilho"><div class="r">🖌️ Pintura</div><div class="v">' + abP + '</div><div class="d">serviços ativos</div></div>' +
+        (S.pref.length || osPref ? '<a class="ladrilho" href="#prefeitura" style="text-decoration:none;color:inherit"><div class="r">🏛️ Prefeitura</div><div class="v">' + osPref + '</div><div class="d">OS em aberto</div></a>' : "") +
         '<div class="ladrilho"><div class="r">Relatórios</div><div class="v">' + novos + '</div><div class="d">novos para ler</div></div>' +
         '<div class="ladrilho"><div class="r">Orçamentos</div><div class="v">' + aguard.length + '</div><div class="d">' +
         A.dinheiro(aguard.reduce(function (t, o) { return t + Number(o.total); }, 0)) + " aguardando cliente</div></div></div>";
+      var daEquipe = S.serv.filter(function (s) { return s.criado_pelo_funcionario && new Date(s.criado_em) >= ini; });
+      if (daEquipe.length) h += '<div class="aviso">🆕 A equipe cadastrou ' + (daEquipe.length === 1 ? "1 serviço" : daEquipe.length + " serviços") +
+        ' hoje: ' + daEquipe.slice(0, 5).map(function (s) { var o = porId(S.obras, s.obra_id); return esc((o ? o.cliente : "") + " (" + nomeFunc(s.funcionario_id) + ")"); }).join(", ") +
+        '. Veja em <a href="#servicos">Serviços</a>.</div>';
+      if (window.AGE_PREF) h += window.AGE_PREF.avisosHoje(S);
       h += '<div class="cab-secao"><h2>Equipe hoje</h2><span class="mudo peq">' + A.data(new Date()) + "</span></div>";
       var equipe = S.func.filter(function (f) { return f.ativo || pts.some(function (p) { return p.funcionario_id === f.id; }); });
       if (!equipe.length) h += '<div class="cartao vazio">Cadastre sua equipe na aba <a href="#equipe">Equipe</a>.</div>';
@@ -241,10 +264,12 @@
     var h = '<div class="cab-secao"><h2>Serviços</h2><button class="prim" id="b-novo-serv">+ Novo serviço</button></div>' +
       '<div class="filtros"><select id="fs-cat" aria-label="Categoria"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
       '<select id="fs-st" aria-label="Situação"><option value="ativos">Abertos e em andamento</option><option value="aberto">Abertos</option><option value="em_andamento">Em andamento</option>' +
-      '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="todos">Todos</option></select>' +
+      '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="equipe">Criados pela equipe</option><option value="todos">Todos</option></select>' +
       '<select id="fs-func" aria-label="Funcionário"><option value="">Todos os funcionários</option><option value="-">Sem funcionário</option>' +
       S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
-      '<input id="fs-busca" type="search" placeholder="Buscar cliente ou endereço"></div><div id="lista-serv"></div>';
+      '<input id="fs-busca" type="search" placeholder="Buscar cliente ou endereço"></div>' +
+      (S.pref.length ? '<p class="mudo peq" style="margin:-4px 0 10px">Aqui ficam os clientes particulares e as lojas. As OS da prefeitura ficam na aba <a href="#prefeitura">🏛️ Prefeitura</a>.</p>' : "") +
+      '<div id="lista-serv"></div>';
     c.innerHTML = h;
     $("#fs-cat").value = F.cat; $("#fs-st").value = F.st; $("#fs-func").value = F.func; $("#fs-busca").value = F.busca;
     ["#fs-cat", "#fs-st", "#fs-func"].forEach(function (s) { $(s).onchange = function () { lerFiltro(); listar(); }; });
@@ -255,13 +280,15 @@
     function passa(s) {
       if (F.cat && s.categoria !== F.cat) return false;
       if (F.st === "ativos" && !(s.status === "aberto" || s.status === "em_andamento")) return false;
-      if (F.st !== "ativos" && F.st !== "todos" && s.status !== F.st) return false;
+      if (F.st === "equipe" && !s.criado_pelo_funcionario) return false;
+      if (F.st !== "ativos" && F.st !== "todos" && F.st !== "equipe" && s.status !== F.st) return false;
       if (F.func === "-" && s.funcionario_id) return false;
       if (F.func && F.func !== "-" && s.funcionario_id !== F.func) return false;
       return true;
     }
     function listar() {
       var obras = S.obras.filter(function (o) {
+        if (ehPrefObra(o)) return false;
         if (F.busca && ((o.cliente || "") + " " + (o.endereco || "") + " " + (o.telefone || "")).toLowerCase().indexOf(F.busca) < 0) return false;
         var partes = S.serv.filter(function (s) { return s.obra_id === o.id; });
         if (!partes.length) return F.st === "todos" && !F.cat && !F.func;
@@ -271,14 +298,16 @@
       if (!obras.length) { l.innerHTML = '<div class="cartao vazio">Nenhum serviço com este filtro.</div>'; return; }
       l.innerHTML = obras.map(function (o) {
         var partes = S.serv.filter(function (s) { return s.obra_id === o.id && passa(s); });
-        return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente) + "</h3>" +
+        return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente) + "</h3>" + seloOS(o) +
           '<span class="dir"><button class="peq" data-parte="' + o.id + '">+ Parte</button> <button class="peq" data-orc-obra="' + o.id + '">💲 Orçamento</button> ' +
           '<button class="peq" data-obra="' + o.id + '">Editar</button></span></div>' +
           (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
           (o.telefone || o.email ? '<div class="peq mudo">' + (o.telefone ? "📞 " + esc(o.telefone) + " " : "") + (o.email ? "✉ " + esc(o.email) : "") + "</div>" : "") +
           partes.map(function (s) {
             return '<div class="parte ' + s.categoria + '" data-serv="' + s.id + '" role="button" tabindex="0"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
+              (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe</span>' : "") +
               '<span class="peq">' + (s.funcionario_id ? "👷 " + esc(nomeFunc(s.funcionario_id)) : '<span class="selo critico">sem funcionário</span>') + "</span>" +
+              (s.pede_assinatura ? '<span class="selo">✍️ pede assinatura</span>' : "") +
               (s.data_prevista ? '<span class="dir peq mudo">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
               (s.descricao ? '<div class="peq" style="margin-top:4px;white-space:pre-wrap">' + esc(s.descricao.length > 220 ? s.descricao.slice(0, 220) + "…" : s.descricao) + "</div>" : "") +
               "</div>";
@@ -295,11 +324,21 @@
     listar();
   }
 
+  function seloOS(o) {
+    if (!o || !o.prefeitura_id) return "";
+    var p = porId(S.pref, o.prefeitura_id);
+    return '<span class="selo">🏛️ ' + esc(p ? p.nome : "Prefeitura") + (o.protocolo ? " · OS " + esc(o.protocolo) : "") + "</span>";
+  }
+
   function msgServico(s) {
     var o = porId(S.obras, s.obra_id), f = porId(S.func, s.funcionario_id);
     var t = "*AGE Elétrica e Pintura*\nServiço de " + (A.CATEG[s.categoria].icone + " *" + A.CATEG[s.categoria].nome.toUpperCase()) + "*\n\n" +
-      "Cliente: " + o.cliente + "\n" + (o.endereco ? "Endereço: " + o.endereco + "\n" : "") + (o.telefone ? "Telefone: " + o.telefone + "\n" : "") +
-      (s.data_prevista ? "Data: " + A.dataSimples(s.data_prevista) + "\n" : "") + (s.descricao ? "\nO que fazer:\n" + s.descricao + "\n" : "");
+      (o.prefeitura_id ? "🏛️ " + ((porId(S.pref, o.prefeitura_id) || {}).nome || "Prefeitura") + (o.protocolo ? " · OS/Protocolo " + o.protocolo : "") + "\n" +
+        (o.fiscal ? "Fiscal: " + o.fiscal + "\n" : "") : "") +
+      "Cliente: " + o.cliente + "\n" + (o.referencia ? "Referência: " + o.referencia + "\n" : "") + (o.endereco ? "Endereço: " + o.endereco + "\n" : "") + (o.telefone ? "Telefone: " + o.telefone + "\n" : "") +
+      (s.data_prevista ? "Data: " + A.dataSimples(s.data_prevista) + "\n" : "") + (s.descricao ? "\nO que fazer:\n" + s.descricao + "\n" : "") +
+      (o.prefeitura_id ? "\n📷 Fotos de ANTES e de DEPOIS são obrigatórias (no relatório do app).\n" : "") +
+      (s.pede_assinatura ? "\n✍️ Ao concluir, colher a ASSINATURA do " + (o.prefeitura_id ? "FISCAL" : "responsável no local") + " (no relatório do app).\n" : "");
     if (f) t += "\nRegistre a chegada, as fotos do serviço e a saída pelo seu link:\n" + linkFunc(f);
     return t;
   }
@@ -315,7 +354,8 @@
       '<label class="marca-linha" style="margin:0"><input type="checkbox" id="ns-' + cat + '"> ' + rotulo + "</label>" +
       '<div id="ns-' + cat + '-campos" class="oculto"><div class="duas"><div><label for="ns-' + cat + '-func">Funcionário</label><select id="ns-' + cat + '-func">' + opcoesFunc(cat, null) + "</select></div>" +
       '<div><label for="ns-' + cat + '-data">Data prevista</label><input type="date" id="ns-' + cat + '-data"></div></div>' +
-      '<label for="ns-' + cat + '-desc">O que fazer</label><textarea id="ns-' + cat + '-desc" rows="3"></textarea></div></div>';
+      '<label for="ns-' + cat + '-desc">O que fazer</label><textarea id="ns-' + cat + '-desc" rows="3"></textarea>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="ns-' + cat + '-assin"> ✍️ Liberar assinatura do responsável neste serviço <span class="mudo peq">(desligado: o funcionário não vê o quadro de assinatura)</span></label></div></div>';
   }
 
   function novoServico(obraId) {
@@ -358,7 +398,8 @@
       pObra.then(function (o) {
         return q(sb.from("servicos").insert(cats.map(function (cat) {
           return { obra_id: o.id, categoria: cat, funcionario_id: nulo(val(el, "#ns-" + cat + "-func")),
-            data_prevista: nulo(val(el, "#ns-" + cat + "-data")), descricao: nulo(val(el, "#ns-" + cat + "-desc")) };
+            data_prevista: nulo(val(el, "#ns-" + cat + "-data")), descricao: nulo(val(el, "#ns-" + cat + "-desc")),
+            pede_assinatura: $("#ns-" + cat + "-assin", el).checked };
         })).select());
       }).then(function (novos) {
         novos.forEach(function (s) { S.serv.unshift(s); });
@@ -404,8 +445,10 @@
   function abrirServico(id) {
     var s = porId(S.serv, id), o = porId(S.obras, s.obra_id);
     var j = A.janela(
-      '<div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) + '<span class="dir mudo peq">criado ' + A.data(s.criado_em) + "</span></div>" +
-      "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" +
+      '<div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
+      (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe' + (s.funcionario_id ? " (" + esc(nomeFunc(s.funcionario_id)) + ")" : "") + "</span>" : "") +
+      '<span class="dir mudo peq">criado ' + A.data(s.criado_em) + "</span></div>" +
+      "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" + seloOS(o) +
       (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
       '<div class="duas"><div><label for="es-func">Funcionário</label><select id="es-func">' + opcoesFunc(s.categoria, s.funcionario_id) + "</select></div>" +
       '<div><label for="es-data">Data prevista</label><input type="date" id="es-data" value="' + esc(s.data_prevista || "") + '"></div></div>' +
@@ -413,6 +456,7 @@
         return '<option value="' + k + '"' + (k === s.status ? " selected" : "") + ">" + A.STATUS[k] + "</option>";
       }).join("") + "</select>" +
       '<label for="es-desc">O que fazer</label><textarea id="es-desc" rows="4">' + esc(s.descricao || "") + "</textarea>" +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="es-assin"' + (s.pede_assinatura ? " checked" : "") + '> ✍️ Liberar assinatura do responsável neste serviço <span class="mudo peq">(desligado: o funcionário não vê o quadro de assinatura)</span></label>' +
       '<div class="acoes"><button class="prim" id="es-salvar">Salvar</button><span id="es-zap">' + botaoZap(s) + '</span><button class="perigo" id="es-apagar">Apagar parte</button></div>' +
       '<hr class="sep"><h3>Registros de ponto neste serviço</h3><div id="es-pontos">' + carregando() + "</div>" +
       '<hr class="sep"><h3>Relatórios</h3><div id="es-rels"></div>',
@@ -433,7 +477,8 @@
 
     $("#es-salvar", el).onclick = function () {
       var b = this, st = $("#es-st", el).value;
-      var dados = { funcionario_id: nulo($("#es-func", el).value), data_prevista: nulo($("#es-data", el).value), status: st, descricao: nulo(val(el, "#es-desc")) };
+      var dados = { funcionario_id: nulo($("#es-func", el).value), data_prevista: nulo($("#es-data", el).value), status: st, descricao: nulo(val(el, "#es-desc")),
+        pede_assinatura: $("#es-assin", el).checked };
       if (st === "concluido" && s.status !== "concluido") dados.concluido_em = new Date().toISOString();
       if (st !== "concluido") dados.concluido_em = null;
       var trocouFunc = dados.funcionario_id && dados.funcionario_id !== s.funcionario_id;
@@ -548,39 +593,57 @@
     var s = porId(S.serv, r.servico_id), o = s ? porId(S.obras, s.obra_id) : null;
     return '<div class="cartao clic" data-rel="' + r.id + '"' + (r.lido ? "" : ' style="border-left:4px solid var(--critico)"') + '><div class="linha">' +
       (s ? A.seloCategoria(s.categoria) : "") + (r.lido ? "" : '<span class="selo critico">novo</span>') + (r.concluido ? '<span class="selo bom">concluído</span>' : "") +
+      (r.assinatura ? '<span class="selo bom">✍️ assinado</span>' : (r.concluido && s && s.pede_assinatura ? '<span class="selo atencao">sem assinatura</span>' : "")) +
       '<span class="dir mudo peq">' + A.dataHora(r.criado_em) + "</span></div>" +
       '<div style="margin-top:6px"><b>' + esc(r.tipo_servico || "Relatório") + "</b> · " + esc(o ? o.cliente : "serviço apagado") + "</div>" +
-      '<div class="peq mudo">👷 ' + esc(nomeFunc(r.funcionario_id)) + " · " + (r.materiais || []).length + " materiais · " + (r.fotos || []).length + " fotos</div></div>";
+      '<div class="peq mudo">👷 ' + esc(nomeFunc(r.funcionario_id)) + " · " + (r.materiais || []).length + " materiais · " +
+        ((r.fotos_antes || []).length ? (r.fotos_antes || []).length + " fotos antes · " + (r.fotos || []).length + " depois" : (r.fotos || []).length + " fotos") + "</div></div>";
   }
 
   function verRelatorios(c) {
-    var lista = S.rel.filter(function (r) { return filtroRel === "todos" || !r.lido; });
-    c.innerHTML = '<div class="cab-secao"><h2>Relatórios da equipe</h2><select id="fr-filtro" style="width:auto" aria-label="Filtro">' +
+    var lista = S.rel.filter(function (r) {
+      if (filtroRel !== "todos" && r.lido) return false;
+      if (!filtroRelTipo) return true;
+      var s = porId(S.serv, r.servico_id), pr = !!(s && ehPrefServ(s));
+      return filtroRelTipo === "prefeitura" ? pr : !pr;
+    });
+    c.innerHTML = '<div class="cab-secao"><h2>Relatórios da equipe</h2>' +
+      (S.pref.length ? '<select id="fr-tipo-f" style="width:auto" aria-label="Tipo"><option value="">Particulares e prefeitura</option><option value="particulares">Só particulares</option><option value="prefeitura">🏛️ Só prefeitura</option></select>' : "") +
+      '<select id="fr-filtro" style="width:auto" aria-label="Filtro">' +
       '<option value="nao_lidos">Novos</option><option value="todos">Todos</option></select></div>' +
       (lista.length ? lista.map(htmlCartaoRel).join("") : '<div class="cartao vazio">' + (filtroRel === "todos" ? "Nenhum relatório ainda." : "Nenhum relatório novo.") + "</div>");
     $("#fr-filtro").value = filtroRel;
+    if ($("#fr-tipo-f")) { $("#fr-tipo-f").value = filtroRelTipo; $("#fr-tipo-f").onchange = function () { filtroRelTipo = this.value; verRelatorios(c); }; }
     $("#fr-filtro").onchange = function () { filtroRel = this.value; verRelatorios(c); };
     $$("[data-rel]", c).forEach(function (d) { d.onclick = function () { abrirRelatorio(d.dataset.rel); }; });
   }
 
   function abrirRelatorio(id) {
     var r = porId(S.rel, id), s = porId(S.serv, r.servico_id), o = s ? porId(S.obras, s.obra_id) : null;
-    var mats = r.materiais || [];
+    var mats = r.materiais || [], pref = !!(o && o.prefeitura_id);
     var j = A.janela(
       '<div class="linha">' + (s ? A.seloCategoria(s.categoria) : "") + (r.concluido ? '<span class="selo bom">funcionário marcou como concluído</span>' : "") +
       '<span class="dir mudo peq">' + A.dataHora(r.criado_em) + "</span></div>" +
-      '<p><b>Cliente:</b> ' + esc(o ? o.cliente : "serviço apagado") + (o && o.endereco ? " · " + esc(o.endereco) : "") + "<br><b>Funcionário:</b> " + esc(nomeFunc(r.funcionario_id)) +
+      (pref ? seloOS(o) : "") + '<p><b>Cliente:</b> ' + esc(o ? o.cliente : "serviço apagado") + (o && o.endereco ? " · " + esc(o.endereco) : "") + "<br><b>Funcionário:</b> " + esc(nomeFunc(r.funcionario_id)) +
       "<br><b>Tipo de serviço:</b> " + esc(r.tipo_servico || "—") + "</p>" +
       (r.descricao ? '<div class="cartao" style="white-space:pre-wrap">' + esc(r.descricao) + "</div>" : "") +
       "<h3>Materiais pedidos</h3>" + (mats.length ? '<div class="tabela-caixa"><table><thead><tr><th>Material</th><th class="num">Qtd</th><th>Un</th></tr></thead><tbody>' +
         mats.map(function (m) { return "<tr><td>" + esc(m.item) + '</td><td class="num">' + A.numero(m.qtd) + "</td><td>" + esc(m.un) + "</td></tr>"; }).join("") +
         "</tbody></table></div>" : '<p class="mudo peq">Nenhum material.</p>') +
-      ((r.fotos || []).length ? '<h3 style="margin-top:12px">Fotos</h3><div class="fotos">' + r.fotos.map(function (f) { return htmlFoto(f, ""); }).join("") + "</div>" : "") +
+      ((r.fotos_antes || []).length ? '<h3 style="margin-top:12px">Fotos ANTES</h3><div class="fotos">' + r.fotos_antes.map(function (f) { return htmlFoto(f, "antes"); }).join("") + "</div>" : "") +
+      ((r.fotos || []).length ? '<h3 style="margin-top:12px">' + (pref ? "Fotos DEPOIS" : "Fotos") + '</h3><div class="fotos">' + r.fotos.map(function (f) { return htmlFoto(f, pref ? "depois" : ""); }).join("") + "</div>" : "") +
+      (r.assinatura ? '<h3 style="margin-top:12px">✍️ Assinatura ' + (pref ? "do fiscal" : "do responsável") + "</h3>" + '<div class="linha"><button class="foto" data-foto="' + esc(r.assinatura) +
+        '" style="width:220px;height:110px;background:#fff" aria-label="Ver assinatura"><img alt="Assinatura" style="object-fit:contain"></button>' +
+        '<div class="peq"><b>' + esc(r.assinado_por || "") + "</b><br>" + (r.assinado_em ? A.dataHora(r.assinado_em) : "") + "</div></div>"
+        : (r.concluido && s && s.pede_assinatura ? '<div class="aviso" style="margin-top:12px">Este serviço pedia assinatura, mas foi concluído <b>sem assinatura</b> (responsável não estava no local).</div>' : "")) +
       '<div class="acoes"><button class="prim" id="er-orc">💲 Gerar orçamento</button>' + (s ? '<button id="er-serv">Abrir serviço</button>' : "") +
       '<button id="er-lido">' + (r.lido ? "Marcar como novo" : "Marcar como lido") + "</button></div>",
       { titulo: "Relatório", larga: true, aoFechar: function () { if (location.hash.slice(1) === "relatorios") rota(); } });
     var el = j.el;
-    (r.fotos || []).forEach(function (f) { infoFoto[f] = "Foto do relatório · " + esc(nomeFunc(r.funcionario_id)) + " · " + A.dataHora(r.criado_em); });
+    (r.fotos || []).forEach(function (f) { infoFoto[f] = (pref ? "Foto DEPOIS" : "Foto do relatório") + " · " + esc(nomeFunc(r.funcionario_id)) + " · " + A.dataHora(r.criado_em); });
+    (r.fotos_antes || []).forEach(function (f) { infoFoto[f] = "Foto ANTES · " + esc(nomeFunc(r.funcionario_id)) + " · " + A.dataHora(r.criado_em); });
+    if (r.assinatura) infoFoto[r.assinatura] = "<b>Assinatura</b> de " + esc(r.assinado_por || "") + " · " + (r.assinado_em ? A.dataHora(r.assinado_em) : "") +
+      " · coletada por " + esc(nomeFunc(r.funcionario_id));
     hidratarFotos(el);
     function marcar(lido) {
       return q(sb.from("relatorios").update({ lido: lido }).eq("id", id).select().single()).then(function (n) { trocar(S.rel, n); r = n; });
@@ -1703,6 +1766,14 @@
       });
     };
   }
+
+  // o módulo da prefeitura (prefeitura.js) usa as mesmas funções do painel
+  var P = {
+    get sb() { return sb; }, S: S, q: q, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
+    val: val, nulo: nulo, htmlFoto: htmlFoto, hidratarFotos: hidratarFotos, infoFoto: infoFoto, registrarInfoPonto: registrarInfoPonto,
+    opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,
+    rota: rota, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES
+  };
 
   iniciar();
 })();
