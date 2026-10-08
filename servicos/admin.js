@@ -944,11 +944,9 @@
     $("#eo2-zap", el).onclick = function () {
       lerCampos();
       if (A.soDigitos(M.telefone).length < 10) { A.avisar("Informe o WhatsApp do cliente com DDD.", "erro"); return; }
-      var w = window.open("", "_blank");
-      salvar().then(function (n) {
-        var url = A.linkZap(n.telefone, textoOrcamento(n));
-        if (w) w.location.href = url; else location.href = url;
-      }).catch(function (e) { if (w) w.close(); falhou(e); });
+      var b = this; A.ocupado(b, true, "Salvando...");
+      salvar().then(function (n) { A.ocupado(b, false); A.abrirZap(A.linkZap(n.telefone, textoOrcamento(n))); })
+        .catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
     carregarJsPdf().catch(function () { /* tenta de novo ao clicar */ });
     function prepararPdf(b) {

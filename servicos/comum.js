@@ -212,12 +212,49 @@
     window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(function () { /* segue sem modo app */ }); });
   }
 
+  // ---------- WhatsApp ----------
+  // No celular o link wa.me abre direto no WhatsApp. No computador, o app do WhatsApp
+  // para Windows às vezes abre sem a conversa; então oferecemos WhatsApp Web, o app
+  // e "copiar a mensagem".
+  var CELULAR = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+  function escolherZap(url) {
+    var u = new URL(url), fone = u.pathname.replace(/\D/g, ""), texto = u.searchParams.get("text") || "";
+    var qs = "phone=" + fone + "&text=" + encodeURIComponent(texto);
+    var vis = fone.length >= 12 ? "(" + fone.slice(2, 4) + ") " + fone.slice(4, fone.length - 4) + "-" + fone.slice(-4) : fone;
+    var j = janela('<p>Mensagem para <b>' + esc(vis) + '</b>. Escolha como enviar:</p>' +
+      '<div class="acoes" style="flex-direction:column">' +
+      '<a class="botao zap" id="zap-web" target="_blank" rel="noopener" href="https://web.whatsapp.com/send?' + esc(qs) + '">💻 WhatsApp Web (no navegador)</a>' +
+      '<a class="botao" id="zap-app" href="whatsapp://send?' + esc(qs) + '">🟢 App do WhatsApp do computador</a>' +
+      '<button id="zap-copiar">📋 Copiar a mensagem</button></div>' +
+      '<p class="mudo peq" style="margin-top:10px">Se o app do WhatsApp abrir sem a conversa: deixe o WhatsApp aberto e clique de novo, ou use o WhatsApp Web.</p>' +
+      '<details class="peq"><summary>Ver a mensagem</summary><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">' + esc(texto) + "</pre></details>",
+      { titulo: "Enviar pelo WhatsApp" });
+    $("#zap-web", j.el).addEventListener("click", function () { setTimeout(j.fechar, 300); });
+    $("#zap-app", j.el).addEventListener("click", function () { setTimeout(j.fechar, 300); });
+    $("#zap-copiar", j.el).onclick = function () {
+      var feito = function () { avisar("Mensagem copiada. Abra a conversa no WhatsApp e cole (Ctrl+V).", "ok"); j.fechar(); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(texto).then(feito, function () { window.prompt("Copie a mensagem:", texto); });
+      else window.prompt("Copie a mensagem:", texto);
+    };
+  }
+  // abre um link wa.me (usado quando o link não é um botão <a>)
+  function abrirZap(url) {
+    if (CELULAR) { var w = window.open(url, "_blank"); if (!w) location.href = url; }
+    else escolherZap(url);
+  }
+  if (!CELULAR) document.addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[href^="https://wa.me/"]') : null;
+    if (!a || ev.button !== 0 || ev.ctrlKey || ev.metaKey) return;
+    ev.preventDefault();
+    escolherZap(a.href);
+  }, true);
+
   window.AGE = {
     ligarInstalar: ligarInstalar,
     CFG: CFG, CATEG: CATEG, AREA: AREA, STATUS: STATUS, TIPO_PONTO: TIPO_PONTO,
     esc: esc, $: $, $$: $$, data: data, hora: hora, dataHora: dataHora, dataSimples: dataSimples, isoLocal: isoLocal,
     inicioDia: inicioDia, duracao: duracao, dinheiro: dinheiro, numero: numero, lerNumero: lerNumero, soDigitos: soDigitos,
-    linkZap: linkZap, linkMapa: linkMapa, linkEndereco: linkEndereco, seloCategoria: seloCategoria, seloStatus: seloStatus,
+    linkZap: linkZap, abrirZap: abrirZap, linkMapa: linkMapa, linkEndereco: linkEndereco, seloCategoria: seloCategoria, seloStatus: seloStatus,
     avisar: avisar, msgErro: msgErro, janela: janela, confirmar: confirmar, ocupado: ocupado, uuid: uuid,
     configurado: configurado, cliente: cliente, telaSemConfig: telaSemConfig, prepararFoto: prepararFoto
   };
