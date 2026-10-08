@@ -102,30 +102,96 @@
   function iniciar() {
     if (!A.configurado()) { A.telaSemConfig(app); return; }
     try { sb = A.cliente(); } catch (e) { app.innerHTML = '<div class="entrada"><div class="aviso erro">' + esc(A.msgErro(e)) + "</div></div>"; return; }
-    sb.auth.onAuthStateChange(function (ev) { if (ev === "SIGNED_OUT") telaLogin(); });
+    // voltou pelo link do e-mail "Esqueci a senha": pede a senha nova
+    var recuperando = /type=recovery/.test(location.hash);
+    sb.auth.onAuthStateChange(function (ev) {
+      if (ev === "SIGNED_OUT") telaLogin();
+      if (ev === "PASSWORD_RECOVERY") { recuperando = true; telaNovaSenha(); }
+    });
     sb.auth.getSession().then(function (r) {
+      if (recuperando) { if (r.data && r.data.session) telaNovaSenha(); else telaLogin("O link para trocar a senha venceu. Peça outro em “Esqueci a senha”."); return; }
       if (r.data && r.data.session) verificarAdmin(); else telaLogin();
     }).catch(function () { telaLogin(); });
+  }
+
+  // campo de senha com o botão 👁 para ver o que foi digitado
+  function campoSenha(id, rotulo, auto) {
+    return '<label for="' + id + '">' + rotulo + '</label><div style="position:relative">' +
+      '<input id="' + id + '" type="password" autocomplete="' + auto + '" autocapitalize="none" autocorrect="off" spellcheck="false" required style="padding-right:52px">' +
+      '<button type="button" class="texto" data-ver-senha="' + id + '" aria-label="Mostrar a senha" title="Mostrar a senha" ' +
+      'style="position:absolute;right:2px;top:50%;transform:translateY(-50%);min-height:0;padding:8px 10px;font-size:20px;line-height:1">👁</button></div>';
+  }
+  function ligarVerSenha(raiz) {
+    $$("[data-ver-senha]", raiz).forEach(function (b) {
+      b.onclick = function () {
+        var i = $("#" + b.dataset.verSenha), ver = i.type === "password";
+        i.type = ver ? "text" : "password";
+        b.textContent = ver ? "🙈" : "👁";
+        b.setAttribute("aria-label", ver ? "Esconder a senha" : "Mostrar a senha");
+        i.focus();
+      };
+    });
+  }
+  function urlPainel() { return location.href.split("#")[0].split("?")[0]; }
+
+  function telaNovaSenha() {
+    window.removeEventListener("hashchange", rota);
+    app.innerHTML = '<div class="entrada"><div class="marca-g">AGE</div><h2 style="text-align:center;margin-bottom:14px">Criar senha nova</h2>' +
+      '<form class="cartao" id="f-nova">' + campoSenha("n-senha", "Senha nova (mínimo 8 letras ou números)", "new-password") +
+      campoSenha("n-senha2", "Repita a senha nova", "new-password") +
+      '<div id="n-msg"></div><div class="acoes"><button class="prim" type="submit">Salvar senha nova</button></div></form></div>';
+    ligarVerSenha(app);
+    $("#f-nova").onsubmit = function (ev) {
+      ev.preventDefault();
+      var s1 = $("#n-senha").value, s2 = $("#n-senha2").value, b = $("button[type=submit]", this);
+      var erro = function (m) { $("#n-msg").innerHTML = '<div class="aviso erro">' + esc(m) + "</div>"; };
+      if (s1.length < 8) { erro("A senha precisa ter pelo menos 8 letras ou números."); return; }
+      if (s1 !== s2) { erro("As duas senhas estão diferentes. Toque no 👁 para conferir."); return; }
+      A.ocupado(b, true, "Salvando...");
+      sb.auth.updateUser({ password: s1 }).then(function (r) {
+        if (r.error) throw r.error;
+        history.replaceState(null, "", urlPainel());
+        A.avisar("Senha trocada. Use a senha nova da próxima vez.", "ok");
+        return verificarAdmin();
+      }).catch(function (e) { A.ocupado(b, false); erro(A.msgErro(e)); });
+    };
   }
 
   function telaLogin(msg) {
     window.removeEventListener("hashchange", rota);
     app.innerHTML = '<div class="entrada"><div class="marca-g">AGE</div><h2 style="text-align:center;margin-bottom:14px">Painel AGE Elétrica e Pintura</h2>' +
-      '<form class="cartao" id="f-login"><label for="l-email">E-mail</label><input id="l-email" type="email" autocomplete="username" required>' +
-      '<label for="l-senha">Senha</label><input id="l-senha" type="password" autocomplete="current-password" required>' +
+      '<form class="cartao" id="f-login"><label for="l-email">E-mail</label><input id="l-email" type="email" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>' +
+      campoSenha("l-senha", "Senha", "current-password") +
       '<div id="l-msg">' + (msg ? '<div class="aviso erro">' + esc(msg) + "</div>" : "") + "</div>" +
-      '<div class="acoes"><button class="prim" type="submit">Entrar</button></div></form></div>';
+      '<div class="acoes"><button class="prim" type="submit">Entrar</button></div>' +
+      '<button type="button" class="texto peq" id="l-esqueci" style="margin-top:10px">Esqueci a senha</button></form></div>';
+    ligarVerSenha(app);
+    $("#l-esqueci").onclick = function () {
+      var email = $("#l-email").value.trim().toLowerCase(), b = this;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { $("#l-msg").innerHTML = '<div class="aviso erro">Escreva o seu e-mail acima e toque de novo em “Esqueci a senha”.</div>'; return; }
+      A.ocupado(b, true, "Enviando...");
+      sb.auth.resetPasswordForEmail(email, { redirectTo: urlPainel() }).then(function (r) {
+        if (r.error) throw r.error;
+        A.ocupado(b, false);
+        $("#l-msg").innerHTML = '<div class="aviso ok">Se este e-mail tiver acesso, chega em alguns minutos uma mensagem para trocar a senha. Abra o link do e-mail <b>neste mesmo aparelho</b>. Olhe também o Spam.</div>';
+      }).catch(function (e) {
+        A.ocupado(b, false);
+        var m = A.msgErro(e);
+        if (/rate limit|too many|seconds/i.test(m)) m = "Muitos pedidos seguidos. Espere alguns minutos e tente de novo.";
+        $("#l-msg").innerHTML = '<div class="aviso erro">' + esc(m) + "</div>";
+      });
+    };
     $("#f-login").onsubmit = function (ev) {
       ev.preventDefault();
-      var b = $("button", this);
+      var b = $("button[type=submit]", this);
       A.ocupado(b, true, "Entrando...");
-      sb.auth.signInWithPassword({ email: $("#l-email").value.trim(), password: $("#l-senha").value }).then(function (r) {
+      sb.auth.signInWithPassword({ email: $("#l-email").value.trim().toLowerCase(), password: $("#l-senha").value }).then(function (r) {
         if (r.error) throw r.error;
         return verificarAdmin();
       }).catch(function (e) {
         A.ocupado(b, false);
         var m = A.msgErro(e);
-        if (/Invalid login/i.test(m)) m = "E-mail ou senha errados.";
+        if (/Invalid login/i.test(m)) m = "E-mail ou senha errados. Toque no 👁 para ver a senha digitada (atenção a letras maiúsculas).";
         $("#l-msg").innerHTML = '<div class="aviso erro">' + esc(m) + "</div>";
       });
     };
