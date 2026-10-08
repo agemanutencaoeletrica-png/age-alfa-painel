@@ -110,8 +110,130 @@
     });
     sb.auth.getSession().then(function (r) {
       if (recuperando) { if (r.data && r.data.session) telaNovaSenha(); else telaLogin("O link para trocar a senha venceu. Peça outro em “Esqueci a senha”."); return; }
-      if (r.data && r.data.session) verificarAdmin(); else telaLogin();
+      if (r.data && r.data.session) { if (travaAtiva()) bloquear(verificarAdmin); else verificarAdmin(); }
+      else telaLogin();
     }).catch(function () { telaLogin(); });
+  }
+
+  // =================================================================
+  // TRAVA COM DIGITAL / ROSTO (só neste aparelho)
+  // Usa o desbloqueio do próprio celular/computador (WebAuthn). A digital nunca
+  // sai do aparelho; o app só guarda o "id" da chave criada aqui.
+  // =================================================================
+  var CHAVE_TRAVA = "age_trava", TRAVA_MIN = 2, saiuEm = 0;
+  function b64(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+  function deB64(t) { t = t.replace(/-/g, "+").replace(/_/g, "/"); while (t.length % 4) t += "="; return Uint8Array.from(atob(t), function (c) { return c.charCodeAt(0); }); }
+  function aleatorio(n) { return crypto.getRandomValues(new Uint8Array(n)); }
+  function lerTrava() { try { return JSON.parse(localStorage.getItem(CHAVE_TRAVA) || "null"); } catch (e) { return null; } }
+  function travaAtiva() { return !!(lerTrava() && window.PublicKeyCredential); }
+  function travaDisponivel() {
+    if (!window.PublicKeyCredential || !PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) return Promise.resolve(false);
+    return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(function () { return false; });
+  }
+  function ativarTrava() {
+    return sb.auth.getSession().then(function (r) {
+      var se = r.data && r.data.session, email = (se && se.user && se.user.email) || "dono";
+      return navigator.credentials.create({ publicKey: {
+        rp: { name: "AGE Painel" }, challenge: aleatorio(32),
+        user: { id: aleatorio(16), name: email, displayName: email },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "discouraged" },
+        timeout: 60000, attestation: "none"
+      } });
+    }).then(function (cred) {
+      localStorage.setItem(CHAVE_TRAVA, JSON.stringify({ id: b64(cred.rawId), criada: new Date().toISOString() }));
+    });
+  }
+  function conferirDigital() {
+    var t = lerTrava();
+    return navigator.credentials.get({ publicKey: {
+      challenge: aleatorio(32), allowCredentials: [{ type: "public-key", id: deB64(t.id), transports: ["internal", "hybrid"] }],
+      userVerification: "required", timeout: 60000
+    } });
+  }
+  function msgTrava(e) {
+    var n = e && e.name;
+    if (n === "NotAllowedError") return "Desbloqueio cancelado ou não reconhecido. Toque de novo.";
+    if (n === "InvalidStateError") return "Este aparelho já tem a trava. Desative e ative de novo.";
+    if (n === "SecurityError") return "A trava só funciona pelo endereço oficial do painel (https).";
+    return A.msgErro(e);
+  }
+  // tela de bloqueio por cima de tudo; "depois" roda quando desbloquear
+  function bloquear(depois) {
+    if ($("#trava")) return;
+    var d = document.createElement("div");
+    d.id = "trava";
+    d.setAttribute("style", "position:fixed;inset:0;z-index:200;background:var(--fundo,#f3f4f7);display:flex;align-items:center;justify-content:center;padding:20px");
+    d.innerHTML = '<div class="entrada" style="margin:0;width:100%;text-align:center"><div class="marca-g">AGE</div>' +
+      '<h2 style="margin-bottom:6px">🔒 Painel travado</h2><p class="mudo">Use a digital ou o rosto deste aparelho.</p>' +
+      '<div id="trava-msg"></div><div class="acoes" style="flex-direction:column"><button class="prim grande" id="trava-ok" style="min-height:56px;font-size:17px">👆 Desbloquear</button>' +
+      '<button class="texto peq" id="trava-senha">Entrar com e-mail e senha</button></div></div>';
+    document.body.appendChild(d);
+    document.body.style.overflow = "hidden";
+    function abrir() {
+      var b = $("#trava-ok");
+      $("#trava-msg").innerHTML = "";
+      A.ocupado(b, true, "Aguardando a digital...");
+      conferirDigital().then(function () {
+        d.remove();
+        if (!$(".fundo-modal")) document.body.style.overflow = "";
+        if (depois) depois();
+      }).catch(function (e) {
+        A.ocupado(b, false);
+        $("#trava-msg").innerHTML = '<div class="aviso erro">' + esc(msgTrava(e)) + "</div>";
+      });
+    }
+    $("#trava-ok").onclick = abrir;
+    $("#trava-senha").onclick = function () { d.remove(); document.body.style.overflow = ""; sb.auth.signOut(); };
+    abrir();  // já pede a digital (se o navegador exigir um toque, o botão resolve)
+  }
+  // volta para o app depois de alguns minutos fora: trava de novo
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { saiuEm = Date.now(); return; }
+    if (saiuEm && travaAtiva() && $("#abas") && Date.now() - saiuEm >= TRAVA_MIN * 60000) bloquear(null);
+    saiuEm = 0;
+  });
+  function janelaTrava() {
+    travaDisponivel().then(function (ok) {
+      var ativa = travaAtiva();
+      var j = A.janela(!ok ? '<div class="aviso">Este aparelho ou navegador não tem desbloqueio por digital/rosto disponível (ou não está configurado no celular). ' +
+        "Cadastre a digital nas configurações do celular e abra o painel pelo Chrome.</div>" :
+        '<p>' + (ativa ? "✅ A trava está <b>ativa neste aparelho</b>." : "Ao abrir o painel (ou voltar para ele depois de " + TRAVA_MIN + " minutos), ele pede a <b>digital ou o rosto</b> do celular.") + "</p>" +
+        '<p class="mudo peq">Vale só para este aparelho. A digital fica no celular, o app nunca recebe. Se a digital falhar, dá para entrar com e-mail e senha.</p>' +
+        '<div id="tv-msg"></div><div class="acoes">' + (ativa ? '<button id="tv-testar">👆 Testar</button><button class="perigo" id="tv-desativar">Desativar trava</button>' :
+          '<button class="prim" id="tv-ativar">🔒 Ativar trava com digital</button>') + "</div>",
+        { titulo: "Trava com digital" });
+      var el = j.el, msg = function (t, tipo) { $("#tv-msg", el).innerHTML = '<div class="aviso ' + (tipo || "erro") + '">' + esc(t) + "</div>"; };
+      if ($("#tv-ativar", el)) $("#tv-ativar", el).onclick = function () {
+        var b = this; A.ocupado(b, true, "Confirme com a digital...");
+        ativarTrava().then(function () { j.fechar(); A.avisar("Trava ativada. Da próxima vez o painel pede a digital.", "ok"); atualizarBotaoTrava(); })
+          .catch(function (e) { A.ocupado(b, false); msg(msgTrava(e)); });
+      };
+      if ($("#tv-testar", el)) $("#tv-testar", el).onclick = function () {
+        conferirDigital().then(function () { msg("Digital reconhecida. A trava está funcionando.", "ok"); }).catch(function (e) { msg(msgTrava(e)); });
+      };
+      if ($("#tv-desativar", el)) $("#tv-desativar", el).onclick = function () {
+        localStorage.removeItem(CHAVE_TRAVA); j.fechar(); A.avisar("Trava desativada neste aparelho."); atualizarBotaoTrava();
+      };
+    });
+  }
+  function atualizarBotaoTrava() {
+    var b = $("#b-trava");
+    if (!b) return;
+    travaDisponivel().then(function (ok) {
+      b.classList.toggle("oculto", !ok && !travaAtiva());
+      b.textContent = travaAtiva() ? "🔒" : "🔓";
+      b.title = travaAtiva() ? "Trava com digital: ativa" : "Ativar trava com digital";
+    });
+  }
+  // depois de entrar com senha, oferece a trava uma vez por aparelho
+  function oferecerTrava() {
+    if (!$("#abas") || travaAtiva() || localStorage.getItem("age_trava_oferecida")) return;
+    travaDisponivel().then(function (ok) {
+      if (!ok) return;
+      localStorage.setItem("age_trava_oferecida", "1");
+      janelaTrava();
+    });
   }
 
   // campo de senha com o botão 👁 para ver o que foi digitado
@@ -187,7 +309,7 @@
       A.ocupado(b, true, "Entrando...");
       sb.auth.signInWithPassword({ email: $("#l-email").value.trim().toLowerCase(), password: $("#l-senha").value }).then(function (r) {
         if (r.error) throw r.error;
-        return verificarAdmin();
+        return verificarAdmin().then(oferecerTrava);
       }).catch(function (e) {
         A.ocupado(b, false);
         var m = A.msgErro(e);
@@ -237,10 +359,13 @@
 
   function montar() {
     app.innerHTML = '<div class="topo"><div class="marca">AGE</div><div><div class="nome">AGE Elétrica e Pintura</div><div class="sub">Painel do responsável</div></div>' +
-      '<div class="dir"><button class="leve peq oculto" id="b-instalar">📲 Instalar app</button><button class="leve peq" id="b-recarregar" aria-label="Atualizar">↻</button><button class="leve peq" id="b-sair">Sair</button></div></div>' +
+      '<div class="dir"><button class="leve peq oculto" id="b-instalar">📲 Instalar app</button><button class="leve peq oculto" id="b-trava" aria-label="Trava com digital">🔓</button>' +
+      '<button class="leve peq" id="b-recarregar" aria-label="Atualizar">↻</button><button class="leve peq" id="b-sair">Sair</button></div></div>' +
       '<nav class="abas" id="abas"></nav><main id="conteudo"></main>';
     A.ligarInstalar($("#b-instalar"));
     $("#b-sair").onclick = function () { sb.auth.signOut(); };
+    $("#b-trava").onclick = janelaTrava;
+    atualizarBotaoTrava();
     $("#b-recarregar").onclick = function () {
       carregarBase().then(function () { rota(); A.avisar("Atualizado"); }).catch(falhou);
     };
