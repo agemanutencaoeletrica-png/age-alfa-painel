@@ -98,6 +98,24 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
    - **✉ E-mail do cliente**: baixa o PDF e abre o e-mail já preenchido (destinatário, assunto e texto); é só anexar o PDF.
    - **📄 Baixar PDF** / **🖨 Imprimir**.
 
+### Veículos (placa e KM)
+1. **🚗 Veículos** → *+ Veículo*: placa e modelo de cada carro da empresa.
+2. No app do funcionário aparece o botão **🚗 Veículo: registrar KM**. Ao **pegar o carro** ele escolhe a placa, marca
+   **Início**, escreve o KM do painel e tira a **foto do painel** (sai carimbada com placa, KM, hora e GPS). Ao
+   **devolver**, faz o mesmo com **Fim**. O app já sugere o carro e o momento certo; o KM final menor que o inicial é recusado.
+3. No painel: a aba **Hoje** mostra, em cada funcionário, o carro, o KM de início e de fim e os **km rodados**; a aba
+   **🚗 Veículos** mostra o histórico por período, veículo e funcionário, com as fotos do painel, o mapa (GPS) e a
+   planilha para Excel. Os lugares visitados aparecem no **Ponto** (chegada e saída com GPS).
+4. Carro vendido ou parado: abra o veículo e desmarque **Ativo** (o histórico fica guardado).
+
+### Mandar serviços pelo celular (dono e outra pessoa)
+O painel funciona no celular igual ao notebook. No **Chrome do celular** abra
+`https://agemanutencaoeletrica-png.github.io/age-alfa-painel/servicos/`, entre com e-mail e senha e use
+menu ⋮ → **Instalar app** (ou *Adicionar à tela inicial*). Para **outra pessoa** também mandar serviços, crie um login
+para ela: Supabase → **Authentication → Users → Add user → Create new user** (e-mail dela, senha, *Auto Confirm User*) e,
+no **SQL Editor**, rode `insert into public.admins (email) values ('email-dela@...') on conflict do nothing;`.
+Ela passa a ver tudo o que você vê (inclusive orçamentos). Para tirar o acesso: apague o usuário em Authentication → Users.
+
 ### Lojas e rotas (lojas próximas no mesmo dia)
 1. **Rode de novo o `supabase.sql`** (SQL Editor → colar tudo → Run). Ele cria as tabelas de lojas e rotas sem apagar nada.
 2. **Lojas → ⬆ Atualizar lojas (Word ou planilha)** → escolha o documento **DADOS DAS LOJAS** do jeito que ele é

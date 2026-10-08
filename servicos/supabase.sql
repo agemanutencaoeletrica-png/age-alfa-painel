@@ -238,6 +238,31 @@ create index if not exists obras_pref_idx      on public.obras (prefeitura_id);
 create index if not exists contratos_pref_idx  on public.contratos (prefeitura_id);
 create index if not exists medicoes_contr_idx  on public.medicoes (contrato_id);
 
+-- ---------- Veículos: placa e KM (início e fim do uso, com foto do painel e GPS) ----------
+create table if not exists public.veiculos (
+  id        uuid primary key default gen_random_uuid(),
+  placa     text not null unique,
+  modelo    text,
+  ativo     boolean not null default true,
+  criado_em timestamptz not null default now()
+);
+
+create table if not exists public.km_registros (
+  id             uuid primary key default gen_random_uuid(),
+  veiculo_id     uuid not null references public.veiculos (id) on delete restrict,
+  funcionario_id uuid not null references public.funcionarios (id) on delete restrict,
+  tipo           text not null check (tipo in ('inicio', 'fim')),
+  km             integer not null check (km between 0 and 9999999),
+  foto           text not null unique,
+  lat            double precision,
+  lng            double precision,
+  precisao       double precision,
+  capturado_em   timestamptz,
+  criado_em      timestamptz not null default now()
+);
+create index if not exists km_veic_idx on public.km_registros (veiculo_id, criado_em);
+create index if not exists km_func_idx on public.km_registros (funcionario_id, criado_em);
+
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
   id             uuid primary key default gen_random_uuid(),
@@ -301,7 +326,8 @@ do $$
 declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
-                             'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos'] loop
+                             'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
+                             'veiculos', 'km_registros'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
@@ -370,6 +396,18 @@ begin
       from public.rotas r
       where r.funcionario_id = f.id
         and (r.data is null or r.data >= (now() at time zone 'America/Sao_Paulo')::date)
+    ), '[]'::jsonb),
+    'veiculos', coalesce((
+      select jsonb_agg(jsonb_build_object('id', v.id, 'placa', v.placa, 'modelo', v.modelo,
+               'ultimo_km', (select k.km from public.km_registros k where k.veiculo_id = v.id order by k.criado_em desc limit 1))
+             order by v.placa)
+      from public.veiculos v where v.ativo
+    ), '[]'::jsonb),
+    'km_hoje', coalesce((
+      select jsonb_agg(jsonb_build_object('veiculo_id', k.veiculo_id, 'tipo', k.tipo, 'km', k.km, 'criado_em', k.criado_em)
+             order by k.criado_em)
+      from public.km_registros k
+      where k.funcionario_id = f.id and k.criado_em >= v_inicio
     ), '[]'::jsonb)
   );
 end $$;
@@ -581,6 +619,63 @@ begin
   return jsonb_build_object('id', v_serv);
 end $$;
 
+-- KM do veículo (início ou fim do uso), com foto do painel
+create or replace function public.registrar_km(
+  p_token        text,
+  p_veiculo_id   uuid,
+  p_tipo         text,
+  p_km           integer,
+  p_foto         text,
+  p_lat          double precision default null,
+  p_lng          double precision default null,
+  p_precisao     double precision default null,
+  p_capturado_em timestamptz      default null
+) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  f        public.funcionarios;
+  v_id     uuid;
+  v_quando timestamptz;
+  v_ini    integer;
+  v_inicio timestamptz := ((now() at time zone 'America/Sao_Paulo')::date)::timestamp at time zone 'America/Sao_Paulo';
+begin
+  f := public._func_por_token(p_token);
+  if p_tipo is null or p_tipo not in ('inicio', 'fim') then
+    raise exception 'Escolha início ou fim do uso.';
+  end if;
+  if p_veiculo_id is null or not exists (select 1 from public.veiculos where id = p_veiculo_id and ativo) then
+    raise exception 'Escolha o veículo.';
+  end if;
+  if p_km is null or p_km < 0 or p_km > 9999999 then
+    raise exception 'KM inválido.';
+  end if;
+  if p_foto is null or split_part(p_foto, '/', 1) <> p_token
+     or not exists (select 1 from storage.objects where bucket_id = 'fotos' and name = p_foto) then
+    raise exception 'A foto do painel não chegou ao servidor. Tente de novo.';
+  end if;
+  if exists (select 1 from public.km_registros where foto = p_foto) then
+    raise exception 'Este registro já foi enviado.';
+  end if;
+  if (p_lat is null) <> (p_lng is null)
+     or coalesce(p_lat not between -90 and 90, false)
+     or coalesce(p_lng not between -180 and 180, false) then
+    raise exception 'Localização inválida.';
+  end if;
+  if p_tipo = 'fim' then
+    select km into v_ini from public.km_registros
+    where veiculo_id = p_veiculo_id and funcionario_id = f.id and tipo = 'inicio' and criado_em >= v_inicio
+    order by criado_em desc limit 1;
+    if v_ini is not null and p_km < v_ini then
+      raise exception 'O KM final (%) é menor que o KM do início (%). Confira o painel.', p_km, v_ini;
+    end if;
+  end if;
+
+  insert into public.km_registros (veiculo_id, funcionario_id, tipo, km, foto, lat, lng, precisao, capturado_em)
+  values (p_veiculo_id, f.id, p_tipo, p_km, p_foto, p_lat, p_lng, p_precisao, p_capturado_em)
+  returning id, criado_em into v_id, v_quando;
+  return jsonb_build_object('id', v_id, 'criado_em', v_quando);
+end $$;
+
 revoke execute on function public._func_por_token(text) from public, anon, authenticated;
 revoke execute on function public._tocar_atualizado_em() from public, anon, authenticated;
 grant execute on function public.eh_admin() to anon, authenticated;
@@ -590,6 +685,8 @@ grant execute on function public.registrar_ponto(text, text, text, uuid, double 
                                                 double precision, timestamptz, text) to anon, authenticated;
 grant execute on function public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean, text, text, text[]) to anon, authenticated;
 grant execute on function public.criar_servico_func(text, text, text, text, text, text) to anon, authenticated;
+grant execute on function public.registrar_km(text, uuid, text, integer, text, double precision, double precision,
+                                             double precision, timestamptz) to anon, authenticated;
 
 -- ---------- Fotos (Storage) ----------
 -- Pasta privada "fotos". O funcionário só consegue ENVIAR fotos para a
