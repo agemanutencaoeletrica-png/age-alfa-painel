@@ -98,7 +98,8 @@
       '<button class="bom" data-ponto="chegada"><span class="ic">📍</span>Chegada</button>' +
       '<button class="prim" data-ponto="servico"><span class="ic">📷</span>Foto do serviço</button>' +
       '<button class="perigo" data-ponto="saida"><span class="ic">🏁</span>Saída</button>' +
-      '<button data-relatorio=""><span class="ic">📝</span>Relatório e materiais</button></div>';
+      '<button data-relatorio=""><span class="ic">📝</span>Relatório e materiais</button>' +
+      ((D.veiculos || []).length ? '<button class="veic" id="b-km"><span class="ic">🚗</span>' + esc(textoKmHoje()) + "</button>" : "") + "</div>";
 
     (D.rotas || []).forEach(function (r) {
       var G = window.AGE_GEO, paradas = r.paradas || [], links = G.linksGoogle(null, paradas, false);
@@ -131,6 +132,7 @@
     A.ligarInstalar($("#b-instalar"));
     $("#b-atualizar").onclick = function () { carregar().then(function () { A.avisar("Atualizado"); }); };
     $("#b-novo-serv").onclick = function () { novoServico(null); };
+    if ($("#b-km")) $("#b-km").onclick = fluxoKm;
     $$("[data-ponto]").forEach(function (b) { b.onclick = function () { fluxoPonto(b.dataset.ponto, b.dataset.serv || null); }; });
     $$("[data-relatorio]").forEach(function (b) { b.onclick = function () { fluxoRelatorio(b.dataset.relatorio || null); }; });
   }
@@ -301,6 +303,117 @@
         b.innerHTML = "↻ Tentar enviar de novo";
         $("#fp-erro", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>";
       });
+    };
+  }
+
+  // ---------- Veículo: placa e KM do painel (início e fim do uso) ----------
+  function veiculoPorId(id) { return (D.veiculos || []).filter(function (v) { return v.id === id; })[0] || null; }
+  function ultimoKmHoje(vid) {
+    var l = (D.km_hoje || []).filter(function (k) { return !vid || k.veiculo_id === vid; });
+    return l[l.length - 1] || null;
+  }
+  function textoKmHoje() {
+    var u = ultimoKmHoje(null), v = u ? veiculoPorId(u.veiculo_id) : null, p = v ? v.placa : "";
+    if (!u) return "Veículo: registrar KM";
+    if (u.tipo === "inicio") return p + " em uso · registrar KM final";
+    var l = (D.km_hoje || []).filter(function (k) { return k.veiculo_id === u.veiculo_id; }), ini = null;
+    for (var i = l.length - 2; i >= 0; i--) if (l[i].tipo === "inicio") { ini = l[i]; break; }
+    return p + " devolvido" + (ini ? " · " + A.numero(u.km - ini.km, 0) + " km hoje" : "");
+  }
+  function fluxoKm() {
+    var u = ultimoKmHoje(null), vid = u ? u.veiculo_id : (D.veiculos.length === 1 ? D.veiculos[0].id : "");
+    var aberto = Date.now(), melhor = null, vigia = null, foto = null;
+    var j = A.janela(
+      '<label for="fk-veic">Veículo</label><select id="fk-veic"><option value="">Escolha a placa</option>' +
+      D.veiculos.map(function (v) { return '<option value="' + v.id + '">' + esc(v.placa + (v.modelo ? " · " + v.modelo : "")) + "</option>"; }).join("") + "</select>" +
+      '<label>Momento</label><div class="duas"><label class="marca-linha" style="margin:0"><input type="radio" name="fk-tipo" value="inicio"> 🔑 Início (pegou o carro)</label>' +
+      '<label class="marca-linha" style="margin:0"><input type="radio" name="fk-tipo" value="fim"> 🅿️ Fim (devolveu)</label></div>' +
+      '<label for="fk-km">KM do painel *</label><input id="fk-km" inputmode="numeric" maxlength="9" placeholder="Ex.: 123456" style="font-size:22px;font-weight:800">' +
+      '<div id="fk-dica" class="mudo peq"></div>' +
+      '<div id="fk-gps" class="aviso">📡 Procurando sua localização...</div>' +
+      '<input type="file" accept="image/*" capture="environment" id="fk-arq" class="oculto">' +
+      '<div id="fk-prev" class="previa"></div><div id="fk-erro"></div>' +
+      '<div class="acoes"><button class="prim grande" id="fk-foto">📷 Foto do painel (KM)</button><button class="bom grande oculto" id="fk-enviar">✔ Enviar KM</button></div>',
+      { titulo: "Veículo — KM", fixa: true, aoFechar: pararGps });
+    var el = j.el;
+    $("#fk-veic", el).value = vid;
+    function tipoSugerido() {
+      var x = ultimoKmHoje($("#fk-veic", el).value);
+      return x && x.tipo === "inicio" ? "fim" : "inicio";
+    }
+    function atualizar() {
+      var v = veiculoPorId($("#fk-veic", el).value), x = v ? ultimoKmHoje(v.id) : null;
+      $$('[name="fk-tipo"]', el).forEach(function (r) { r.checked = r.value === tipoSugerido(); });
+      $("#fk-dica", el).textContent = !v ? "" : x && x.tipo === "inicio" ? "Início hoje às " + A.hora(x.criado_em) + " com " + A.numero(x.km, 0) + " km." :
+        v.ultimo_km !== null && v.ultimo_km !== undefined ? "Último KM registrado deste carro: " + A.numero(v.ultimo_km, 0) + " km." : "";
+    }
+    $("#fk-veic", el).onchange = atualizar;
+    atualizar();
+    function pararGps() { if (vigia !== null && navigator.geolocation) navigator.geolocation.clearWatch(vigia); vigia = null; }
+    if (navigator.geolocation) {
+      vigia = navigator.geolocation.watchPosition(function (p) {
+        if (p.timestamp && p.timestamp < aberto - 5000) return;
+        if (!melhor || p.coords.accuracy <= melhor.coords.accuracy) melhor = p;
+        var c = $("#fk-gps", el); if (c) { c.className = "aviso ok"; c.textContent = "📍 Localização encontrada (precisão de " + Math.round(melhor.coords.accuracy) + " m)"; }
+      }, function () { var c = $("#fk-gps", el); if (c && !melhor) { c.className = "aviso erro"; c.textContent = "⚠ Sem GPS. Ligue a localização do celular."; } },
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 });
+    } else { $("#fk-gps", el).className = "aviso erro"; $("#fk-gps", el).textContent = "⚠ Este celular não informa a localização."; }
+
+    function erro(m) { $("#fk-erro", el).innerHTML = m ? '<div class="aviso erro">' + esc(m) + "</div>" : ""; }
+    function lerKm() { var t = A.soDigitos($("#fk-km", el).value); return t ? parseInt(t, 10) : null; }
+    var arq = $("#fk-arq", el);
+    $("#fk-foto", el).onclick = function () {
+      if (!$("#fk-veic", el).value) { erro("Escolha o veículo."); return; }
+      if (!$('[name="fk-tipo"]:checked', el)) { erro("Marque início ou fim."); return; }
+      if (lerKm() === null) { erro("Escreva o KM do painel antes da foto."); $("#fk-km", el).focus(); return; }
+      erro(""); arq.value = ""; arq.click();
+    };
+    arq.onchange = function () {
+      var f = arq.files && arq.files[0];
+      erro("");
+      if (!f) return;
+      if (f.lastModified > 0 && Date.now() - f.lastModified > 15 * 60 * 1000) { erro("Esta foto é antiga. Tire a foto do painel agora."); return; }
+      var v = veiculoPorId($("#fk-veic", el).value), tipo = ($('[name="fk-tipo"]:checked', el) || {}).value, km = lerKm(), quando = new Date(), pos = melhor;
+      var linhas = ["AGE · VEÍCULO " + (v ? v.placa : "") + " · " + (tipo === "fim" ? "FIM" : "INÍCIO"),
+        "KM informado: " + (km === null ? "-" : A.numero(km, 0)) + " · " + D.funcionario.nome,
+        quando.toLocaleString("pt-BR"),
+        pos ? "GPS " + pos.coords.latitude.toFixed(6) + ", " + pos.coords.longitude.toFixed(6) + " (±" + Math.round(pos.coords.accuracy) + " m)" : "SEM GPS"];
+      var b = $("#fk-foto", el);
+      A.ocupado(b, true, "Preparando foto...");
+      A.prepararFoto(f, linhas).then(function (blob) {
+        if (foto && foto.url) URL.revokeObjectURL(foto.url);
+        foto = { blob: blob, url: URL.createObjectURL(blob), pos: pos, quando: quando, caminho: null, enviada: false, km: km, tipo: tipo, veic: v ? v.id : null };
+        $("#fk-prev", el).innerHTML = '<img alt="Foto do painel" src="' + foto.url + '">';
+        A.ocupado(b, false); b.innerHTML = "📷 Tirar outra"; b.className = "grande";
+        $("#fk-enviar", el).classList.remove("oculto");
+      }).catch(function (e) { A.ocupado(b, false); erro(A.msgErro(e)); });
+    };
+    $("#fk-enviar", el).onclick = function () {
+      var b = this, v = veiculoPorId($("#fk-veic", el).value), tipo = ($('[name="fk-tipo"]:checked', el) || {}).value, km = lerKm();
+      if (!v) { erro("Escolha o veículo."); return; }
+      if (!tipo) { erro("Marque início ou fim."); return; }
+      if (km === null) { erro("Escreva o KM do painel."); $("#fk-km", el).focus(); return; }
+      if (!foto) { erro("Tire a foto do painel."); return; }
+      if (foto.km !== km || foto.tipo !== tipo || foto.veic !== v.id) { erro("Você mudou o KM, o veículo ou o momento depois da foto. Tire a foto de novo."); return; }
+      var x = ultimoKmHoje(v.id);
+      if (tipo === "fim" && x && x.tipo === "inicio" && km - x.km > 1500 && !A.confirmar("Foram " + A.numero(km - x.km, 0) + " km hoje. Está certo?")) return;
+      if (v.ultimo_km !== null && v.ultimo_km !== undefined && km < v.ultimo_km &&
+          !A.confirmar("O KM (" + A.numero(km, 0) + ") é menor que o último registrado deste carro (" + A.numero(v.ultimo_km, 0) + "). Enviar mesmo assim?")) return;
+      if (!foto.pos && !A.confirmar("Sem localização GPS. Enviar mesmo assim?")) return;
+      A.ocupado(b, true, "Enviando...");
+      if (!foto.caminho) foto.caminho = TOKEN + "/" + A.isoLocal(foto.quando) + "/km-" + A.uuid() + ".jpg";
+      enviarFoto(foto).then(function () {
+        return sb.rpc("registrar_km", {
+          p_token: TOKEN, p_veiculo_id: v.id, p_tipo: tipo, p_km: km, p_foto: foto.caminho,
+          p_lat: foto.pos ? foto.pos.coords.latitude : null, p_lng: foto.pos ? foto.pos.coords.longitude : null,
+          p_precisao: foto.pos ? foto.pos.coords.accuracy : null, p_capturado_em: foto.quando.toISOString()
+        });
+      }).then(function (r) {
+        if (r.error) throw r.error;
+        j.fechar();
+        A.avisar("KM " + (tipo === "fim" ? "final" : "inicial") + " registrado às " + A.hora(r.data.criado_em), "ok");
+        carregar();
+      }).catch(function (e) { A.ocupado(b, false); b.innerHTML = "↻ Tentar enviar de novo"; erro(A.msgErro(e)); });
     };
   }
 

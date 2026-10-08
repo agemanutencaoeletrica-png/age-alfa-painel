@@ -16,7 +16,7 @@ window.AGE_CONFIG = {
   EMPRESA: {
     nome: "AGE Elétrica e Pintura",
     documento: "",   // CNPJ ou CPF
-    telefone: "",
+    telefone: "(31) 98858-9772",
     email: "",
     endereco: "",
     cidade: ""

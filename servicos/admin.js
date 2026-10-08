@@ -5,13 +5,13 @@
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var app = $("#app");
   var sb = null;
-  var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [], pref: [], contr: [], med: [], lic: [], docs: [], semPref: false };
+  var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [], pref: [], contr: [], med: [], lic: [], docs: [], veic: [], semPref: false, semVeic: false };
   var urls = {};        // caminho da foto -> { url, vence }
   var infoFoto = {};    // caminho da foto -> html com detalhes (hora, GPS...)
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -159,10 +159,12 @@
         q(sb.from("medicoes").select("*").order("numero", { ascending: false }).limit(500)),
         q(sb.from("licitacoes").select("*").order("abertura", { ascending: false }).limit(500)),
         q(sb.from("documentos").select("*").order("nome"))
-      ]).catch(function () { return null; })
+      ]).catch(function () { return null; }),
+      q(sb.from("veiculos").select("*").order("placa")).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
+      S.semVeic = !r[8]; S.veic = r[8] || [];
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
     });
   }
@@ -196,7 +198,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -205,7 +207,12 @@
   function verHoje(c) {
     c.innerHTML = carregando();
     var ini = A.inicioDia(new Date());
-    q(sb.from("pontos").select("*").gte("criado_em", ini.toISOString()).order("criado_em")).then(function (pts) {
+    Promise.all([
+      q(sb.from("pontos").select("*").gte("criado_em", ini.toISOString()).order("criado_em")),
+      S.semVeic ? Promise.resolve([]) : q(sb.from("km_registros").select("*").gte("criado_em", ini.toISOString()).order("criado_em")).catch(function () { return []; })
+    ]).then(function (rr) {
+      var pts = rr[0], kms = rr[1];
+      kms.forEach(registrarInfoKm);
       var ativosTodos = S.serv.filter(function (s) { return s.status === "aberto" || s.status === "em_andamento"; });
       var ativos = ativosTodos.filter(function (s) { return !ehPrefServ(s); });
       var osPref = S.obras.filter(function (o) { return ehPrefObra(o) && ativosTodos.some(function (s) { return s.obra_id === o.id; }); }).length;
@@ -226,7 +233,7 @@
         '. Veja em <a href="#servicos">Serviços</a>.</div>';
       if (window.AGE_PREF) h += window.AGE_PREF.avisosHoje(S);
       h += '<div class="cab-secao"><h2>Equipe hoje</h2><span class="mudo peq">' + A.data(new Date()) + "</span></div>";
-      var equipe = S.func.filter(function (f) { return f.ativo || pts.some(function (p) { return p.funcionario_id === f.id; }); });
+      var equipe = S.func.filter(function (f) { return f.ativo || pts.some(function (p) { return p.funcionario_id === f.id; }) || kms.some(function (k) { return k.funcionario_id === f.id; }); });
       if (!equipe.length) h += '<div class="cartao vazio">Cadastre sua equipe na aba <a href="#equipe">Equipe</a>.</div>';
       equipe.forEach(function (f) {
         var meus = pts.filter(function (p) { return p.funcionario_id === f.id; });
@@ -240,7 +247,9 @@
           (meus.some(function (p) { return p.lat === null; }) ? '<span class="selo critico">sem GPS</span>' : "") +
           '<span class="dir forte">' + (meus.length ? A.duracao(hr.total) + (hr.emAberto ? " até agora" : "") : "") + "</span></div>" +
           (chegada ? '<div class="peq mudo">Chegada ' + A.hora(chegada.criado_em) + (o ? " · último local: " + esc(o.cliente) : "") + "</div>" : "") +
-          (meus.length ? '<div class="fotos">' + meus.map(function (p) { return htmlFoto(p.foto, A.TIPO_PONTO[p.tipo] + " " + A.hora(p.criado_em)); }).join("") + "</div>" : "") +
+          usosKm(kms.filter(function (k) { return k.funcionario_id === f.id; })).reverse().map(linhaUsoHoje).join("") +
+          (meus.length || kms.some(function (k) { return k.funcionario_id === f.id; }) ? '<div class="fotos">' + meus.map(function (p) { return htmlFoto(p.foto, A.TIPO_PONTO[p.tipo] + " " + A.hora(p.criado_em)); }).join("") +
+            kms.filter(function (k) { return k.funcionario_id === f.id; }).map(function (k) { return htmlFoto(k.foto, "🚗 KM " + A.hora(k.criado_em)); }).join("") + "</div>" : "") +
           "</div>";
       });
       c.innerHTML = h;
@@ -587,6 +596,141 @@
   }
 
   // =================================================================
+  // VEÍCULOS (placa e KM: início e fim do uso, com foto do painel e GPS)
+  // =================================================================
+  var filtroVeic = null;
+  function placaVeic(id) { var v = porId(S.veic, id); return v ? v.placa : "—"; }
+  function registrarInfoKm(k) {
+    infoFoto[k.foto] = "<b>🚗 " + esc(placaVeic(k.veiculo_id)) + " · " + (k.tipo === "fim" ? "fim do uso" : "início do uso") + "</b> · " + esc(nomeFunc(k.funcionario_id)) +
+      "<br>KM informado: <b>" + A.numero(k.km, 0) + "</b> · " + A.dataHora(k.criado_em) + " (hora do servidor)<br>" +
+      (k.lat !== null ? '<a href="' + A.linkMapa(k.lat, k.lng) + '" target="_blank" rel="noopener">📍 Ver no mapa</a> <span class="mudo peq">(precisão ±' + Math.round(k.precisao || 0) + " m)</span>" :
+        '<span class="selo critico">sem GPS</span>');
+  }
+  // junta cada início com o fim seguinte do mesmo funcionário e veículo
+  function usosKm(regs) {
+    var usos = [], abertos = {};
+    regs.slice().sort(function (a, b) { return new Date(a.criado_em) - new Date(b.criado_em); }).forEach(function (k) {
+      var c = k.funcionario_id + "|" + k.veiculo_id;
+      if (k.tipo === "inicio") {
+        if (abertos[c]) usos.push(abertos[c]);
+        abertos[c] = { func: k.funcionario_id, veic: k.veiculo_id, ini: k, fim: null };
+      } else if (abertos[c]) { abertos[c].fim = k; usos.push(abertos[c]); delete abertos[c]; }
+      else usos.push({ func: k.funcionario_id, veic: k.veiculo_id, ini: null, fim: k });
+    });
+    Object.keys(abertos).forEach(function (c) { usos.push(abertos[c]); });
+    usos.forEach(function (u) { u.km = u.ini && u.fim ? u.fim.km - u.ini.km : null; });
+    return usos.sort(function (a, b) { return new Date((b.ini || b.fim).criado_em) - new Date((a.ini || a.fim).criado_em); });
+  }
+  function linhaUsoHoje(u) {
+    return '<div class="peq" style="margin-top:4px">🚗 <b>' + esc(placaVeic(u.veic)) + "</b> · " +
+      (u.ini ? "início " + A.hora(u.ini.criado_em) + " (" + A.numero(u.ini.km, 0) + " km)" : "sem início") + " → " +
+      (u.fim ? "fim " + A.hora(u.fim.criado_em) + " (" + A.numero(u.fim.km, 0) + " km)" : '<span class="selo atencao">em uso</span>') +
+      (u.km !== null ? " · <b>" + A.numero(u.km, 0) + " km rodados</b>" : "") + "</div>";
+  }
+
+  function verVeiculos(c) {
+    if (S.semVeic) {
+      c.innerHTML = '<div class="cab-secao"><h2>🚗 Veículos</h2></div><div class="aviso">Para usar esta área, rode de novo o arquivo <b>supabase.sql</b> no Supabase (SQL Editor → colar tudo → Run). Depois toque em ↻.</div>';
+      return;
+    }
+    if (!filtroVeic) { var h0 = new Date(), d7 = new Date(); d7.setDate(d7.getDate() - 6); filtroVeic = { de: A.isoLocal(d7), ate: A.isoLocal(h0), veic: "", func: "" }; }
+    var F = filtroVeic, usos = [];
+    c.innerHTML = '<div class="cab-secao"><h2>🚗 Veículos</h2><button class="prim" id="bv-novo">+ Veículo</button></div>' +
+      (S.veic.length ? '<div class="grade">' + S.veic.map(function (v) {
+        return '<button class="ladrilho" data-veic="' + v.id + '" style="text-align:left;cursor:pointer;white-space:normal;display:block;min-width:0' + (v.ativo ? "" : ";opacity:.55") + '"><div class="r">' + esc(v.modelo || "Veículo") +
+          (v.ativo ? "" : " · inativo") + '</div><div class="v" style="font-size:22px">' + esc(v.placa) + '</div><div class="d" id="bv-ult-' + v.id + '">…</div></button>';
+      }).join("") + "</div>" : '<div class="cartao vazio">Cadastre os veículos da empresa (placa e modelo). Eles aparecem no app dos funcionários para registrar o KM.</div>') +
+      '<div class="filtros"><input type="date" id="fv-de" aria-label="De"><input type="date" id="fv-ate" aria-label="Até">' +
+      '<select id="fv-veic" aria-label="Veículo"><option value="">Todos os veículos</option>' + S.veic.map(function (v) { return '<option value="' + v.id + '">' + esc(v.placa) + "</option>"; }).join("") + "</select>" +
+      '<select id="fv-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
+      '<button id="bv-csv">⬇ Planilha (Excel)</button></div><div id="lista-km">' + carregando() + "</div>";
+    $("#fv-de").value = F.de; $("#fv-ate").value = F.ate; $("#fv-veic").value = F.veic; $("#fv-func").value = F.func;
+    ["#fv-de", "#fv-ate", "#fv-veic", "#fv-func"].forEach(function (s) { $(s).onchange = function () { F.de = $("#fv-de").value; F.ate = $("#fv-ate").value; F.veic = $("#fv-veic").value; F.func = $("#fv-func").value; carregar(); }; });
+    $("#bv-novo").onclick = function () { editarVeiculo(null); };
+    $$("[data-veic]", c).forEach(function (b) { b.onclick = function () { editarVeiculo(b.dataset.veic); }; });
+    $("#bv-csv").onclick = function () { csvKm(usos); };
+    if (S.veic.length) q(sb.from("km_registros").select("veiculo_id,km,criado_em").order("criado_em", { ascending: false }).limit(300)).then(function (ult) {
+      S.veic.forEach(function (v) {
+        var x = ult.filter(function (k) { return k.veiculo_id === v.id; })[0], el = $("#bv-ult-" + v.id);
+        if (el) el.textContent = x ? "último KM " + A.numero(x.km, 0) + " · " + A.data(x.criado_em) : "sem registro";
+      });
+    }).catch(function () { /* só o resumo */ });
+    function carregar() {
+      var l = $("#lista-km");
+      if (!F.de || !F.ate) { l.innerHTML = '<div class="aviso">Escolha o período.</div>'; return; }
+      var ini = new Date(F.de + "T00:00:00"), fim = new Date(F.ate + "T00:00:00"); fim.setDate(fim.getDate() + 1);
+      var cons = sb.from("km_registros").select("*").gte("criado_em", ini.toISOString()).lt("criado_em", fim.toISOString()).order("criado_em");
+      if (F.veic) cons = cons.eq("veiculo_id", F.veic);
+      if (F.func) cons = cons.eq("funcionario_id", F.func);
+      l.innerHTML = carregando();
+      q(cons).then(function (regs) {
+        regs.forEach(registrarInfoKm);
+        usos = usosKm(regs);
+        if (!usos.length) { l.innerHTML = '<div class="cartao vazio">Nenhum registro de KM neste período.</div>'; return; }
+        var tot = {};
+        usos.forEach(function (u) { if (u.km !== null) { var t = tot[u.veic] = tot[u.veic] || { km: 0, usos: 0 }; t.km += u.km; t.usos++; } });
+        l.innerHTML = (Object.keys(tot).length ? '<div class="cartao"><h3>Total no período</h3>' + Object.keys(tot).map(function (vid) {
+          return '<div class="linha"><b>' + esc(placaVeic(vid)) + '</b><span class="dir">' + A.numero(tot[vid].km, 0) + " km · " + tot[vid].usos + " uso(s)</span></div>";
+        }).join("") + "</div>" : "") +
+        usos.map(function (u) {
+          var dia = (u.ini || u.fim).criado_em;
+          return '<div class="cartao"><div class="linha"><b>🚗 ' + esc(placaVeic(u.veic)) + "</b><span>" + esc(nomeFunc(u.func)) + "</span>" +
+            (u.km !== null ? '<span class="dir forte">' + A.numero(u.km, 0) + " km</span>" : '<span class="dir selo atencao">' + (u.ini ? "sem registro de fim" : "sem registro de início") + "</span>") + "</div>" +
+            '<div class="peq mudo">' + A.data(dia) + " · " + (u.ini ? "início " + A.hora(u.ini.criado_em) + " com " + A.numero(u.ini.km, 0) + " km" + (u.ini.lat === null ? " (sem GPS)" : "") : "—") +
+            " → " + (u.fim ? "fim " + A.hora(u.fim.criado_em) + " com " + A.numero(u.fim.km, 0) + " km" + (u.fim.lat === null ? " (sem GPS)" : "") : "—") + "</div>" +
+            '<div class="fotos">' + [u.ini, u.fim].filter(Boolean).map(function (k) { return htmlFoto(k.foto, (k.tipo === "fim" ? "Fim " : "Início ") + A.hora(k.criado_em)); }).join("") + "</div></div>";
+        }).join("") + '<p class="mudo peq">Toque na foto para ver o painel do carro e o local (GPS). Os lugares visitados aparecem no <a href="#ponto">Ponto</a> (chegada e saída com GPS).</p>';
+        hidratarFotos(l);
+      }).catch(function (e) { l.innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
+    }
+    carregar();
+  }
+  function csvKm(usos) {
+    if (!usos || !usos.length) { A.avisar("Nada para exportar neste período."); return; }
+    var cel = function (t) { t = String(t === null || t === undefined ? "" : t); return /[;"\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    var linhas = [["Data", "Veículo", "Funcionário", "Início (hora)", "KM início", "Fim (hora)", "KM fim", "KM rodados"]];
+    usos.slice().reverse().forEach(function (u) {
+      linhas.push([A.data((u.ini || u.fim).criado_em), placaVeic(u.veic), nomeFunc(u.func), u.ini ? A.hora(u.ini.criado_em) : "", u.ini ? u.ini.km : "",
+        u.fim ? A.hora(u.fim.criado_em) : "", u.fim ? u.fim.km : "", u.km === null ? "" : u.km]);
+    });
+    var csv = "﻿" + linhas.map(function (l) { return l.map(cel).join(";"); }).join("\r\n");
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = "km-veiculos-" + filtroVeic.de + "-a-" + filtroVeic.ate + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  }
+  function editarVeiculo(id) {
+    var v = id ? porId(S.veic, id) : null;
+    var j = A.janela('<label for="ev-placa">Placa *</label><input id="ev-placa" maxlength="10" placeholder="ABC1D23" style="text-transform:uppercase">' +
+      '<label for="ev-mod">Modelo</label><input id="ev-mod" maxlength="80" placeholder="Ex.: Fiat Strada branca">' +
+      (v ? '<label class="marca-linha"><input type="checkbox" id="ev-ativo"> Ativo (aparece no app dos funcionários)</label>' : "") +
+      '<div class="acoes"><button class="prim" id="ev-salvar">Salvar</button>' + (v ? '<button class="perigo" id="ev-apagar">Apagar</button>' : "") + "</div>",
+      { titulo: v ? "Veículo " + v.placa : "Novo veículo" });
+    var el = j.el;
+    if (v) { $("#ev-placa", el).value = v.placa; $("#ev-mod", el).value = v.modelo || ""; $("#ev-ativo", el).checked = v.ativo; }
+    $("#ev-salvar", el).onclick = function () {
+      var placa = val(el, "#ev-placa").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (placa.length < 6) { A.avisar("Informe a placa (ex.: ABC1D23).", "erro"); return; }
+      var b = this, dados = { placa: placa, modelo: nulo(val(el, "#ev-mod")) };
+      if (v) dados.ativo = $("#ev-ativo", el).checked;
+      A.ocupado(b, true, "Salvando...");
+      q(v ? sb.from("veiculos").update(dados).eq("id", v.id).select().single() : sb.from("veiculos").insert(dados).select().single()).then(function (n) {
+        trocar(S.veic, n); S.veic.sort(function (a, b2) { return a.placa.localeCompare(b2.placa); }); j.fechar(); A.avisar("Salvo", "ok"); rota();
+      }).catch(function (e) {
+        A.ocupado(b, false);
+        if (/duplicate|unique/i.test(A.msgErro(e))) A.avisar("Esta placa já está cadastrada.", "erro"); else falhou(e);
+      });
+    };
+    if (v) $("#ev-apagar", el).onclick = function () {
+      if (!A.confirmar("Apagar o veículo " + v.placa + "? Só é possível se ainda não tiver registros de KM.")) return;
+      q(sb.from("veiculos").delete().eq("id", v.id)).then(function () { tirar(S.veic, v.id); j.fechar(); A.avisar("Apagado", "ok"); rota(); }).catch(function (e) {
+        if (/foreign key|violates/i.test(A.msgErro(e))) A.avisar("Este veículo já tem registros de KM. Desmarque “Ativo” em vez de apagar.", "erro"); else falhou(e);
+      });
+    };
+  }
+
+  // =================================================================
   // RELATÓRIOS (enviados pelos funcionários)
   // =================================================================
   function htmlCartaoRel(r) {
@@ -800,11 +944,9 @@
     $("#eo2-zap", el).onclick = function () {
       lerCampos();
       if (A.soDigitos(M.telefone).length < 10) { A.avisar("Informe o WhatsApp do cliente com DDD.", "erro"); return; }
-      var w = window.open("", "_blank");
-      salvar().then(function (n) {
-        var url = A.linkZap(n.telefone, textoOrcamento(n));
-        if (w) w.location.href = url; else location.href = url;
-      }).catch(function (e) { if (w) w.close(); falhou(e); });
+      var b = this; A.ocupado(b, true, "Salvando...");
+      salvar().then(function (n) { A.ocupado(b, false); A.abrirZap(A.linkZap(n.telefone, textoOrcamento(n))); })
+        .catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
     carregarJsPdf().catch(function () { /* tenta de novo ao clicar */ });
     function prepararPdf(b) {
