@@ -98,6 +98,15 @@ Não precisa de Play Store: o app instala direto pelo navegador e ganha ícone p
    - **✉ E-mail do cliente**: baixa o PDF e abre o e-mail já preenchido (destinatário, assunto e texto); é só anexar o PDF.
    - **📄 Baixar PDF** / **🖨 Imprimir**.
 
+### 📣 Divulgar nas redes sociais
+1. No cliente/serviço marque **📣 Cliente autorizou divulgar fotos deste serviço nas redes sociais** (em Novo serviço, em
+   Serviços → Editar, ou na OS da prefeitura). Se não estiver marcado, o app pergunta antes de divulgar.
+2. **Relatórios** → abra o relatório com fotos → **📣 Divulgar**. Escolha 1 foto ou 2 (**antes e depois**), confira o título e
+   a legenda e toque **🖼 Montar imagem**. A imagem sai no formato do Instagram (1080x1350) com o nome e o telefone da AGE;
+   o carimbo das fotos (GPS, nome do funcionário e do cliente) é cortado e o endereço não aparece.
+3. **📤 Postar** (no celular) abre a lista de apps: Instagram, Facebook, WhatsApp/Status, Telegram, TikTok... A legenda já
+   vai copiada: cole no post se ela não aparecer. No computador: **⬇ Baixar imagem** e cole a legenda.
+
 ### Veículos (placa e KM)
 1. **🚗 Veículos** → *+ Veículo*: placa e modelo de cada carro da empresa.
 2. No app do funcionário aparece o botão **🚗 Veículo: registrar KM**. Ao **pegar o carro** ele escolhe a placa, marca

@@ -228,6 +228,7 @@
       '<div><label for="os-tel">WhatsApp do fiscal</label><input id="os-tel" type="tel" maxlength="40"></div></div>' +
       '<label for="os-email">E-mail do fiscal / secretaria</label><input id="os-email" type="email" maxlength="200">' +
       '<label for="os-obs">Observações (o funcionário vê)</label><textarea id="os-obs" rows="2"></textarea>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="os-divulgar"> 📣 Cliente autorizou divulgar fotos deste serviço nas redes sociais</label>' +
       (o ? "" : camposPartes()) +
       '<div id="os-erro"></div><div class="acoes"><button class="prim" id="os-salvar">Salvar OS</button>' + (o ? '<button class="perigo" id="os-apagar">Apagar OS</button>' : "") + "</div>",
       { titulo: o ? "Editar OS" + (o.protocolo ? " " + o.protocolo : "") : "Nova OS da prefeitura", fixa: true });
@@ -243,7 +244,7 @@
       $("#os-pref", el).value = o.prefeitura_id; $("#os-prot", el).value = o.protocolo || ""; $("#os-tipo", el).value = o.tipo_publico || "predio";
       $("#os-sec", el).value = o.secretaria || ""; $("#os-local", el).value = o.cliente || ""; $("#os-ref", el).value = o.referencia || "";
       $("#os-end", el).value = o.endereco || ""; $("#os-fiscal", el).value = o.fiscal || ""; $("#os-tel", el).value = o.telefone || "";
-      $("#os-email", el).value = o.email || ""; $("#os-obs", el).value = o.observacoes || "";
+      $("#os-email", el).value = o.email || ""; $("#os-obs", el).value = o.observacoes || ""; $("#os-divulgar", el).checked = !!o.autoriza_divulgar;
     } else {
       if (filtro.pref) $("#os-pref", el).value = filtro.pref;
       ligarPartes(el);
@@ -264,7 +265,8 @@
       var dados = {
         prefeitura_id: $("#os-pref", el).value, contrato_id: P.nulo($("#os-contr", el).value), protocolo: P.val(el, "#os-prot"), tipo_publico: $("#os-tipo", el).value,
         secretaria: P.nulo(P.val(el, "#os-sec")), cliente: P.val(el, "#os-local"), referencia: P.nulo(P.val(el, "#os-ref")), endereco: P.nulo(P.val(el, "#os-end")),
-        fiscal: P.nulo(P.val(el, "#os-fiscal")), telefone: P.nulo(P.val(el, "#os-tel")), email: P.nulo(P.val(el, "#os-email")), observacoes: P.nulo(P.val(el, "#os-obs"))
+        fiscal: P.nulo(P.val(el, "#os-fiscal")), telefone: P.nulo(P.val(el, "#os-tel")), email: P.nulo(P.val(el, "#os-email")), observacoes: P.nulo(P.val(el, "#os-obs")),
+        autoriza_divulgar: $("#os-divulgar", el).checked !== !!(o && o.autoriza_divulgar) ? $("#os-divulgar", el).checked : undefined
       };
       if (!o && !["eletrica", "pintura"].some(function (cat) { return $("#ns-" + cat, el).checked; })) { erro("Marque a parte elétrica, a de pintura ou as duas."); return; }
       A.ocupado(b, true, "Salvando...");

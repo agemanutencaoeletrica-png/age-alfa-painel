@@ -557,7 +557,8 @@
         '<div class="duas"><div><label for="ns-tel">WhatsApp do cliente</label><input id="ns-tel" type="tel" maxlength="40"></div>' +
         '<div><label for="ns-email">E-mail do cliente</label><input id="ns-email" type="email" maxlength="200"></div></div>' +
         '<label for="ns-end">Endereço</label><input id="ns-end" maxlength="300">' +
-        '<label for="ns-obs">Observações (o funcionário vê)</label><textarea id="ns-obs" rows="2" placeholder="Ex.: chave com o porteiro, cachorro no quintal"></textarea>') +
+        '<label for="ns-obs">Observações (o funcionário vê)</label><textarea id="ns-obs" rows="2" placeholder="Ex.: chave com o porteiro, cachorro no quintal"></textarea>' +
+        '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="ns-divulgar"> 📣 Cliente autorizou divulgar fotos deste serviço nas redes sociais</label>') +
       '<p class="peq mudo" style="margin:12px 0 0">Marque as partes do serviço. Cada parte vai para o funcionário daquela área.</p>' +
       formParte("eletrica", "⚡ Parte ELÉTRICA") + formParte("pintura", "🖌️ Parte PINTURA") +
       '<div id="ns-erro"></div><div class="acoes"><button class="prim" id="ns-salvar">Salvar serviço</button></div>',
@@ -582,6 +583,7 @@
       A.ocupado(b, true, "Salvando...");
       var pObra = obra ? Promise.resolve(obra) : q(sb.from("obras").insert({
         cliente: val(el, "#ns-cli"), telefone: nulo(val(el, "#ns-tel")), email: nulo(val(el, "#ns-email")), endereco: nulo(val(el, "#ns-end")), observacoes: nulo(val(el, "#ns-obs")),
+        autoriza_divulgar: $("#ns-divulgar", el).checked ? true : undefined,
         loja_id: lojaEscolhida && $("#ns-loja", el).value === rotuloLoja(lojaEscolhida) ? lojaEscolhida.id : null
       }).select().single()).then(function (o) { S.obras.unshift(o); obra = o; return o; });
       pObra.then(function (o) {
@@ -612,13 +614,17 @@
       '<div><label for="eo-email">E-mail</label><input id="eo-email" type="email" maxlength="200" value="' + esc(o.email || "") + '"></div></div>' +
       '<label for="eo-end">Endereço</label><input id="eo-end" maxlength="300" value="' + esc(o.endereco || "") + '">' +
       '<label for="eo-obs">Observações (o funcionário vê)</label><textarea id="eo-obs" rows="3">' + esc(o.observacoes || "") + "</textarea>" +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo-divulgar"> 📣 Cliente autorizou divulgar fotos deste serviço nas redes sociais</label>' +
       '<div class="acoes"><button class="prim" id="eo-salvar">Salvar</button><button class="perigo" id="eo-apagar">Apagar cliente e partes</button></div>',
       { titulo: "Cliente / obra" });
     var el = j.el;
+    $("#eo-divulgar", el).checked = !!o.autoriza_divulgar;
     $("#eo-salvar", el).onclick = function () {
       if (!val(el, "#eo-cli")) { A.avisar("Informe o cliente.", "erro"); return; }
       var b = this; A.ocupado(b, true, "Salvando...");
-      q(sb.from("obras").update({ cliente: val(el, "#eo-cli"), telefone: nulo(val(el, "#eo-tel")), email: nulo(val(el, "#eo-email")), endereco: nulo(val(el, "#eo-end")), observacoes: nulo(val(el, "#eo-obs")) })
+      var dadosObra = { cliente: val(el, "#eo-cli"), telefone: nulo(val(el, "#eo-tel")), email: nulo(val(el, "#eo-email")), endereco: nulo(val(el, "#eo-end")), observacoes: nulo(val(el, "#eo-obs")) };
+      if ($("#eo-divulgar", el).checked !== !!o.autoriza_divulgar) dadosObra.autoriza_divulgar = $("#eo-divulgar", el).checked;
+      q(sb.from("obras").update(dadosObra)
         .eq("id", id).select().single()).then(function (n) { trocar(S.obras, n); j.fechar(); A.avisar("Salvo", "ok"); rota(); })
         .catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
@@ -924,6 +930,159 @@
         ((r.fotos_antes || []).length ? (r.fotos_antes || []).length + " fotos antes · " + (r.fotos || []).length + " depois" : (r.fotos || []).length + " fotos") + "</div></div>";
   }
 
+  // =================================================================
+  // 📣 DIVULGAR nas redes (Instagram, Facebook, WhatsApp, Telegram...)
+  // Monta uma imagem 1080x1350 com as fotos do serviço (sem o carimbo de GPS/
+  // nome do cliente), o nome e o telefone da AGE, e uma legenda pronta.
+  // Só para clientes que autorizaram divulgar.
+  // =================================================================
+  function fotosDaObra(o) {
+    var ids = S.serv.filter(function (s) { return s.obra_id === o.id; }).map(function (s) { return s.id; }), lista = [];
+    S.rel.filter(function (r) { return ids.indexOf(r.servico_id) >= 0; }).slice().reverse().forEach(function (r) {
+      (r.fotos_antes || []).forEach(function (f) { lista.push({ c: f, tipo: "antes", linhas: 4 }); });
+      (r.fotos || []).forEach(function (f) { lista.push({ c: f, tipo: "depois", linhas: o.prefeitura_id ? 4 : 2 }); });
+    });
+    return lista;
+  }
+  // carrega a foto e corta a faixa do carimbo (mesma conta do A.prepararFoto)
+  function fotoSemCarimbo(url, linhas) {
+    return fetch(url).then(function (r) { if (!r.ok) throw new Error("Não consegui abrir a foto."); return r.blob(); })
+      .then(function (b) { return createImageBitmap(b); })
+      .then(function (img) {
+        var fs = Math.max(14, Math.round(Math.min(img.width, img.height) / 30)), pad = Math.round(fs * 0.5);
+        var corte = Math.ceil(linhas * fs * 1.3 + pad * 2) + 2;
+        return { img: img, w: img.width, h: Math.max(10, img.height - corte) };
+      });
+  }
+  function desenharCobrindo(cx, f, x, y, w, h) {
+    var k = Math.max(w / f.w, h / f.h), sw = w / k, sh = h / k;
+    cx.drawImage(f.img, (f.w - sw) / 2, (f.h - sh) / 2, sw, sh, x, y, w, h);
+  }
+  function retArred(cx, x, y, w, h, r) { cx.beginPath(); cx.moveTo(x + r, y); cx.arcTo(x + w, y, x + w, y + h, r); cx.arcTo(x + w, y + h, x, y + h, r); cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath(); }
+  function montarDivulgacao(fotos, titulo, categoria) {
+    var E = A.CFG.EMPRESA || {}, W = 1080, H = 1350, cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    var cx = cv.getContext("2d");
+    cx.fillStyle = "#14325c"; cx.fillRect(0, 0, W, H);
+    cx.fillStyle = "#fff"; cx.textBaseline = "middle";
+    cx.font = "bold 60px sans-serif"; cx.fillText(E.nome || "AGE Elétrica e Pintura", 50, 92, W - 100);
+    if (categoria) {
+      cx.font = "bold 30px sans-serif";
+      var tw = cx.measureText(categoria).width + 44;
+      cx.fillStyle = "#f5b800"; retArred(cx, W - 50 - tw, 160, tw, 52, 26); cx.fill();
+      cx.fillStyle = "#14325c"; cx.fillText(categoria, W - 50 - tw + 22, 187);
+    }
+    var y0 = 230, alt = 860, gap = 14;
+    var larg = fotos.length === 2 ? (W - 100 - gap) / 2 : W - 100;
+    fotos.forEach(function (f, i) {
+      var x = 50 + i * (larg + gap);
+      cx.save(); retArred(cx, x, y0, larg, alt, 22); cx.clip(); desenharCobrindo(cx, f, x, y0, larg, alt); cx.restore();
+      if (fotos.length === 2) {
+        var rot = i === 0 ? "ANTES" : "DEPOIS";
+        cx.font = "bold 34px sans-serif";
+        var rw = cx.measureText(rot).width + 40;
+        cx.fillStyle = i === 0 ? "rgba(0,0,0,.72)" : "#1f9d55"; retArred(cx, x + 18, y0 + 18, rw, 58, 29); cx.fill();
+        cx.fillStyle = "#fff"; cx.fillText(rot, x + 38, y0 + 47);
+      }
+    });
+    cx.fillStyle = "#fff"; cx.font = "bold 48px sans-serif";
+    cx.fillText(titulo || "Serviço realizado", 50, 1160, W - 100);
+    cx.font = "36px sans-serif"; cx.fillStyle = "#dbe6f5";
+    cx.fillText((E.telefone ? "📞 " + E.telefone + "  ·  " : "") + "Orçamento sem compromisso", 50, 1236, W - 100);
+    cx.font = "28px sans-serif"; cx.fillStyle = "#9fb4d3";
+    cx.fillText("Elétrica · Pintura · Manutenção", 50, 1294, W - 100);
+    return new Promise(function (ok, falha) { cv.toBlob(function (b) { b ? ok(b) : falha(new Error("Falha ao montar a imagem.")); }, "image/jpeg", 0.9); });
+  }
+  function legendaPadrao(titulo, cat) {
+    var E = A.CFG.EMPRESA || {};
+    var tags = cat === "pintura" ? "#pintura #pintor #pinturaresidencial #reforma" : "#eletricista #eletrica #instalacaoeletrica #manutencaoeletrica";
+    return (cat === "pintura" ? "🖌️ " : "⚡ ") + (titulo || "Serviço realizado") + " — mais um serviço entregue pela " + (E.nome || "AGE Elétrica e Pintura") + "!\n\n" +
+      "✅ Trabalho com garantia e acabamento caprichado.\n" +
+      (E.telefone ? "📲 Orçamento sem compromisso: " + E.telefone + " (WhatsApp)\n" : "") + "\n" + tags + " #belohorizonte #bh #contagem #betim";
+  }
+  function divulgar(r) {
+    var s = porId(S.serv, r.servico_id), o = s ? porId(S.obras, s.obra_id) : null;
+    if (!o) { A.avisar("Serviço apagado.", "erro"); return; }
+    if (!o.autoriza_divulgar) {
+      if (!A.confirmar("O cliente “" + o.cliente + "” autorizou divulgar as fotos nas redes sociais?\n\nSó divulgue com autorização (principalmente lojas da rede e prefeituras).")) return;
+      q(sb.from("obras").update({ autoriza_divulgar: true }).eq("id", o.id).select().single()).then(function (n) { trocar(S.obras, n); divulgar(r); }).catch(falhou);
+      return;
+    }
+    var lista = fotosDaObra(o);
+    if (!lista.length) { A.avisar("Este serviço ainda não tem fotos de relatório.", "erro"); return; }
+    var antes = lista.filter(function (f) { return f.tipo === "antes"; })[0], depois = lista.filter(function (f) { return f.tipo === "depois"; }).pop();
+    var escolha = antes && depois ? [antes, depois] : [lista[lista.length - 1]];
+    var titulo0 = r.tipo_servico || (s.descricao || A.CATEG[s.categoria].nome).split("\n")[0].slice(0, 60);
+    var j = A.janela('<p class="mudo peq" style="margin-top:0">Toque nas fotos para escolher (1 foto, ou 2 para <b>antes e depois</b>). O carimbo com GPS e nome do cliente é cortado; o endereço não aparece.</p>' +
+      '<div class="fotos" id="dv-fotos"></div>' +
+      '<label for="dv-tit">Título na imagem</label><input id="dv-tit" maxlength="60">' +
+      '<label for="dv-leg">Legenda do post</label><textarea id="dv-leg" rows="6"></textarea>' +
+      '<div id="dv-prev" style="margin-top:10px"></div><div id="dv-msg"></div>' +
+      '<div class="acoes"><button class="prim" id="dv-gerar">🖼 Montar imagem</button></div>' +
+      '<div class="acoes oculto" id="dv-acoes">' + (P_compartilha() ? '<button class="prim" id="dv-comp">📤 Postar (Instagram, Facebook, WhatsApp, Telegram...)</button>' : "") +
+      '<button id="dv-baixar">⬇ Baixar imagem</button><button id="dv-copiar">📋 Copiar legenda</button></div>',
+      { titulo: "📣 Divulgar nas redes", larga: true, fixa: true });
+    var el = j.el, blob = null;
+    $("#dv-tit", el).value = titulo0; $("#dv-leg", el).value = legendaPadrao(titulo0, s.categoria);
+    function desenharEscolha() {
+      $("#dv-fotos", el).innerHTML = lista.map(function (f, i) {
+        var n = escolha.indexOf(f);
+        return '<button class="foto" data-dv="' + i + '" data-foto="' + esc(f.c) + '" style="' + (n >= 0 ? "outline:4px solid var(--prim);outline-offset:1px" : "opacity:.6") + '" aria-label="Escolher foto">' +
+          '<img alt=""><span class="et">' + (n >= 0 ? (escolha.length === 2 ? (n === 0 ? "1º ANTES" : "2º DEPOIS") : "✔ escolhida") : f.tipo) + "</span></button>";
+      }).join("");
+      hidratarFotos($("#dv-fotos", el));
+      $$("[data-dv]", el).forEach(function (b) {
+        b.onclick = function (ev) {
+          ev.stopImmediatePropagation(); ev.preventDefault();
+          var f = lista[Number(b.dataset.dv)], n = escolha.indexOf(f);
+          if (n >= 0) escolha.splice(n, 1); else { escolha.push(f); if (escolha.length > 2) escolha.shift(); }
+          blob = null; $("#dv-acoes", el).classList.add("oculto"); $("#dv-prev", el).innerHTML = "";
+          desenharEscolha();
+        };
+      });
+    }
+    desenharEscolha();
+    function nomeArq() { return "AGE-" + String($("#dv-tit", el).value || "servico").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) + ".jpg"; }
+    $("#dv-tit", el).oninput = function () { blob = null; $("#dv-acoes", el).classList.add("oculto"); };
+    $("#dv-gerar", el).onclick = function () {
+      var b = this;
+      if (!escolha.length) { $("#dv-msg", el).innerHTML = '<div class="aviso erro">Escolha pelo menos 1 foto.</div>'; return; }
+      $("#dv-msg", el).innerHTML = ""; A.ocupado(b, true, "Montando...");
+      q(sb.storage.from("fotos").createSignedUrls(escolha.map(function (f) { return f.c; }), 600)).then(function (us) {
+        return Promise.all(escolha.map(function (f) {
+          var u = (us || []).filter(function (x) { return x.path === f.c; })[0];
+          if (!u || !u.signedUrl) throw new Error("Não consegui abrir a foto.");
+          return fotoSemCarimbo(u.signedUrl, f.linhas);
+        }));
+      }).then(function (fs) {
+        return montarDivulgacao(fs, $("#dv-tit", el).value.trim(), s.categoria === "pintura" ? "PINTURA" : "ELÉTRICA");
+      }).then(function (bl) {
+        blob = bl; A.ocupado(b, false); b.innerHTML = "↻ Montar de novo";
+        $("#dv-prev", el).innerHTML = '<img alt="Prévia da divulgação" src="' + URL.createObjectURL(bl) + '" style="width:100%;max-width:360px;display:block;margin:0 auto;border-radius:10px">';
+        $("#dv-acoes", el).classList.remove("oculto");
+      }).catch(function (e) { A.ocupado(b, false); $("#dv-msg", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
+    };
+    function copiarLegenda(aviso) {
+      var t = $("#dv-leg", el).value;
+      return (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { if (aviso) A.avisar(aviso, "ok"); },
+        function () { window.prompt("Copie a legenda:", t); });
+    }
+    $("#dv-baixar", el).onclick = function () { if (blob) { baixar(blob, nomeArq()); copiarLegenda("Imagem baixada e legenda copiada. Cole a legenda no post (Ctrl+V)."); } };
+    $("#dv-copiar", el).onclick = function () { copiarLegenda("Legenda copiada."); };
+    if ($("#dv-comp", el)) $("#dv-comp", el).onclick = function () {
+      if (!blob) return;
+      var t = $("#dv-leg", el).value, arq = new File([blob], nomeArq(), { type: "image/jpeg" });
+      // o Instagram ignora o texto do compartilhamento: a legenda vai copiada para colar
+      copiarLegenda().then(function () {
+        return navigator.share({ files: [arq], text: t, title: $("#dv-tit", el).value });
+      }).then(function () { A.avisar("Pronto! A legenda está copiada: cole no post se ela não aparecer.", "ok"); })
+        .catch(function (e) { if (!e || e.name !== "AbortError") A.avisar("Não consegui abrir o compartilhar. Use ⬇ Baixar imagem.", "erro"); });
+    };
+  }
+  function P_compartilha() {
+    try { return !!(navigator.canShare && navigator.canShare({ files: [new File(["x"], "x.jpg", { type: "image/jpeg" })] })); } catch (e) { return false; }
+  }
+
   function verRelatorios(c) {
     var lista = S.rel.filter(function (r) {
       if (filtroRel !== "todos" && r.lido) return false;
@@ -961,6 +1120,7 @@
         '<div class="peq"><b>' + esc(r.assinado_por || "") + "</b><br>" + (r.assinado_em ? A.dataHora(r.assinado_em) : "") + "</div></div>"
         : (r.concluido && s && s.pede_assinatura ? '<div class="aviso" style="margin-top:12px">Este serviço pedia assinatura, mas foi concluído <b>sem assinatura</b> (responsável não estava no local).</div>' : "")) +
       '<div class="acoes"><button class="prim" id="er-orc">💲 Gerar orçamento</button>' + (s ? '<button id="er-serv">Abrir serviço</button>' : "") +
+      ((r.fotos || []).length || (r.fotos_antes || []).length ? '<button id="er-div">📣 Divulgar</button>' : "") +
       '<button id="er-lido">' + (r.lido ? "Marcar como novo" : "Marcar como lido") + "</button></div>",
       { titulo: "Relatório", larga: true, aoFechar: function () { if (location.hash.slice(1) === "relatorios") rota(); } });
     var el = j.el;
@@ -975,6 +1135,7 @@
     if (!r.lido) marcar(true).then(function () { $("#er-lido", el).textContent = "Marcar como novo"; desenharAbas(location.hash.slice(1) || "hoje"); }).catch(falhou);
     $("#er-lido", el).onclick = function () { marcar(!r.lido).then(function () { j.fechar(); rota(); }).catch(falhou); };
     if ($("#er-serv", el)) $("#er-serv", el).onclick = function () { j.fechar(); abrirServico(s.id); };
+    if ($("#er-div", el)) $("#er-div", el).onclick = function () { divulgar(r); };
     $("#er-orc", el).onclick = function () {
       j.fechar();
       var itens = mats.map(function (m) { return { tipo: "material", descricao: m.item, qtd: Number(m.qtd) || 1, un: m.un || "un", valor: 0 }; });
