@@ -102,14 +102,8 @@
   function iniciar() {
     if (!A.configurado()) { A.telaSemConfig(app); return; }
     try { sb = A.cliente(); } catch (e) { app.innerHTML = '<div class="entrada"><div class="aviso erro">' + esc(A.msgErro(e)) + "</div></div>"; return; }
-    // voltou pelo link do e-mail "Esqueci a senha": pede a senha nova
-    var recuperando = /type=recovery/.test(location.hash);
-    sb.auth.onAuthStateChange(function (ev) {
-      if (ev === "SIGNED_OUT") telaLogin();
-      if (ev === "PASSWORD_RECOVERY") { recuperando = true; telaNovaSenha(); }
-    });
+    sb.auth.onAuthStateChange(function (ev) { if (ev === "SIGNED_OUT") telaLogin(); });
     sb.auth.getSession().then(function (r) {
-      if (recuperando) { if (r.data && r.data.session) telaNovaSenha(); else telaLogin("O link para trocar a senha venceu. Peça outro em “Esqueci a senha”."); return; }
       if (r.data && r.data.session) { if (travaAtiva()) bloquear(verificarAdmin); else verificarAdmin(); }
       else telaLogin();
     }).catch(function () { telaLogin(); });
@@ -196,14 +190,17 @@
   function janelaTrava() {
     travaDisponivel().then(function (ok) {
       var ativa = travaAtiva();
-      var j = A.janela(!ok ? '<div class="aviso">Este aparelho ou navegador não tem desbloqueio por digital/rosto disponível (ou não está configurado no celular). ' +
+      var j = A.janela('<h3 style="margin:0 0 6px">👆 Trava com digital</h3>' + (!ok ? '<div class="aviso">Este aparelho ou navegador não tem desbloqueio por digital/rosto disponível (ou não está configurado no celular). ' +
         "Cadastre a digital nas configurações do celular e abra o painel pelo Chrome.</div>" :
         '<p>' + (ativa ? "✅ A trava está <b>ativa neste aparelho</b>." : "Ao abrir o painel (ou voltar para ele depois de " + TRAVA_MIN + " minutos), ele pede a <b>digital ou o rosto</b> do celular.") + "</p>" +
         '<p class="mudo peq">Vale só para este aparelho. A digital fica no celular, o app nunca recebe. Se a digital falhar, dá para entrar com e-mail e senha.</p>' +
         '<div id="tv-msg"></div><div class="acoes">' + (ativa ? '<button id="tv-testar">👆 Testar</button><button class="perigo" id="tv-desativar">Desativar trava</button>' :
-          '<button class="prim" id="tv-ativar">🔒 Ativar trava com digital</button>') + "</div>",
-        { titulo: "Trava com digital" });
-      var el = j.el, msg = function (t, tipo) { $("#tv-msg", el).innerHTML = '<div class="aviso ' + (tipo || "erro") + '">' + esc(t) + "</div>"; };
+          '<button class="prim" id="tv-ativar">🔒 Ativar trava com digital</button>') + "</div>") +
+        '<hr class="sep"><h3 style="margin:0 0 6px">🔑 Senha</h3><div class="acoes" style="margin-top:6px"><button id="tv-senha">Trocar minha senha</button></div>',
+        { titulo: "⚙ Conta" });
+      var el = j.el;
+      $("#tv-senha", el).onclick = function () { j.fechar(); trocarSenha(); };
+      var msg = function (t, tipo) { if ($("#tv-msg", el)) $("#tv-msg", el).innerHTML = '<div class="aviso ' + (tipo || "erro") + '">' + esc(t) + "</div>"; };
       if ($("#tv-ativar", el)) $("#tv-ativar", el).onclick = function () {
         var b = this; A.ocupado(b, true, "Confirme com a digital...");
         ativarTrava().then(function () { j.fechar(); A.avisar("Trava ativada. Da próxima vez o painel pede a digital.", "ok"); atualizarBotaoTrava(); })
@@ -220,11 +217,8 @@
   function atualizarBotaoTrava() {
     var b = $("#b-trava");
     if (!b) return;
-    travaDisponivel().then(function (ok) {
-      b.classList.toggle("oculto", !ok && !travaAtiva());
-      b.textContent = travaAtiva() ? "🔒" : "🔓";
-      b.title = travaAtiva() ? "Trava com digital: ativa" : "Ativar trava com digital";
-    });
+    b.textContent = travaAtiva() ? "⚙🔒" : "⚙";
+    b.title = travaAtiva() ? "Conta (trava com digital ativa)" : "Conta: trava com digital e senha";
   }
   // depois de entrar com senha, oferece a trava uma vez por aparelho
   function oferecerTrava() {
@@ -254,28 +248,38 @@
       };
     });
   }
-  function urlPainel() { return location.href.split("#")[0].split("?")[0]; }
-
-  function telaNovaSenha() {
-    window.removeEventListener("hashchange", rota);
-    app.innerHTML = '<div class="entrada"><div class="marca-g">AGE</div><h2 style="text-align:center;margin-bottom:14px">Criar senha nova</h2>' +
-      '<form class="cartao" id="f-nova">' + campoSenha("n-senha", "Senha nova (mínimo 8 letras ou números)", "new-password") +
-      campoSenha("n-senha2", "Repita a senha nova", "new-password") +
-      '<div id="n-msg"></div><div class="acoes"><button class="prim" type="submit">Salvar senha nova</button></div></form></div>';
-    ligarVerSenha(app);
-    $("#f-nova").onsubmit = function (ev) {
-      ev.preventDefault();
-      var s1 = $("#n-senha").value, s2 = $("#n-senha2").value, b = $("button[type=submit]", this);
-      var erro = function (m) { $("#n-msg").innerHTML = '<div class="aviso erro">' + esc(m) + "</div>"; };
-      if (s1.length < 8) { erro("A senha precisa ter pelo menos 8 letras ou números."); return; }
-      if (s1 !== s2) { erro("As duas senhas estão diferentes. Toque no 👁 para conferir."); return; }
+  // ⚙ → Trocar minha senha (já logado; confere a senha atual antes)
+  function trocarSenha() {
+    var j = A.janela(campoSenha("ts-atual", "Senha atual", "current-password") +
+      campoSenha("ts-nova", "Senha nova (mínimo 8 letras ou números)", "new-password") +
+      campoSenha("ts-nova2", "Repita a senha nova", "new-password") +
+      '<div id="ts-msg"></div><div class="acoes"><button class="prim" id="ts-ok">Salvar senha nova</button></div>', { titulo: "🔑 Trocar minha senha" });
+    var el = j.el;
+    ligarVerSenha(el);
+    $("#ts-ok", el).onclick = function () {
+      var b = this, atual = $("#ts-atual", el).value, s1 = $("#ts-nova", el).value, s2 = $("#ts-nova2", el).value;
+      var erro = function (m) { $("#ts-msg", el).innerHTML = '<div class="aviso erro">' + esc(m) + "</div>"; };
+      if (!atual) { erro("Digite a senha atual."); return; }
+      if (s1.length < 8) { erro("A senha nova precisa ter pelo menos 8 letras ou números."); return; }
+      if (s1 !== s2) { erro("As duas senhas novas estão diferentes. Toque no 👁 para conferir."); return; }
+      if (s1 === atual) { erro("A senha nova é igual à atual."); return; }
       A.ocupado(b, true, "Salvando...");
-      sb.auth.updateUser({ password: s1 }).then(function (r) {
+      sb.auth.getSession().then(function (r) {
+        var se = r.data && r.data.session, email = se && se.user && se.user.email;
+        if (!email) throw new Error("Sua sessão expirou. Entre de novo.");
+        return sb.auth.signInWithPassword({ email: email, password: atual }).then(function (x) {
+          if (x.error) throw new Error(/Invalid login/i.test(x.error.message || "") ? "A senha atual está errada. Toque no 👁 para conferir." : A.msgErro(x.error));
+          return sb.auth.updateUser({ password: s1 });
+        });
+      }).then(function (r) {
         if (r.error) throw r.error;
-        history.replaceState(null, "", urlPainel());
-        A.avisar("Senha trocada. Use a senha nova da próxima vez.", "ok");
-        return verificarAdmin();
-      }).catch(function (e) { A.ocupado(b, false); erro(A.msgErro(e)); });
+        j.fechar(); A.avisar("Senha trocada. Use a senha nova da próxima vez.", "ok");
+      }).catch(function (e) {
+        A.ocupado(b, false);
+        var m = A.msgErro(e);
+        if (/different from the old/i.test(m)) m = "A senha nova é igual à atual.";
+        erro(m);
+      });
     };
   }
 
@@ -286,23 +290,8 @@
       campoSenha("l-senha", "Senha", "current-password") +
       '<div id="l-msg">' + (msg ? '<div class="aviso erro">' + esc(msg) + "</div>" : "") + "</div>" +
       '<div class="acoes"><button class="prim" type="submit">Entrar</button></div>' +
-      '<button type="button" class="texto peq" id="l-esqueci" style="margin-top:10px">Esqueci a senha</button></form></div>';
+      '<p class="mudo peq" style="margin:12px 0 0">Esqueceu a senha? Ela é trocada no Supabase (veja o LEIA-ME, “Esqueci a senha”). Depois de entrar, use ⚙ → Trocar minha senha.</p></form></div>';
     ligarVerSenha(app);
-    $("#l-esqueci").onclick = function () {
-      var email = $("#l-email").value.trim().toLowerCase(), b = this;
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { $("#l-msg").innerHTML = '<div class="aviso erro">Escreva o seu e-mail acima e toque de novo em “Esqueci a senha”.</div>'; return; }
-      A.ocupado(b, true, "Enviando...");
-      sb.auth.resetPasswordForEmail(email, { redirectTo: urlPainel() }).then(function (r) {
-        if (r.error) throw r.error;
-        A.ocupado(b, false);
-        $("#l-msg").innerHTML = '<div class="aviso ok">Se este e-mail tiver acesso, chega em alguns minutos uma mensagem para trocar a senha. Abra o link do e-mail <b>neste mesmo aparelho</b>. Olhe também o Spam.</div>';
-      }).catch(function (e) {
-        A.ocupado(b, false);
-        var m = A.msgErro(e);
-        if (/rate limit|too many|seconds/i.test(m)) m = "Muitos pedidos seguidos. Espere alguns minutos e tente de novo.";
-        $("#l-msg").innerHTML = '<div class="aviso erro">' + esc(m) + "</div>";
-      });
-    };
     $("#f-login").onsubmit = function (ev) {
       ev.preventDefault();
       var b = $("button[type=submit]", this);
@@ -359,7 +348,7 @@
 
   function montar() {
     app.innerHTML = '<div class="topo"><div class="marca">AGE</div><div><div class="nome">AGE Elétrica e Pintura</div><div class="sub">Painel do responsável</div></div>' +
-      '<div class="dir"><button class="leve peq oculto" id="b-instalar">📲 Instalar app</button><button class="leve peq oculto" id="b-trava" aria-label="Trava com digital">🔓</button>' +
+      '<div class="dir"><button class="leve peq oculto" id="b-instalar">📲 Instalar app</button><button class="leve peq" id="b-trava" aria-label="Conta: trava com digital e senha">⚙</button>' +
       '<button class="leve peq" id="b-recarregar" aria-label="Atualizar">↻</button><button class="leve peq" id="b-sair">Sair</button></div></div>' +
       '<nav class="abas" id="abas"></nav><main id="conteudo"></main>';
     A.ligarInstalar($("#b-instalar"));
