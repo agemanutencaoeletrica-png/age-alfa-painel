@@ -136,6 +136,8 @@ alter table public.relatorios add column if not exists assinado_por text;
 alter table public.relatorios add column if not exists assinado_em  timestamptz;
 -- o dono liga por serviço quando precisa da assinatura do responsável
 alter table public.servicos   add column if not exists pede_assinatura boolean not null default false;
+-- o cliente autorizou divulgar as fotos do serviço nas redes sociais (botão 📣 Divulgar)
+alter table public.obras      add column if not exists autoriza_divulgar boolean not null default false;
 
 -- ---------- Serviços para prefeituras (órgãos públicos) ----------
 -- Várias prefeituras; cada uma com seus contratos (planilha de preços) e as
