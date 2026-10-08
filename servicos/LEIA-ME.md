@@ -198,4 +198,8 @@ Serviços). A aba **Hoje** mostra o quadro **🏛️ Prefeitura** com as OS em a
 - **"Este e-mail não está autorizado"** → faltou o passo 4.3 (ou o e-mail está diferente).
 - **"Falta configurar"** → faltou o passo 3.
 - **Funcionário diz que o GPS não funciona** → no celular, ligar *Localização*; no navegador, permitir localização para o site.
-- **Esqueci a senha** → Supabase → Authentication → Users → seu usuário → *Send password recovery*.
+- **Esqueci a senha** → no Supabase, **SQL Editor** → **+**, troque `NovaSenha123` e o e-mail e rode (vale na hora, sem e-mail e sem limite de tentativas):
+  `update auth.users set encrypted_password = extensions.crypt('NovaSenha123', extensions.gen_salt('bf')) where email = 'seu-email@exemplo.com';`
+- **Trocar a senha** (já dentro do painel) → botão **⚙** no topo → **Trocar minha senha** (pede a senha atual).
+- **Trava com digital/rosto** → botão **⚙** no topo → **Ativar trava com digital**. Vale só para aquele aparelho; ao abrir o painel
+  (ou voltar para ele depois de 2 minutos) ele pede a digital. Se falhar, dá para entrar com e-mail e senha.
