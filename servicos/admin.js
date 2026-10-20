@@ -1121,6 +1121,7 @@
         : (r.concluido && s && s.pede_assinatura ? '<div class="aviso" style="margin-top:12px">Este serviço pedia assinatura, mas foi concluído <b>sem assinatura</b> (responsável não estava no local).</div>' : "")) +
       '<div class="acoes"><button class="prim" id="er-orc">💲 Gerar orçamento</button>' + (s ? '<button id="er-serv">Abrir serviço</button>' : "") +
       ((r.fotos || []).length || (r.fotos_antes || []).length ? '<button id="er-div">📣 Divulgar</button>' : "") +
+      (o && (A.CFG.EMPRESA || {}).avaliacao ? '<button id="er-aval">⭐ Pedir avaliação</button>' : "") +
       '<button id="er-lido">' + (r.lido ? "Marcar como novo" : "Marcar como lido") + "</button></div>",
       { titulo: "Relatório", larga: true, aoFechar: function () { if (location.hash.slice(1) === "relatorios") rota(); } });
     var el = j.el;
@@ -1136,6 +1137,7 @@
     $("#er-lido", el).onclick = function () { marcar(!r.lido).then(function () { j.fechar(); rota(); }).catch(falhou); };
     if ($("#er-serv", el)) $("#er-serv", el).onclick = function () { j.fechar(); abrirServico(s.id); };
     if ($("#er-div", el)) $("#er-div", el).onclick = function () { divulgar(r); };
+    if ($("#er-aval", el)) $("#er-aval", el).onclick = function () { pedirAvaliacao(o); };
     $("#er-orc", el).onclick = function () {
       j.fechar();
       var itens = mats.map(function (m) { return { tipo: "material", descricao: m.item, qtd: Number(m.qtd) || 1, un: m.un || "un", valor: 0 }; });
@@ -1145,6 +1147,18 @@
         categoria: s ? s.categoria : "", itens: itens, observacoes: r.descricao || ""
       });
     };
+  }
+
+  // mensagem pronta pedindo ao cliente uma avaliação da AGE no Google
+  function msgAvaliacao(o) {
+    var nome = String((o && o.cliente) || "").trim().split(/\s+/)[0];
+    return "Olá" + (nome ? ", " + nome : "") + "! Aqui é da " + ((A.CFG.EMPRESA || {}).nome || "AGE") + ". Obrigado pela confiança no nosso serviço! 🙏\n\n" +
+      "Se puder, deixe sua avaliação no Google — leva 1 minuto e ajuda muito a gente:\n⭐ " + A.CFG.EMPRESA.avaliacao;
+  }
+  function pedirAvaliacao(o) {
+    var texto = msgAvaliacao(o);
+    if (o && o.telefone) A.abrirZap(A.linkZap(o.telefone, texto));
+    else copiar(texto).then(function () { A.avisar("Cliente sem WhatsApp cadastrado: mensagem copiada para você colar onde quiser.", "ok"); });
   }
 
   // =================================================================
