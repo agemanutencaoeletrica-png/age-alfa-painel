@@ -9,6 +9,7 @@
 <meta property="og:title" content="AGE Pinturas — Pintura Industrial em BH e Região">
 <meta property="og:description" content="Galpões, estruturas metálicas, anticorrosiva, piso epóxi, demarcação e fachadas. Equipe NR-35 e NR-10, ART e garantia.">
 <meta property="og:type" content="website">
+<meta property="og:image" content="obras/pare-seta.jpg">
 <link rel="icon" href="../servicos/icone.svg" type="image/svg+xml">
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"HousePainter","name":"AGE Elétrica e Pintura","telephone":"+55-31-98858-9772",
@@ -73,7 +74,17 @@
   footer { background: #0a1d33; color: #b9c6d6; font-size: 14px; padding: 28px 0; }
   footer .cx { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
   .zap-flut { position: fixed; right: 18px; bottom: 18px; z-index: 20; background: #25d366; color: #fff; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,.25); text-decoration: none; font-size: 30px; }
+  .galeria { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .galeria button { padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: 6px; overflow: hidden; aspect-ratio: 4 / 3; }
+  .galeria img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s; }
+  .galeria button:hover img { transform: scale(1.04); }
+  .zoom { position: fixed; inset: 0; background: rgba(5,15,28,.92); display: none; align-items: center; justify-content: center; z-index: 30; padding: 16px; }
+  .zoom.aberto { display: flex; }
+  .zoom img { max-width: 100%; max-height: 86vh; border-radius: 6px; }
+  .zoom p { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; color: #fff; margin: 0; font-size: 15px; }
+  .zoom .x { position: absolute; top: 12px; right: 16px; background: none; border: 0; color: #fff; font-size: 34px; cursor: pointer; }
   @media (max-width: 860px) {
+    .galeria { grid-template-columns: repeat(2, 1fr); }
     nav { display: none; }
     .grade { grid-template-columns: 1fr 1fr; }
     .passos { grid-template-columns: 1fr 1fr; }
@@ -94,7 +105,7 @@
 <header class="topo">
   <div class="cx">
     <a class="logo" href="#inicio">AGE <span>PINTURAS</span></a>
-    <nav><a href="#servicos">Serviços</a><a href="#diferenciais">Diferenciais</a><a href="#como">Como trabalhamos</a><a href="#contato">Contato</a></nav>
+    <nav><a href="#servicos">Serviços</a><a href="#obras">Obras</a><a href="#diferenciais">Diferenciais</a><a href="#como">Como trabalhamos</a><a href="#contato">Contato</a></nav>
     <a class="btn peq" data-zap href="#">📲 Orçamento</a>
   </div>
 </header>
@@ -136,7 +147,24 @@
     </div>
   </section>
 
-  <section id="diferenciais" class="cinza">
+  <section id="obras" class="cinza">
+    <div class="cx">
+      <h2>Obras realizadas</h2>
+      <p class="lead">Demarcação de piso em pátios, galpões e estacionamentos: faixas de pedestres, setas, PARE, zebrados e vagas — inclusive à noite, para não parar a operação.</p>
+      <div class="galeria">
+        <button data-foto="obras/faixa-pedestre-execucao.jpg" data-leg="Execução de faixa de pedestres em pátio"><img src="obras/faixa-pedestre-execucao.jpg" alt="Execução de faixa de pedestres em pátio" loading="lazy"></button>
+        <button data-foto="obras/pare-seta.jpg" data-leg="Sinalização PARE e seta de direção em pátio de caminhões"><img src="obras/pare-seta.jpg" alt="Sinalização PARE e seta de direção em pátio de caminhões" loading="lazy"></button>
+        <button data-foto="obras/zebrado-amarelo.jpg" data-leg="Zebrado amarelo de área de segurança"><img src="obras/zebrado-amarelo.jpg" alt="Zebrado amarelo de área de segurança" loading="lazy"></button>
+        <button data-foto="obras/faixa-pedestre-noite.jpg" data-leg="Faixa de pedestres executada à noite, sem parar a operação"><img src="obras/faixa-pedestre-noite.jpg" alt="Faixa de pedestres executada à noite, sem parar a operação" loading="lazy"></button>
+        <button data-foto="obras/faixa-central-galpao.jpg" data-leg="Faixa central de circulação em galpão"><img src="obras/faixa-central-galpao.jpg" alt="Faixa central de circulação em galpão" loading="lazy"></button>
+        <button data-foto="obras/seta-piso-intertravado.jpg" data-leg="Seta de direção em piso intertravado"><img src="obras/seta-piso-intertravado.jpg" alt="Seta de direção em piso intertravado" loading="lazy"></button>
+        <button data-foto="obras/faixa-pedestre-portaria.jpg" data-leg="Faixa de pedestres na portaria"><img src="obras/faixa-pedestre-portaria.jpg" alt="Faixa de pedestres na portaria" loading="lazy"></button>
+        <button data-foto="obras/vagas-estacionamento.jpg" data-leg="Demarcação de vagas de estacionamento"><img src="obras/vagas-estacionamento.jpg" alt="Demarcação de vagas de estacionamento" loading="lazy"></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="diferenciais">
     <div class="cx duas">
       <div>
         <h2>Por que a AGE</h2>
@@ -159,7 +187,7 @@
     </div>
   </section>
 
-  <section id="como">
+  <section id="como" class="cinza">
     <div class="cx">
       <h2>Como trabalhamos</h2>
       <p class="lead">Do orçamento à entrega, tudo combinado e registrado.</p>
@@ -172,7 +200,7 @@
     </div>
   </section>
 
-  <section class="cinza">
+  <section>
     <div class="cx">
       <h2>Quem atendemos</h2>
       <p class="lead">Belo Horizonte e região metropolitana.</p>
@@ -201,6 +229,8 @@
   </div>
 </footer>
 
+<div class="zoom" id="zoom" role="dialog" aria-modal="true"><button class="x" aria-label="Fechar">×</button><img alt=""><p></p></div>
+
 <a class="zap-flut" data-zap href="#" aria-label="Falar no WhatsApp">💬</a>
 
 <script>
@@ -209,6 +239,15 @@
     var msg = "Olá! Vi o site da AGE e gostaria de um orçamento de pintura industrial.";
     var url = "https://wa.me/5531988589772?text=" + encodeURIComponent(msg);
     document.querySelectorAll("[data-zap]").forEach(function (a) { a.href = url; a.target = "_blank"; a.rel = "noopener"; });
+  })();
+  // ampliar as fotos das obras
+  (function () {
+    var z = document.getElementById("zoom"), img = z.querySelector("img"), leg = z.querySelector("p");
+    document.querySelectorAll("[data-foto]").forEach(function (b) {
+      b.onclick = function () { img.src = b.dataset.foto; img.alt = b.dataset.leg; leg.textContent = b.dataset.leg; z.classList.add("aberto"); };
+    });
+    z.onclick = function (e) { if (e.target !== img) z.classList.remove("aberto"); };
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") z.classList.remove("aberto"); });
   })();
 </script>
 </body>
