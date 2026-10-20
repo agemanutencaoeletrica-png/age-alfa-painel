@@ -15,11 +15,11 @@ window.AGE_CONFIG = {
   // Dados que saem no cabeçalho do orçamento impresso / PDF
   EMPRESA: {
     nome: "AGE Elétrica e Pintura",
-    documento: "",   // CNPJ ou CPF
+    documento: "CNPJ 17.134.491/0001-66",   // CNPJ ou CPF
     telefone: "(31) 98858-9772",
-    email: "",
-    endereco: "",
-    cidade: "",
+    email: "agemanutencaoeletrica@gmail.com",
+    endereco: "R. das Canárias, 249 - Palmeiras",
+    cidade: "Ibirité - MG, 32421-250",
     // link para o cliente avaliar a AGE no Google (Perfil da Empresa → Pedir avaliações)
     avaliacao: "https://g.page/r/CXdHVPjUS_tXEBM/review"
   }
