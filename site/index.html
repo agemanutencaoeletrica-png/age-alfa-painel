@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AGE Pinturas — Pintura Industrial em BH e Região</title>
-<meta name="description" content="Pintura industrial em Belo Horizonte e região: galpões, estruturas metálicas, pintura anticorrosiva, piso epóxi, demarcação e fachadas. Equipe NR-35 e NR-10, ART e garantia por escrito. Orçamento pelo WhatsApp (31) 98858-9772.">
+<meta name="description" content="Pintura industrial em Belo Horizonte e região: galpões, estruturas metálicas, pintura anticorrosiva, piso epóxi, demarcação, fachadas e impermeabilização de lajes. Equipe NR-35 e NR-10, ART e garantia por escrito. Orçamento pelo WhatsApp (31) 98858-9772.">
 <meta name="theme-color" content="#0f2a4a">
 <meta property="og:title" content="AGE Pinturas — Pintura Industrial em BH e Região">
 <meta property="og:description" content="Galpões, estruturas metálicas, anticorrosiva, piso epóxi, demarcação e fachadas. Equipe NR-35 e NR-10, ART e garantia.">
@@ -48,6 +48,7 @@
   h2 { font-size: clamp(26px, 3.4vw, 34px); color: var(--azul); margin: 0 0 8px; }
   .lead { color: var(--mudo); margin: 0 0 32px; font-size: 17px; max-width: 700px; }
   .grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .grade.g4 { grid-template-columns: repeat(4, 1fr); }
   .card { background: #fff; border: 1px solid var(--borda); border-top: 5px solid var(--amarelo); border-radius: 6px; padding: 22px; }
   .card .ic { font-size: 30px; line-height: 1; }
   .card h3 { margin: 12px 0 6px; color: var(--azul); font-size: 19px; }
@@ -86,13 +87,13 @@
   @media (max-width: 860px) {
     .galeria { grid-template-columns: repeat(2, 1fr); }
     nav { display: none; }
-    .grade { grid-template-columns: 1fr 1fr; }
+    .grade, .grade.g4 { grid-template-columns: 1fr 1fr; }
     .passos { grid-template-columns: 1fr 1fr; }
     .duas { grid-template-columns: 1fr; gap: 28px; }
     .faixa-selos .cx { grid-template-columns: 1fr 1fr; }
   }
   @media (max-width: 560px) {
-    .grade, .passos { grid-template-columns: 1fr; }
+    .grade, .grade.g4, .passos { grid-template-columns: 1fr; }
     .heroi { padding: 52px 0 48px; }
     .heroi p { font-size: 16px; }
     section { padding: 48px 0; }
@@ -115,7 +116,7 @@
     <div class="cx">
       <div class="rot">Pintura industrial · BH e região</div>
       <h1>Pintura industrial com segurança, prazo e garantia</h1>
-      <p>Galpões, estruturas metálicas, pintura anticorrosiva, piso epóxi, demarcação e fachadas para indústrias, centros logísticos, comércios e órgãos públicos.</p>
+      <p>Galpões, estruturas metálicas, pintura anticorrosiva, piso epóxi, demarcação, fachadas e impermeabilização de lajes para indústrias, centros logísticos, comércios e órgãos públicos.</p>
       <div class="acoes">
         <a class="btn" data-zap href="#">📲 Pedir orçamento no WhatsApp</a>
         <a class="btn claro" href="AGE-Pintura-Industrial.pdf" download>⬇ Apresentação em PDF</a>
@@ -136,13 +137,15 @@
     <div class="cx">
       <h2>Serviços</h2>
       <p class="lead">Do preparo da superfície ao acabamento, com tintas e sistemas adequados a cada ambiente.</p>
-      <div class="grade">
+      <div class="grade g4">
         <div class="card"><div class="ic">🏭</div><h3>Galpões e coberturas</h3><p>Pintura interna e externa de galpões, paredes, coberturas e telhados metálicos.</p></div>
         <div class="card"><div class="ic">🏗️</div><h3>Estruturas metálicas</h3><p>Pilares, vigas, tesouras, mezaninos e escadas, com preparação de superfície e acabamento.</p></div>
         <div class="card"><div class="ic">🛡️</div><h3>Pintura anticorrosiva</h3><p>Fundo anticorrosivo e acabamento para proteger estruturas e equipamentos expostos ao tempo.</p></div>
         <div class="card"><div class="ic">🧱</div><h3>Piso epóxi</h3><p>Revestimento epóxi resistente, de fácil limpeza, para áreas de produção, estoque e oficinas.</p></div>
         <div class="card"><div class="ic">🚧</div><h3>Demarcação de piso</h3><p>Faixas de circulação, vagas, áreas de estoque, rotas de pedestres e zonas de segurança.</p></div>
+        <div class="card"><div class="ic">💧</div><h3>Impermeabilização de lajes</h3><p>Manta líquida em lajes e coberturas, com reforço nos rodapés e cantos, onde a água costuma entrar.</p></div>
         <div class="card"><div class="ic">🏢</div><h3>Fachadas</h3><p>Renovação de fachadas industriais e comerciais, inclusive em altura, com equipe NR-35.</p></div>
+        <div class="card"><div class="ic">⚡</div><h3>Manutenção elétrica</h3><p>Instalações, quadros e manutenção elétrica pela mesma empresa, com equipe NR-10.</p></div>
       </div>
     </div>
   </section>
@@ -150,7 +153,7 @@
   <section id="obras" class="cinza">
     <div class="cx">
       <h2>Obras realizadas</h2>
-      <p class="lead">Demarcação de piso em pátios, galpões, armazéns e estacionamentos — faixas, setas, PARE, zebrados e vagas — e pintura de estruturas metálicas e ambientes internos. Muitos serviços feitos à noite, para não parar a operação.</p>
+      <p class="lead">Demarcação de piso em pátios, galpões, armazéns e estacionamentos — faixas, setas, PARE, zebrados e vagas — pintura de estruturas metálicas e ambientes internos e impermeabilização de lajes. Muitos serviços feitos à noite, para não parar a operação.</p>
       <div class="galeria">
         <button data-foto="obras/faixa-pedestre-execucao.jpg" data-leg="Execução de faixa de pedestres em pátio"><img src="obras/faixa-pedestre-execucao.jpg" alt="Execução de faixa de pedestres em pátio" loading="lazy"></button>
         <button data-foto="obras/pare-seta.jpg" data-leg="Sinalização PARE e seta de direção em pátio de caminhões"><img src="obras/pare-seta.jpg" alt="Sinalização PARE e seta de direção em pátio de caminhões" loading="lazy"></button>
@@ -164,6 +167,10 @@
         <button data-foto="obras/parede-eletrocalha.jpg" data-leg="Pintura de parede e eletrocalhas em área comercial"><img src="obras/parede-eletrocalha.jpg" alt="Pintura de parede e eletrocalhas em área comercial" loading="lazy"></button>
         <button data-foto="obras/sala-seguranca.jpg" data-leg="Pintura interna de ambiente administrativo"><img src="obras/sala-seguranca.jpg" alt="Pintura interna de ambiente administrativo" loading="lazy"></button>
         <button data-foto="obras/corredor-armazem.jpg" data-leg="Demarcação de corredor e áreas de estoque em armazém"><img src="obras/corredor-armazem.jpg" alt="Demarcação de corredor e áreas de estoque em armazém" loading="lazy"></button>
+        <button data-foto="obras/laje-aplicacao.jpg" data-leg="Impermeabilização de laje com manta líquida"><img src="obras/laje-aplicacao.jpg" alt="Impermeabilização de laje com manta líquida" loading="lazy"></button>
+        <button data-foto="obras/laje-primeira-demao.jpg" data-leg="Laje na primeira demão de impermeabilizante"><img src="obras/laje-primeira-demao.jpg" alt="Laje na primeira demão de impermeabilizante" loading="lazy"></button>
+        <button data-foto="obras/laje-rodape.jpg" data-leg="Reforço da impermeabilização no rodapé da laje"><img src="obras/laje-rodape.jpg" alt="Reforço da impermeabilização no rodapé da laje" loading="lazy"></button>
+        <button data-foto="obras/laje-concluida.jpg" data-leg="Laje impermeabilizada concluída"><img src="obras/laje-concluida.jpg" alt="Laje impermeabilizada concluída" loading="lazy"></button>
       </div>
     </div>
   </section>
