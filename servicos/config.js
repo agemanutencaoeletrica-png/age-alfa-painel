@@ -19,6 +19,8 @@ window.AGE_CONFIG = {
     telefone: "(31) 98858-9772",
     email: "",
     endereco: "",
-    cidade: ""
+    cidade: "",
+    // link para o cliente avaliar a AGE no Google (Perfil da Empresa → Pedir avaliações)
+    avaliacao: "https://g.page/r/CXdHVPjUS_tXEBM/review"
   }
 };
