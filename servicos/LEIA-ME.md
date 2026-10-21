@@ -212,3 +212,14 @@ Serviços). A aba **Hoje** mostra o quadro **🏛️ Prefeitura** com as OS em a
 - **Trocar a senha** (já dentro do painel) → botão **⚙** no topo → **Trocar minha senha** (pede a senha atual).
 - **Trava com digital/rosto** → botão **⚙** no topo → **Ativar trava com digital**. Vale só para aquele aparelho; ao abrir o painel
   (ou voltar para ele depois de 2 minutos) ele pede a digital. Se falhar, dá para entrar com e-mail e senha.
+
+
+## 📋 Chamados do Supermercados BH (BH 360)
+Na aba **Serviços → 📋 Chamado BH**:
+- **Vários de uma vez:** no portal BH 360 (computador), abra **Meus chamados → Ativos**, selecione a tabela com o mouse, copie (Ctrl+C) e cole na caixa.
+  O app mostra quais são **novos**, quais **já foram lançados** e quais têm **loja não cadastrada**, e lança os novos de uma vez, sem funcionário.
+  Depois, filtre **Sem funcionário** e direcione cada um.
+- **Um chamado:** abra o chamado (tela Detalhes) no portal ou no app do BH, copie tudo e cole. O app preenche nº, loja (pelo centro L036 etc.),
+  área, prioridade, descrição, local, coordenador e o nº da OS da AGE.
+- O nº do chamado aparece no serviço, na mensagem para o funcionário e na busca. Ao concluir, o app lembra de **finalizar o chamado no portal do BH**.
+- Precisa ter rodado o `supabase.sql` atualizado (coluna `chamado`).
