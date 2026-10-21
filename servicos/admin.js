@@ -320,6 +320,26 @@
     }).catch(function (e) { telaLogin(A.msgErro(e)); });
   }
 
+  // atualiza os dados sozinho: a cada minuto com a tela aberta e ao voltar para a aba do navegador.
+  // Não atualiza com uma janela aberta nem enquanto você digita, para não atrapalhar.
+  var autoAt = { timer: null, ultima: Date.now(), indo: false };
+  function podeAtualizar() {
+    var a = document.activeElement;
+    return document.visibilityState === "visible" && !document.querySelector(".fundo-modal") &&
+      !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+  }
+  function atualizarSozinho() {
+    if (autoAt.indo || !podeAtualizar()) return;
+    autoAt.indo = true;
+    carregarBase().then(function () { autoAt.ultima = Date.now(); if (podeAtualizar()) rota(); })
+      .catch(function () { /* sem internet: tenta de novo no próximo minuto */ })
+      .then(function () { autoAt.indo = false; });
+  }
+  function iniciarAtualizacaoAutomatica() {
+    if (autoAt.timer) return;
+    autoAt.timer = setInterval(atualizarSozinho, 60000);
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && Date.now() - autoAt.ultima > 20000) atualizarSozinho(); });
+  }
   function carregarBase() {
     return Promise.all([
       q(sb.from("funcionarios").select("*").order("nome")),
@@ -358,6 +378,7 @@
     $("#b-recarregar").onclick = function () {
       carregarBase().then(function () { rota(); A.avisar("Atualizado"); }).catch(falhou);
     };
+    iniciarAtualizacaoAutomatica();
     window.removeEventListener("hashchange", rota);
     window.addEventListener("hashchange", rota);
     rota();
@@ -401,12 +422,16 @@
       var novos = S.rel.filter(function (r) { return !r.lido; }).length;
       var aguard = S.orc.filter(function (o) { return o.status === "enviado"; });
       var visitasOrc = S.serv.filter(function (s) { return s.status === "aguardando"; }).length;
-      var probl = S.obras.filter(function (o) { return problemaPortal(o.portal); }), reprov = probl.length;
+      var probl = S.obras.filter(function (o) { return problemaPortal(o.portal); }), reprov = probl.length, pend = pendencias();
       var h = (probl.length ? '<div class="aviso erro" style="margin-bottom:12px">' + probl.map(function (o) {
           var pr = o.portal.reprovado || o.portal.reclamacao, sv = S.serv.filter(function (x) { return x.obra_id === o.id; })[0];
           return '<div style="margin:2px 0' + (sv ? ';cursor:pointer" data-h-prob="' + sv.id + '" role="button" tabindex="0"' : '"') + '>🚨 <b>' + esc(o.cliente) + "</b> · chamado " + esc(o.chamado || "") + " · " +
             (o.portal.reprovado ? "REPROVADO" : "RECLAMAÇÃO") + " em " + esc(pr.data || "") + ": “" + esc(String(pr.motivo || pr.txt || "").slice(0, 160)) + "”</div>";
         }).join("") + "</div>" : "") +
+        (pend.length ? '<div class="cartao" style="margin-bottom:12px;border-left:4px solid var(--atencao)"><h3 style="margin:0 0 6px">📌 Pendências dos chamados (' + pend.length + ")</h3>" + pend.map(function (x) {
+          return '<div class="peq" style="margin:4px 0;cursor:pointer" data-h-prob="' + x.serv.id + '" role="button" tabindex="0"><span class="selo ' + x.cor + '">' + esc(x.txt) + "</span> <b>" + esc(x.obra.cliente) + "</b> · chamado " + esc(x.obra.chamado) + "</div>";
+        }).join("") + '<div class="mudo peq" style="margin-top:6px">Some sozinha quando você atualiza o chamado (colando os Detalhes) ou muda o serviço no app.</div></div>' : "") +
+        htmlRevisao(semConferir()) +
         '<div class="grade">' +
         '<div class="ladrilho"><div class="r">⚡ Elétrica</div><div class="v">' + abE + '</div><div class="d">serviços ativos</div></div>' +
         '<div class="ladrilho"><div class="r">🖌️ Pintura</div><div class="v">' + abP + '</div><div class="d">serviços ativos</div></div>' +
@@ -724,9 +749,12 @@
   // OS da AGE e a situação dela, valor, requisições de compra, reprovação pela loja e comentários.
   // Campo ausente = a aba colada não diz (ao juntar colagens, não apaga o que outra aba trouxe).
   function lerPortal(t, ls, stChamado) {
-    var p = { outros: [], comentarios: [] }, m, i, osAge = {}, reqAge = {}, sitOS = {}, sitReq = {};
+    var p = { outros: [], comentarios: [] }, m, i, osAge = {}, reqAge = {}, sitOS = {}, sitReq = {}, prest = {}, ordem = {};
     var re = /n[uú]mero\s*'(\d+)'\s*criada\.?\s*para o prestador\s*'([^']*)'/gi;
-    while ((m = re.exec(t))) { if (EH_AGE.test(m[2])) { osAge[m[1]] = 1; p.os = m[1]; } else if (p.outros.indexOf(m[1]) < 0) p.outros.push(m[1]); }
+    while ((m = re.exec(t))) {
+      if (!(m[1] in ordem)) ordem[m[1]] = m.index;
+      if (EH_AGE.test(m[2])) { osAge[m[1]] = 1; p.os = m[1]; } else { prest[m[1]] = m[2]; if (p.outros.indexOf(m[1]) < 0) p.outros.push(m[1]); }
+    }
     // situação das OS, na ordem do histórico (duas formas de escrever no portal)
     var ev = [];
     re = /ordem (?:de )?servi[cç]o de n[uú]mero\s*'(\d+)'\s*foi alterad[oa](?: de)?(?: para)?\s*'([^']+)'/gi;
@@ -751,17 +779,29 @@
     }
     for (i = 0; i < lin.length; i++) {
       var cel = lin[i].split("\t").map(function (x) { return x.trim(); });
-      if (cel.length < 5 || !/^\d{3,8}$/.test(cel[0])) continue;
+      if (cel.length < 4 || !/^\d{3,8}$/.test(cel[0])) continue;
       if (/^\d{2,8}$/.test(cel[1]) && /^\d{2}\/\d{2}\/\d{4}$/.test(cel[2])) {
-        if (osAge[cel[0]] || EH_AGE.test(cel[4] || "")) { reqAge[cel[1]] = 1; var sr = situacaoDepois(cel, 5, i); if (sr) sitReq[cel[1]] = sr; }
+        if (osAge[cel[0]] || EH_AGE.test(cel[4] || "")) {
+          reqAge[cel[1]] = 1; var sr = situacaoDepois(cel, 5, i); if (sr) sitReq[cel[1]] = sr;
+          if (EH_AGE.test(cel[4] || "")) { osAge[cel[0]] = 1; if (!p.os) p.os = cel[0]; }   // a aba só de requisições também diz a OS da AGE
+        }
       } else if (EH_AGE.test(cel[2] || "")) {
-        osAge[cel[0]] = 1; p.os = cel[0];
+        osAge[cel[0]] = 1; p.os = cel[0]; if (!(cel[0] in ordem)) ordem[cel[0]] = Number(cel[0]);
         var vs = cel.slice(4, 6).filter(function (x) { return /^\d{1,3}(\.\d{3})*,\d{2}$/.test(x); });
         if (vs.length) p.valor = A.lerNumero(vs[vs.length - 1]);
         var so = situacaoDepois(cel, 6, i); if (so) sitOS[cel[0]] = so;
-      } else if (cel[2] && p.outros.indexOf(cel[0]) < 0) p.outros.push(cel[0]);
+      } else if (cel[2]) {
+        prest[cel[0]] = cel[2]; if (p.outros.indexOf(cel[0]) < 0) p.outros.push(cel[0]); if (!(cel[0] in ordem)) ordem[cel[0]] = Number(cel[0]);
+        var so2 = situacaoDepois(cel, 6, i); if (so2) sitOS[cel[0]] = so2;
+      }
     }
     if (p.os && sitOS[p.os]) p.osSit = sitOS[p.os];
+    // de quem é o chamado: vale a última OS criada que ainda está valendo (não cancelada nem reprovada)
+    var vale = function (n) { return !/cancel|reprov/i.test(sitOS[n] || ""); };
+    var todas = Object.keys(osAge).concat(p.outros).filter(vale).sort(function (a, b) { return (ordem[a] || 0) - (ordem[b] || 0); });
+    var dono = todas[todas.length - 1];
+    if (todas.length) p.outroPrest = "";
+    if (dono && !osAge[dono]) p.outroPrest = "OS " + dono + " · " + String(prest[dono] || "outro prestador").replace(/\s*-\s*\(\d[\d./-]*\).*$/, "");
     var reqs = Object.keys(reqAge).map(function (n) { return { n: n, sit: sitReq[n] || "" }; });
     if (reqs.length) p.req = reqs;
     if (stChamado) p.status = stChamado;
@@ -801,17 +841,63 @@
     "pessimo", "nao estou ciente", "voltou a (dar|queimar|desarmar|parar|vazar|apagar)", "mesmo problema", "servico incompleto"].join("|"));
   // chamado com problema na loja: reprovado ou com reclamação
   function problemaPortal(p) { return !!(p && (p.reprovado || p.reclamacao)); }
+  // o que falta fazer em um chamado, pela situação no portal e no app. Calculado na hora:
+  // ao colar os Detalhes novos (Atualizar) ou mudar o serviço no app, a pendência some sozinha.
+  function pendenciaChamado(o) {
+    if (!o || !o.chamado || ehPrefObra(o)) return null;
+    var p = o.portal || {}, st = String(p.status || ""), os = String(p.osSit || "");
+    if (problemaPortal(p) || /finaliz/i.test(st + " " + os)) return null;   // reprovado/reclamação já tem o alerta vermelho
+    var sv = S.serv.filter(function (x) { return x.obra_id === o.id && x.status !== "cancelado"; });
+    if (!sv.length) return null;
+    var abertos = sv.filter(function (x) { return x.status === "aberto" || x.status === "em_andamento"; });
+    var aguard = sv.filter(function (x) { return x.status === "aguardando"; });
+    var semFunc = abertos.filter(function (x) { return !x.funcionario_id; });
+    var r = function (txt, cor, x) { return { obra: o, serv: x || sv[0], txt: txt, cor: cor }; };
+    if (p.outroPrest && (abertos.length || aguard.length)) return r("✖ não pertence à AGE (" + p.outroPrest + "): cancele o serviço", "critico", abertos[0] || aguard[0]);
+    if (/cancel/i.test(st) && (abertos.length || aguard.length)) return r("✖ chamado cancelado no portal: cancele o serviço no app", "critico", abertos[0] || aguard[0]);
+    if (/reprov/i.test(os) && (abertos.length || aguard.length)) return r("✖ orçamento reprovado no portal: renegocie ou cancele", "critico", abertos[0] || aguard[0]);
+    if (/aprov/i.test(os) && aguard.length) return r("🔧 aprovado no portal: volte o serviço para Aberto e escolha o funcionário", "atencao", aguard[0]);
+    if (aguard.length && (!os || /pendente/i.test(os))) return r("🧾 visita de orçamento feita: lance o orçamento no portal", "atencao", aguard[0]);
+    if (/aprov/i.test(os) && semFunc.length) return r("🔧 aprovado: escolha o funcionário para executar", "atencao", semFunc[0]);
+    if (/pendente/i.test(os) && semFunc.length) return r("🧾 OS pendente: mande alguém fazer o orçamento", "atencao", semFunc[0]);
+    var concl = sv.every(function (x) { return x.status === "concluido"; });
+    if (concl && !/execut/i.test(os) && !/avalia/i.test(st)) {
+      var ult = sv.map(function (x) { return x.concluido_em || ""; }).sort().pop();
+      // sem situação do portal, só lembra dos concluídos nos últimos 30 dias
+      if (o.portal || (ult && Date.now() - new Date(ult).getTime() < 30 * 86400000))
+        return r("✅ executado no app: finalize o chamado no portal" + (provaFalta(sv[0], null).length ? " (⚠️ confira: sem foto de depois)" : ""), "atencao");
+    }
+    return null;
+  }
+  function pendencias() { return S.obras.map(pendenciaChamado).filter(Boolean); }
+  // revisão: chamados lançados, com serviço em aberto, que ainda não foram conferidos no portal (Detalhes nunca colados)
+  function semConferir() {
+    return S.obras.filter(function (o) {
+      return o.chamado && !ehPrefObra(o) && !o.portal && S.serv.some(function (x) { return x.obra_id === o.id && (x.status === "aberto" || x.status === "em_andamento" || x.status === "aguardando"); });
+    }).sort(function (a, b) { return dataObra(b) - dataObra(a); });
+  }
+  function htmlRevisao(lista) {
+    if (!lista.length) return "";
+    return '<details class="cartao" style="margin:10px 0"><summary><b>🔍 Revisão: ' + lista.length + " chamado" + (lista.length > 1 ? "s lançados ainda não conferidos" : " lançado ainda não conferido") + " no portal</b></summary>" +
+      '<p class="peq mudo" style="margin:6px 0">Abra cada um no portal, copie a tela <b>Detalhes</b> e cole na caixa de chamados. O app confere se é da AGE (os que não forem, cancela) e a etapa.</p>' +
+      '<div class="peq">' + lista.map(function (o) { return "<b>" + esc(o.chamado) + "</b> " + esc(o.cliente); }).join(" · ") + "</div></details>";
+  }
   // etapa do chamado no portal, para o selo
   function etapaPortal(p) {
     if (!p) return null;
     var st = String(p.status || ""), os = String(p.osSit || "");
-    if (/finaliz/i.test(st)) return { txt: "✅ finalizado no portal", cor: "bom" };
+    if (/finaliz/i.test(st) || /finaliz/i.test(os)) return { txt: "✅ finalizado no portal", cor: "bom" };
     if (/cancel/i.test(st)) return { txt: "✖ chamado cancelado", cor: "critico" };
     if (p.reprovado) return { txt: "⚠️ REPROVADO pela loja" + (p.reprovado.nota !== null && p.reprovado.nota !== undefined ? " · nota " + p.reprovado.nota : ""), cor: "critico" };
     if (p.reclamacao) return { txt: "🚨 RECLAMAÇÃO da loja", cor: "critico" };
     if (/avalia/i.test(st)) return { txt: "⏳ em avaliação pela loja", cor: "atencao" };
     if (/execut/i.test(os)) return { txt: "✔ executado no portal", cor: "bom" };
-    if (/aprov/i.test(os)) return { txt: "🔧 aprovado: executar", cor: "atencao" };
+    // material: requisição de compra da AGE ainda em compra/análise, ou já comprada
+    var reqs = (p.req || []).filter(function (r) { return !/cancel/i.test(r.sit); });
+    var emCompra = reqs.some(function (r) { return /compra|an[aá]lise|pendente|aberta/i.test(r.sit) || !r.sit; });
+    var comprado = reqs.length && reqs.every(function (r) { return /finaliz|entreg|atendid/i.test(r.sit); });
+    if (emCompra && !/reprov|cancel/i.test(os)) return { txt: "🛒 " + (/aprov/i.test(os) ? "aprovado · " : "") + "material em compra", cor: "atencao" };
+    if (/aprov/i.test(os)) return { txt: "🔧 aprovado" + (comprado ? " · material comprado" : "") + ": executar", cor: "atencao" };
     if (/or[cç]ad/i.test(os)) return { txt: "💲 orçado: aguardando aprovação", cor: "" };
     if (/reprov/i.test(os)) return { txt: "✖ orçamento reprovado", cor: "critico" };
     if (/cancel/i.test(os)) return { txt: "✖ OS cancelada", cor: "critico" };
@@ -859,7 +945,7 @@
       if (problemaPortal(p)) sitOS = "";   // reprovado ou reclamação: tem que voltar lá, não é "já executado"
       delete p.comentarios;
       return { numero: campo("numero").replace(/\D/g, ""), data: campo("abertura"), loja: campo("centro"), prioridade: campo("prioridade"), desc: desc,
-        situacao: sitOS, outro: p.outros.length > 0 && !p.os, detalhes: true, portal: p,
+        situacao: sitOS, outro: !!p.outroPrest, detalhes: true, portal: p,
         cat: /pintura|pintar|parede|piso|alvenaria/.test(sa) && !/tomada|eletric|ilumina|lumin|quadro|disjuntor|cabo|fio/.test(sa) ? "pintura" : "eletrica" };
     }
     var m = t.match(/(\d{3,8})\s*[-–]\s*(\d{2}\/\d{2}\/\d{4})(?:\s+(\d{1,2}:\d{2}))?/);
@@ -884,8 +970,25 @@
     return null;
   }
   // lista copiada do portal (Meus chamados ou Ordens de serviço): uma linha por chamado
+  // lista "Ordens de serviço" do portal (só OS da AGE): nº da OS, nº do chamado, prioridade, emissão, centro,
+  // solicitante, tipo, coordenador, valor negociado e situação — cada OS ocupa várias linhas
+  function lerListaOS(t) {
+    var re = /(?:^|\n)\s*(\d{3,8})[\t ]*\n\s*(\d{3,8})[\t ]*\n\s*(Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)?[\t ]*\n?\s*(\d{2}\/\d{2}\/\d{4})\t+([LP]\s*\d{1,4})\t([^\n]*)\n\s*([A-Za-zÀ-ú][A-Za-zÀ-ú ]{2,30})/g, m, r = [], vistos = {};
+    while ((m = re.exec(t))) {
+      if (vistos[m[2]]) continue;
+      vistos[m[2]] = 1;
+      var cel = m[6].split("\t").map(function (x) { return x.trim(); }), valor = cel.filter(function (x) { return /^\d{1,3}(\.\d{3})*,\d{2}$/.test(x); }).pop();
+      var sit = m[7].trim(), portal = { os: m[1], osSit: sit, outros: [], lido_em: new Date().toISOString() };
+      if (valor) portal.valor = A.lerNumero(valor);
+      if (/finaliz/i.test(sit)) portal.status = "Finalizado";
+      r.push({ numero: m[2], data: m[4], centro: m[5].replace(/\s/g, ""), prioridade: m[3] || "", situacao: sit, portal: portal });
+    }
+    return r;
+  }
   function lerListaChamados(texto) {
     var vistos = {}, t = String(texto || "");
+    var listaOS = lerListaOS(t.replace(/\r/g, ""));
+    if (listaOS.length) return listaOS;
     var porLinha = lerLinhas(t.split(/\n+/));
     if (porLinha.length >= 2) return porLinha;
     // tabela copiada com uma célula por linha: junta cada chamado a partir da data de abertura
@@ -942,17 +1045,47 @@
     return { novos: novos, atual: atual };
   }
   // situação do item na caixa: já lançado, ignorado (com motivo) ou pronto
+  // palavras que identificam o pedido ("ventiladores" -> "ventil"), sem as que aparecem em quase todo chamado
+  var PALAVRA_COMUM = /^(solici|instal|servic|favor|necess|precis|estamo|fazer|orcame|orcar|verifi|manute|urgent|quanta|materi|execuc|horas|setor|local|loja|para|dentr|todos|todas|esta|estao|nesse|nessa|ainda|outro|outra|sendo|tambe|pois)/;
+  function chavesPedido(t) {
+    var r = [];
+    semAcento(String(t || "").split(" · ")[0].replace(/^Chamado nº[^\n]*\n?/, "")).split(/[^a-z0-9]+/).forEach(function (w) {
+      if (w.length < 5 || /^\d+$/.test(w)) return;
+      var k = w.slice(0, 6);
+      if (!PALAVRA_COMUM.test(k) && r.indexOf(k) < 0) r.push(k);
+    });
+    return r;
+  }
+  // serviço já cadastrado na mesma loja, sem nº de chamado, pedindo a mesma coisa (lançado à mão antes do chamado)
+  function servicoParecido(c) {
+    var l = lojaPorCodigo(c.centro || c.loja), ch = chavesPedido(c.desc);
+    if (!l || !ch.length) return null;
+    var achou = null;
+    S.obras.forEach(function (o) {
+      if (achou || o.loja_id !== l.id || o.chamado) return;
+      S.serv.forEach(function (x) {
+        if (achou || x.obra_id !== o.id || x.status === "cancelado") return;
+        var cx = chavesPedido(x.descricao);
+        if (ch.some(function (k) { return cx.indexOf(k) >= 0; })) achou = { obra: o, serv: x };
+      });
+    });
+    return achou;
+  }
   function avaliarItem(c) {
-    if (S.obras.some(function (o) { return o.chamado === c.numero; }))
+    if (S.obras.some(function (o) { return o.chamado === c.numero; })) {
+      if (c.outro && c.detalhes) return { ja: true, atualizar: true, naoAge: true, txt: "✖ lançado no app, mas não pertence à AGE", cor: "critico" };
       return c.desc && c.detalhes ? { ja: true, atualizar: true, txt: "já lançado · descrição nova", cor: "atencao" } : { ja: true, txt: "já lançado", cor: "" };
+    }
     if (c.outro) return { ignorar: true, txt: "OS de outro prestador", cor: "critico" };
     if (c.situacao && /or[cç]ad|finaliz|execut|conclu|cancel/i.test(c.situacao)) return { ignorar: true, txt: "já " + c.situacao.toLowerCase(), cor: "critico" };
+    var par = servicoParecido(c);
+    if (par) return { dup: par, txt: "⚠️ parece repetido: já existe na loja “" + resumoServ(par.serv, 50) + "” (" + A.STATUS[par.serv.status] + ")", cor: "critico" };
     return { ok: true, txt: lojaPorCodigo(c.centro || c.loja) ? "novo" : "novo · loja não cadastrada", cor: lojaPorCodigo(c.centro || c.loja) ? "bom" : "atencao" };
   }
   function importarChamado() {
     var j = A.janela('<p class="peq mudo" style="margin-top:0">Cole aqui quantas vezes quiser: <b>cada página</b> de <b>Meus chamados</b> ou de <b>Ordens de serviço</b> (selecione a tabela e Ctrl+C) ' +
       "e a tela <b>Detalhes</b> de um chamado (completa a descrição). Tudo vai para a caixa abaixo, sem repetir. Depois confira e lance.</p>" +
-      '<textarea id="ch-txt" rows="3" placeholder="Cole aqui (Ctrl+V)"></textarea><div id="ch-msg" class="peq" style="margin-top:4px"></div><div id="cx"></div>',
+      '<textarea id="ch-txt" rows="3" placeholder="Cole aqui (Ctrl+V)"></textarea><div id="ch-msg" class="peq" style="margin-top:4px"></div><div id="cx-rev"></div><div id="cx"></div>',
       { titulo: "📋 Chamados do BH", larga: true, aoFechar: function () { if (location.hash.slice(1) === "servicos") rota(); } });
     var el = j.el;
     $("#ch-txt", el).oninput = function () {
@@ -965,17 +1098,31 @@
       if (!itens.length) { $("#ch-msg", el).innerHTML = '<span class="selo critico">não reconheci chamados neste texto</span>'; return; }
       var r = juntarNaCaixa(itens);
       this.value = "";
+      // chamado de outro prestador (sem OS da AGE): sai da caixa e avisa
+      var naoAge = itens.filter(function (it) { return it.outro && !S.obras.some(function (o) { return o.chamado === it.numero; }); });
+      if (naoAge.length) gravarCaixa(lerCaixa().filter(function (c) { return !naoAge.some(function (it) { return it.numero === c.numero; }); }));
+      var naoAgeLanc = itens.filter(function (it) { return it.outro && it.detalhes && S.obras.some(function (o) { return o.chamado === it.numero; }); });
       var alertas = lerCaixa().filter(function (c) { return itens.some(function (it) { return it.numero === c.numero; }) && problemaPortal(c.portal); });
       $("#ch-msg", el).innerHTML = '<span class="selo bom">✔ ' + (r.novos ? r.novos + " adicionado" + (r.novos > 1 ? "s" : "") : "") + (r.novos && r.atual ? ", " : "") +
         (r.atual ? r.atual + " já estava" + (r.atual > 1 ? "m" : "") + " na caixa (completado" + (r.atual > 1 ? "s" : "") + ")" : "") + "</span> Pode colar a próxima página." +
+        naoAgeLanc.map(function (it) {
+          return '<div class="aviso erro" style="margin-top:6px">✖ <b>Chamado ' + esc(it.numero) + " já está lançado no app, mas não pertence à AGE</b>" + (it.portal && it.portal.outroPrest ? " (" + esc(it.portal.outroPrest) + ")" : "") + ". O serviço foi cancelado.</div>";
+        }).join("") +
+        naoAge.map(function (it) {
+          return '<div class="aviso erro" style="margin-top:6px">✖ <b>Chamado ' + esc(it.numero) + " não pertence à AGE</b>" + (it.portal && it.portal.outroPrest ? " (" + esc(it.portal.outroPrest) + ")" : " (OS de outro prestador)") + ". Retirado da caixa.</div>";
+        }).join("") +
         alertas.map(function (c) {
           var pr = c.portal.reprovado || c.portal.reclamacao;
           return '<div class="aviso erro" style="margin-top:6px">🚨 <b>Chamado ' + esc(c.numero) + ": " + (c.portal.reprovado ? "REPROVADO pela loja" : "RECLAMAÇÃO da loja") + "</b> em " + esc(pr.data || "") +
             ": “" + esc(String(pr.motivo || pr.txt || "").slice(0, 200)) + "”</div>";
         }).join("");
+      // Detalhes de chamado que já está no app: atualiza na hora (descrição, etapa, reprovação, não é da AGE)
+      var jaNoApp = lerCaixa().filter(function (c) { return c.portal && itens.some(function (it) { return it.numero === c.numero && it.portal; }) && S.obras.some(function (o) { return o.chamado === c.numero; }); });
+      if (jaNoApp.length) atualizarJaLancados(null, jaNoApp, desenhar);
       desenhar();
     };
     function desenhar() {
+      $("#cx-rev", el).innerHTML = htmlRevisao(semConferir());
       var cx = lerCaixa().slice().sort(function (a, b) { return String(isoDeBR(b.data)).localeCompare(String(isoDeBR(a.data))); });
       if (!cx.length) { $("#cx", el).innerHTML = '<div class="cartao vazio" style="margin-top:10px">A caixa está vazia.</div>'; return; }
       // chamados da mesma loja juntos: o grupo fica na posição do chamado mais recente
@@ -989,8 +1136,9 @@
       var ign = av.filter(function (a) { return a.ignorar; }).length, ja = av.filter(function (a) { return a.ja; }).length;
       var marcAt = function (c, a) { return a.atualizar && c.atualizar !== false; };
       var nAt = cx.filter(function (c, i) { return marcAt(c, av[i]); }).length;
+      var nFin = cx.filter(function (c, i) { return av[i].ignorar && /finaliz/i.test(c.situacao || "") && !c.outro; }).length;
       var botao = function (id) {
-        return (nSel ? '<button class="prim" id="' + id + '">Lançar ' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + "</button>" : "") +
+        return (nFin && id === "cx-lancar-topo" ? '<button class="peq" id="cx-hist">📥 Registrar ' + nFin + " finalizado" + (nFin > 1 ? "s" : "") + " no histórico</button>" : "") + (nSel ? '<button class="prim" id="' + id + '">Lançar ' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + "</button>" : "") +
           (nAt ? '<button class="bom" id="' + id + '-at">✏️ Atualizar descrição de ' + nAt + " já lançado" + (nAt > 1 ? "s" : "") + "</button>" : "");
       };
       $("#cx", el).innerHTML = '<div class="cab-secao" style="margin-top:12px"><h2>Caixa: ' + cx.length + " chamado" + (cx.length > 1 ? "s" : "") + "</h2>" +
@@ -1003,7 +1151,7 @@
             '<tr class="grupo-loja"><td colspan="6" class="peq" style="font-weight:600;background:rgba(127,127,127,.12)">🏪 ' + esc(l ? nomeLoja(l) : c.centro || c.loja) + " · " + q + " chamados nesta loja</td></tr>" : "";
           return cab + "<tr><td>" + (a.ja ? (a.atualizar ? '<input type="checkbox" data-cxa="' + esc(c.numero) + '"' + (marcAt(c, a) ? " checked" : "") + ' aria-label="Atualizar ' + esc(c.numero) + '">' : "") : '<input type="checkbox" data-cx="' + esc(c.numero) + '"' + (marc(c, a) ? " checked" : "") + ' aria-label="Lançar ' + esc(c.numero) + '">') + "</td><td>" + esc(c.numero) +
             "</td><td>" + esc(c.data || "") + "</td><td>" + (l ? esc(nomeLoja(l)) : esc(c.centro || c.loja || "—")) + '</td><td class="peq">' + esc(String(c.desc || "").slice(0, 70)) +
-            "</td><td>" + '<span class="selo ' + a.cor + '">' + esc(a.txt) + "</span>" + (c.portal ? " " + seloPortal(c.portal) : c.situacao && !a.ignorar ? ' <span class="peq mudo">' + esc(c.situacao) + "</span>" : "") + "</td></tr>";
+            "</td><td>" + '<span class="selo ' + a.cor + '">' + esc(a.txt) + "</span>" + (a.dup ? ' <button class="peq bom" data-cx-vinc="' + esc(c.numero) + '">🔗 Vincular a esse serviço</button>' : "") + (c.portal ? " " + seloPortal(c.portal) : c.situacao && !a.ignorar ? ' <span class="peq mudo">' + esc(c.situacao) + "</span>" : "") + "</td></tr>";
         }).join("") + "</tbody></table></div>" +
         '<label for="cx-cat">Área (para os que não dizem)</label><select id="cx-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
         '<p class="peq mudo">Ficam desmarcados os <b>já orçados/feitos</b> e os de <b>outro prestador</b> (marque se quiser lançar). Loja não cadastrada entra com o código do centro; cadastre a loja depois para entrar nas rotas. ' +
@@ -1012,6 +1160,12 @@
       $$("[data-cx]", el).forEach(function (cb) {
         cb.onchange = function () { var l = lerCaixa(); l.forEach(function (c) { if (c.numero === cb.dataset.cx) c.marcado = cb.checked; }); gravarCaixa(l); desenhar(); };
       });
+      $$("[data-cx-vinc]", el).forEach(function (bt) {
+        bt.onclick = function () {
+          var i = cx.map(function (c) { return c.numero; }).indexOf(bt.dataset.cxVinc);
+          vincularChamado(bt, cx[i], av[i].dup.obra, desenhar);
+        };
+      });
       $("#cx-limpar", el).onclick = function () { if (A.confirmar("Esvaziar a caixa? (os chamados já lançados não são apagados)")) { gravarCaixa([]); desenhar(); } };
       $$("[data-cxa]", el).forEach(function (cb) {
         cb.onchange = function () { var l = lerCaixa(); l.forEach(function (c) { if (c.numero === cb.dataset.cxa) c.atualizar = cb.checked; }); gravarCaixa(l); desenhar(); };
@@ -1019,6 +1173,10 @@
       var atualizar = function () { atualizarJaLancados(this, cx.filter(function (c, i) { return marcAt(c, av[i]); }), desenhar); };
       ["#cx-lancar-at", "#cx-lancar-topo-at"].forEach(function (id) { if ($(id, el)) $(id, el).onclick = atualizar; });
       var lancar = function () { lancarCaixa(this, cx.filter(function (c, i) { return marc(c, av[i]); }), $("#cx-cat", el).value, j); };
+      // finalizados no portal que nunca entraram no app: entram já concluídos (aparecem em Executados, com o valor)
+      if ($("#cx-hist", el)) $("#cx-hist", el).onclick = function () {
+        lancarCaixa(this, cx.filter(function (c, i) { return av[i].ignorar && /finaliz/i.test(c.situacao || "") && !c.outro; }), $("#cx-cat", el).value, j, true);
+      };
       if ($("#cx-lancar", el)) $("#cx-lancar", el).onclick = lancar;
       if ($("#cx-lancar-topo", el)) $("#cx-lancar-topo", el).onclick = lancar;
     }
@@ -1027,15 +1185,21 @@
   }
   // chamado que já virou serviço: troca o "o que fazer" pela descrição completa da tela Detalhes
   function atualizarJaLancados(b, sel, redesenhar) {
-    var tarefas = [], obrasAt = [], reabrir = 0;
+    var tarefas = [], obrasAt = [], reabrir = 0, cancelados = 0, finalizados = 0;
     sel.forEach(function (c) {
       S.obras.filter(function (o) { return o.chamado === c.numero; }).forEach(function (o) {
         var pv = juntarPortal(o.portal, c.portal);
         if (pv) obrasAt.push({ obra: o, portal: pv });
         S.serv.filter(function (x) { return x.obra_id === o.id; }).forEach(function (x) {
           var d = String(x.descricao || ""), l1 = /^Chamado nº/.test(d) ? d.split("\n")[0] : "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "");
-          var corpo = /Histórico:/.test(d) && !/Histórico:/.test(c.desc || "") ? d.split("\n").slice(/^Chamado nº/.test(d) ? 1 : 0).join("\n") : c.desc;
+          var corpo = !c.desc || (/Histórico:/.test(d) && !/Histórico:/.test(c.desc)) ? d.split("\n").slice(/^Chamado nº/.test(d) ? 1 : 0).join("\n") : c.desc;
           var dados = { descricao: l1 + "\n" + corpo };
+          // finalizado no portal: o serviço que ainda estava aberto no app passa a concluído
+          if (pv && (/finaliz/i.test(pv.status || "") || /finaliz/i.test(pv.osSit || "")) && !problemaPortal(pv) && x.status !== "concluido" && x.status !== "cancelado") {
+            dados.status = "concluido"; dados.concluido_em = new Date().toISOString(); finalizados++;
+          }
+          // revisão: o chamado é de outro prestador — cancela o que ainda não foi feito
+          if (c.outro && x.status !== "concluido" && x.status !== "cancelado") { dados.status = "cancelado"; dados.descricao = l1 + "\nNão pertence à AGE" + (pv && pv.outroPrest ? " (" + pv.outroPrest + ")" : "") + ".\n" + corpo; cancelados++; return tarefas.push({ serv: x, dados: dados }); }
           // reprovado pela loja: o serviço volta a ficar aberto para a equipe voltar lá
           if (problemaPortal(pv) && (x.status === "concluido" || x.status === "aguardando")) { dados.status = "aberto"; dados.concluido_em = null; reabrir++; }
           tarefas.push({ serv: x, dados: dados });
@@ -1043,7 +1207,7 @@
       });
     });
     if (!tarefas.length && !obrasAt.length) return;
-    A.ocupado(b, true, "Atualizando...");
+    if (b) A.ocupado(b, true, "Atualizando...");
     Promise.all(obrasAt.map(function (t) {
       return q(sb.from("obras").update({ portal: t.portal }).eq("id", t.obra.id).select().single()).then(function (n) { trocar(S.obras, n); });
     }).concat(tarefas.map(function (t) {
@@ -1051,12 +1215,32 @@
     }))).then(function () {
       var feitos = {}; sel.forEach(function (c) { feitos[c.numero] = 1; });
       gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
-      A.avisar(tarefas.length + " serviço" + (tarefas.length > 1 ? "s" : "") + " atualizado" + (tarefas.length > 1 ? "s" : ""), "ok");
+      if (tarefas.length) A.avisar(tarefas.length + " serviço" + (tarefas.length > 1 ? "s" : "") + " atualizado" + (tarefas.length > 1 ? "s" : ""), "ok");
+      if (finalizados) A.avisar("✅ " + finalizados + " serviço" + (finalizados > 1 ? "s finalizados" : " finalizado") + " no portal: marcado" + (finalizados > 1 ? "s" : "") + " como concluído no app.", "ok");
+      if (cancelados) A.avisar("✖ " + cancelados + " serviço" + (cancelados > 1 ? "s cancelados" : " cancelado") + ": o chamado não pertence à AGE.", "erro");
       if (reabrir) A.avisar("⚠️ " + reabrir + " serviço" + (reabrir > 1 ? "s reprovados voltaram" : " reprovado voltou") + " para Aberto: a loja reprovou ou reclamou.", "erro");
+      redesenhar();
+    }).catch(function (e) { if (b) A.ocupado(b, false); falhou(e); });
+  }
+  // chamado que já tinha serviço lançado à mão na loja: grava o nº do chamado nesse serviço em vez de criar outro
+  function vincularChamado(b, c, obra, redesenhar) {
+    var dadosObra = { chamado: c.numero, chamado_aberto: isoDeBR(c.data) };
+    if (c.portal) dadosObra.portal = c.portal;
+    A.ocupado(b, true, "Vinculando...");
+    q(sb.from("obras").update(dadosObra).eq("id", obra.id).select().single()).then(function (o) {
+      trocar(S.obras, o);
+      var l1 = "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "") + (c.prioridade ? " · prioridade " + c.prioridade : "");
+      return Promise.all(S.serv.filter(function (x) { return x.obra_id === o.id; }).map(function (x) {
+        var antes = String(x.descricao || "").trim();
+        return q(sb.from("servicos").update({ descricao: l1 + "\n" + (c.desc || "") + (antes ? "\nAnotação anterior: " + antes : "") }).eq("id", x.id).select().single()).then(function (n) { trocar(S.serv, n); });
+      }));
+    }).then(function () {
+      gravarCaixa(lerCaixa().filter(function (x) { return x.numero !== c.numero; }));
+      A.avisar("Chamado " + c.numero + " vinculado ao serviço que já existia (sem criar outro).", "ok");
       redesenhar();
     }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
-  function lancarCaixa(b, sel, catPadrao, janela) {
+  function lancarCaixa(b, sel, catPadrao, janela, historico) {
     if (!sel.length) return;
     A.ocupado(b, true, "Lançando...");
     q(sb.from("obras").insert(sel.map(function (c) {
@@ -1067,7 +1251,8 @@
       obras.forEach(function (o) { S.obras.unshift(o); });
       return q(sb.from("servicos").insert(obras.map(function (o) {
         var c = sel.filter(function (x) { return x.numero === o.chamado; })[0];
-        return { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao,
+        var fin = c.portal && /finaliz/i.test((c.portal.status || "") + " " + (c.portal.osSit || "")) || /finaliz/i.test(c.situacao || "");
+        return { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao, status: fin ? "concluido" : "aberto", concluido_em: fin ? (isoDeBR(c.data) || A.isoLocal(new Date())) + "T12:00:00" : null,
           descricao: "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "") + (c.prioridade ? " · prioridade " + c.prioridade : "") + "\n" +
             (c.desc || "Ver a descrição do problema no portal do cliente.") };
       })).select());
@@ -1075,6 +1260,11 @@
       serv.forEach(function (x) { S.serv.unshift(x); });
       var feitos = {}; sel.forEach(function (c) { feitos[c.numero] = 1; });
       gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
+      if (historico) {
+        janela.fechar(); filtroExec.dias = ""; filtroExec.portal = "fin"; location.hash = "#executados"; rota();
+        A.avisar("✅ " + serv.length + " finalizado" + (serv.length > 1 ? "s registrados" : " registrado") + " no histórico (aba Executados).", "ok");
+        return;
+      }
       janela.fechar(); filtroServ.func = "-";
       location.hash = "#servicos"; rota();
       var jr = A.janela("<p><b>" + serv.length + " chamado" + (serv.length > 1 ? "s" : "") + " lançado" + (serv.length > 1 ? "s" : "") + ".</b></p><p>Agora direcione cada um a um funcionário (lista filtrada em “Sem funcionário”) ou monte a rota do dia com as lojas mais próximas umas das outras.</p>" +
@@ -1121,6 +1311,7 @@
       (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe' + (s.funcionario_id ? " (" + esc(nomeFunc(s.funcionario_id)) + ")" : "") + "</span>" : "") +
       '<span class="dir mudo peq">criado ' + A.data(s.criado_em) + "</span></div>" +
       "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" + seloOS(o) + seloChamado(o) +
+      (pendenciaChamado(o) ? '<div class="aviso" style="margin:6px 0">📌 <b>Pendente:</b> ' + esc(pendenciaChamado(o).txt) + "</div>" : "") +
       (o.portal && o.portal.reprovado ? '<div class="aviso erro" style="margin:6px 0">⚠️ <b>A loja reprovou a execução</b> em ' + esc(o.portal.reprovado.data || "") +
         (o.portal.reprovado.nota !== null && o.portal.reprovado.nota !== undefined ? " (nota " + esc(o.portal.reprovado.nota) + ")" : "") + (o.portal.reprovado.motivo ? ": “" + esc(o.portal.reprovado.motivo) + "”" : "") +
         ". Volte à loja, faça o serviço com registro de chegada e fotos de depois.</div>" : "") +
@@ -1581,7 +1772,7 @@
   // =================================================================
   // SERVIÇOS EXECUTADOS (por dia de execução, com loja e fotos)
   // =================================================================
-  var filtroExec = { dias: "30", cat: "", func: "", busca: "" };
+  var filtroExec = { dias: "30", cat: "", func: "", busca: "", portal: "" };
   // o que falta para provar a execução: registro de chegada e foto de depois (relatório)
   function provaFalta(s, pts) {
     var falta = [];
@@ -1600,11 +1791,12 @@
       '<div class="filtros"><select id="fx-dias" aria-label="Período"><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="365">Último ano</option><option value="">Tudo</option></select>' +
       '<select id="fx-cat" aria-label="Área"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
       '<select id="fx-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
+      '<select id="fx-portal" aria-label="Portal"><option value="">Finalizados ou não no portal</option><option value="fin">✅ Finalizados no portal</option><option value="falta">⏳ Falta finalizar no portal</option></select>' +
       '<input id="fx-busca" type="search" placeholder="Buscar loja, cliente ou nº do chamado"></div><div id="fx-res"></div>';
-    $("#fx-dias").value = F.dias; $("#fx-cat").value = F.cat; $("#fx-func").value = F.func; $("#fx-busca").value = F.busca;
-    ["#fx-dias", "#fx-cat", "#fx-func"].forEach(function (id) { $(id).onchange = function () { ler(); listar(); }; });
+    $("#fx-dias").value = F.dias; $("#fx-cat").value = F.cat; $("#fx-func").value = F.func; $("#fx-busca").value = F.busca; $("#fx-portal").value = F.portal || "";
+    ["#fx-dias", "#fx-cat", "#fx-func", "#fx-portal"].forEach(function (id) { $(id).onchange = function () { ler(); listar(); }; });
     $("#fx-busca").oninput = function () { ler(); listar(); };
-    function ler() { F.dias = $("#fx-dias").value; F.cat = $("#fx-cat").value; F.func = $("#fx-func").value; F.busca = semAcento($("#fx-busca").value.trim()); }
+    function ler() { F.portal = $("#fx-portal").value; F.dias = $("#fx-dias").value; F.cat = $("#fx-cat").value; F.func = $("#fx-func").value; F.busca = semAcento($("#fx-busca").value.trim()); }
     function listar() {
       var limite = F.dias ? Date.now() - Number(F.dias) * 864e5 : 0;
       var lista = S.serv.filter(function (s) {
@@ -1614,13 +1806,19 @@
         if (dataExecucao(s).getTime() < limite) return false;
         var o = porId(S.obras, s.obra_id);
         if (F.busca && semAcento([o && o.cliente, o && o.endereco, o && o.chamado, o && o.protocolo].join(" ")).indexOf(F.busca) < 0) return false;
+        var fin = !!(o && o.portal && /finaliz/i.test((o.portal.status || "") + " " + (o.portal.osSit || "")));
+        if (F.portal === "fin" && !fin) return false;
+        if (F.portal === "falta" && (fin || !(o && o.chamado))) return false;
         return true;
       }).sort(function (a, b) { return dataExecucao(b) - dataExecucao(a); });
       var r = $("#fx-res");
       if (!lista.length) { r.innerHTML = '<div class="cartao vazio">Nenhum serviço executado neste período.</div>'; return; }
       var dias = {}, ordem = [];
       lista.forEach(function (s) { var d = A.isoLocal(dataExecucao(s)); if (!dias[d]) { dias[d] = []; ordem.push(d); } dias[d].push(s); });
-      r.innerHTML = '<p class="mudo peq" style="margin:-4px 0 10px">' + lista.length + " serviço" + (lista.length > 1 ? "s" : "") + " executado" + (lista.length > 1 ? "s" : "") + " em " + ordem.length + " dia" + (ordem.length > 1 ? "s" : "") + ".</p>" +
+      var obrasL = {}; lista.forEach(function (s) { obrasL[s.obra_id] = porId(S.obras, s.obra_id); });
+      var total = Object.keys(obrasL).reduce(function (t, k) { var o = obrasL[k]; return t + (o && o.portal && o.portal.valor ? Number(o.portal.valor) : 0); }, 0);
+      r.innerHTML = '<p class="mudo peq" style="margin:-4px 0 10px">' + lista.length + " serviço" + (lista.length > 1 ? "s" : "") + " executado" + (lista.length > 1 ? "s" : "") + " em " + ordem.length + " dia" + (ordem.length > 1 ? "s" : "") +
+        (total ? " · <b>" + esc(A.dinheiro(total)) + "</b> em valor negociado no portal" : "") + ".</p>" +
         ordem.map(function (d) {
           var ss = dias[d], lojas = {};
           ss.forEach(function (s) { var o = porId(S.obras, s.obra_id); lojas[(o && (o.loja_id || o.id)) || s.id] = 1; });
@@ -1641,7 +1839,7 @@
       return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente || "Serviço") + "</h3>" + seloOS(o) + seloChamado(o) +
         '<span class="dir mudo peq">' + A.hora(dataExecucao(s)) + "</span></div>" +
         '<div class="linha">' + A.seloCategoria(s.categoria) + '<span class="peq">👷 ' + esc(nomeFunc(s.funcionario_id) || "—") + "</span>" +
-        (o.chamado ? (provaFalta(s, null).length ? '<span class="selo critico">⚠️ sem foto de depois: confira antes de finalizar o chamado ' + esc(o.chamado) + "</span>" :
+        (o.chamado && !(o.portal && /finaliz/i.test((o.portal.status || "") + " " + (o.portal.osSit || ""))) ? (provaFalta(s, null).length ? '<span class="selo critico">⚠️ sem foto de depois: confira antes de finalizar o chamado ' + esc(o.chamado) + "</span>" :
           '<span class="selo atencao">finalizar chamado ' + esc(o.chamado) + " no portal</span>") : "") + "</div>" +
         (o.endereco ? '<div class="peq mudo">📍 ' + esc(o.endereco) + "</div>" : "") +
         (s.descricao ? '<div class="peq" style="margin-top:4px">' + esc(resumoServ(s, 160)) + "</div>" : "") +
@@ -2521,14 +2719,19 @@
     return Object.keys(mapa).map(function (k) { return mapa[k]; });
   }
 
+  // base da AGE: a do config.js ou a salva neste aparelho (botão "Salvar como base")
+  function baseRotas() {
+    if (A.CFG.BASE && G.temLocal(A.CFG.BASE)) return A.CFG.BASE;
+    try { var b = JSON.parse(localStorage.getItem("age_base_rota") || "null"); return b && G.temLocal(b) ? b : null; } catch (e) { return null; }
+  }
   function verRotas(c) {
-    var base = A.CFG.BASE && G.temLocal(A.CFG.BASE) ? A.CFG.BASE : null;
+    var base = baseRotas();
     c.innerHTML = '<div class="cab-secao"><h2>Rotas</h2></div>' +
       (S.lojas.length ? "" : '<div class="aviso">Cadastre ou importe as lojas na aba <a href="#lojas">Lojas</a> para montar rotas.</div>') +
       '<div class="cartao"><div class="duas"><div><label for="rt-partida">Saindo de</label><select id="rt-partida"><option value="gps">📍 Minha localização agora</option>' +
       (base ? '<option value="base">🏠 ' + esc(base.nome || "Base da AGE") + "</option>" : "") + '<option value="loja">🏪 Uma loja...</option>' +
       '<option value="nenhuma">— sem ponto de partida (começa na 1ª loja)</option></select>' +
-      '<input id="rt-partida-loja" list="rt-dl-lojas" class="oculto" style="margin-top:6px" placeholder="Digite a loja de partida"></div>' +
+      '<input id="rt-partida-loja" list="rt-dl-lojas" class="oculto" style="margin-top:6px" placeholder="Digite a loja de partida"><div id="rt-gps" class="peq" style="margin-top:4px"></div></div>' +
       '<div><label for="rt-modo">Quais lojas</label><select id="rt-modo"><option value="servicos">Lojas com serviço aberto</option>' +
       '<option value="escolher">Escolher as lojas</option><option value="raio">Todas as lojas perto da partida</option></select>' +
       '<div id="rt-modo-extra" style="margin-top:6px"></div></div></div>' +
@@ -2542,8 +2745,30 @@
     $("#rt-partida").value = R.partida === "base" && !base ? "gps" : R.partida;
     $("#rt-partida-loja").value = R.partidaLoja;
     $("#rt-modo").value = R.modo; $("#rt-voltar").checked = R.voltar;
+    // localização atual: pega já ao abrir a aba, para a rota sair daqui
+    function pegarGps(forcar) {
+      var x = $("#rt-gps");
+      if (!x || $("#rt-partida").value !== "gps") { if (x) x.innerHTML = ""; return; }
+      if (R.gps && !forcar && Date.now() - R.gps.quando < 10 * 60000) { mostrarGps(); return; }
+      x.innerHTML = '<span class="mudo">📍 Pegando sua localização...</span>';
+      posicaoAtual(true).then(function (p) { R.gps = { lat: p.lat, lng: p.lng, precisao: p.precisao, quando: Date.now() }; mostrarGps(); })
+        .catch(function (e) { x.innerHTML = '<span class="selo critico">' + esc(e.message) + '</span> <button class="peq" id="rt-gps-de-novo">↻ Tentar de novo</button>'; $("#rt-gps-de-novo").onclick = function () { pegarGps(true); }; });
+    }
+    function mostrarGps() {
+      var x = $("#rt-gps"), g = R.gps;
+      x.innerHTML = '<span class="selo bom">📍 Localização incluída' + (g.precisao ? " (±" + Math.round(g.precisao) + " m)" : "") + "</span> " +
+        '<a href="https://www.google.com/maps?q=' + g.lat + "," + g.lng + '" target="_blank" rel="noopener">ver no mapa</a> · <button class="peq" id="rt-gps-at">↻ Atualizar</button> <button class="peq" id="rt-gps-base">🏠 Salvar como base</button>' +
+        (g.precisao > 1000 ? '<div class="mudo">No computador a localização é aproximada (pela internet). Para mais precisão, salve a base ou use o celular.</div>' : "");
+      $("#rt-gps-at").onclick = function () { pegarGps(true); };
+      $("#rt-gps-base").onclick = function () {
+        if (!A.confirmar("Salvar este ponto como a base da AGE neste aparelho? Ele aparece como opção “🏠 Base da AGE” em Saindo de.")) return;
+        try { localStorage.setItem("age_base_rota", JSON.stringify({ nome: "Base da AGE", lat: g.lat, lng: g.lng })); } catch (e) { /* sem armazenamento */ }
+        A.avisar("Base salva", "ok"); rota();
+      };
+    }
     function extras() {
       $("#rt-partida-loja").classList.toggle("oculto", $("#rt-partida").value !== "loja");
+      pegarGps(false);
       var m = $("#rt-modo").value, x = $("#rt-modo-extra");
       if (m === "servicos") {
         x.innerHTML = '<select id="rt-cat" aria-label="Área"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
@@ -2596,13 +2821,14 @@
   function obterPartida() {
     var tipo = R.partida;
     if (tipo === "nenhuma") return Promise.resolve(null);
-    if (tipo === "base") { var b = A.CFG.BASE; return Promise.resolve({ nome: b.nome || "Base da AGE", lat: Number(b.lat), lng: Number(b.lng) }); }
+    if (tipo === "base") { var b = baseRotas(); return Promise.resolve({ nome: b.nome || "Base da AGE", lat: Number(b.lat), lng: Number(b.lng) }); }
     if (tipo === "loja") {
       var l = lojaPorRotulo(R.partidaLoja);
       if (!l || !G.temLocal(l)) return Promise.reject(new Error("Escolha a loja de partida (precisa estar localizada no mapa)."));
       return Promise.resolve({ nome: nomeLoja(l), lat: l.lat, lng: l.lng, lojaId: l.id });
     }
-    return posicaoAtual(false).then(function (p) { return { nome: "Minha localização", lat: p.lat, lng: p.lng, gps: true }; });
+    if (R.gps && Date.now() - R.gps.quando < 10 * 60000) return Promise.resolve({ nome: "Minha localização", lat: R.gps.lat, lng: R.gps.lng, gps: true });
+    return posicaoAtual(false).then(function (p) { R.gps = { lat: p.lat, lng: p.lng, precisao: p.precisao, quando: Date.now() }; return { nome: "Minha localização", lat: p.lat, lng: p.lng, gps: true }; });
   }
 
   function montarRota(b) {

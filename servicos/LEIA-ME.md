@@ -245,3 +245,20 @@ O app lê a **OS da AGE** e a situação dela (pendente, orçada, aprovada, exec
 (ex.: "🔧 aprovado: executar", "💲 R$ 800,00"); o reprovado volta para **Aberto** e aparece em vermelho no Hoje.
 Reclamação da loja no histórico ("não veio ninguém", "continua apagada"...) gera **alerta vermelho** ao colar, no serviço e no Hoje.
 Antes de finalizar no portal, o serviço avisa se falta **registro de chegada** ou **foto de depois**.
+
+## Pendências, revisão e atualização automática
+- Colar os **Detalhes** de um chamado que já está no app **atualiza na hora** (sem botão): descrição, etapa, reprovação/reclamação.
+- Se o chamado é de **outro prestador** (vale a última OS que ainda vale), sai da caixa com o aviso "não pertence à AGE";
+  se já estava lançado, o serviço é **cancelado** sozinho.
+- **📌 Pendências** (tela Hoje e no serviço): OS pendente sem funcionário, visita feita sem orçamento lançado, aprovado sem
+  funcionário, executado no app e não finalizado no portal, cancelado no portal, não é da AGE. Somem sozinhas quando você
+  cola os Detalhes novos ou muda o serviço no app.
+- **🔍 Revisão**: lista os chamados lançados que nunca foram conferidos no portal (cole os Detalhes de cada um).
+
+## Finalizados e atualização automática
+- Cole a lista **Ordens de serviço** do portal (cada página): o app lê nº da OS, nº do chamado, centro, valor negociado e
+  situação. Chamado **já no app** e **Finalizado** no portal: o serviço vira **concluído** sozinho e guarda o valor.
+  Finalizados que nunca entraram no app: botão **📥 Registrar finalizados no histórico** (entram concluídos).
+- Aba **✅ Executados**: filtro **Finalizados no portal / Falta finalizar no portal** e total do valor negociado.
+- O painel se **atualiza sozinho** a cada minuto e ao voltar para a aba (não atualiza com uma janela aberta ou
+  enquanto você digita). O app do funcionário, a cada 2 minutos.
