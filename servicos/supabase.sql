@@ -140,6 +140,7 @@ alter table public.servicos   add column if not exists pede_assinatura boolean n
 alter table public.obras      add column if not exists autoriza_divulgar boolean not null default false;
 -- nº do chamado do cliente (ex.: app de chamados do Supermercados BH)
 alter table public.obras      add column if not exists chamado text;
+alter table public.obras      add column if not exists chamado_aberto date;  -- data de abertura do chamado no portal do cliente
 create index if not exists obras_chamado_idx on public.obras (chamado);
 
 -- ---------- Serviços para prefeituras (órgãos públicos) ----------

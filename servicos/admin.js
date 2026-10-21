@@ -8,7 +8,7 @@
   var S = { func: [], obras: [], serv: [], rel: [], orc: [], lojas: [], rotas: [], pref: [], contr: [], med: [], lic: [], docs: [], veic: [], semPref: false, semVeic: false };
   var urls = {};        // caminho da foto -> { url, vence }
   var infoFoto = {};    // caminho da foto -> html com detalhes (hora, GPS...)
-  var filtroServ = { cat: "", st: "ativos", func: "", busca: "" };
+  var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
   var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
@@ -456,16 +456,17 @@
       '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="equipe">Criados pela equipe</option><option value="todos">Todos</option></select>' +
       '<select id="fs-func" aria-label="Funcionário"><option value="">Todos os funcionários</option><option value="-">Sem funcionário</option>' +
       S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
+      '<select id="fs-ordem" aria-label="Ordem"><option value="recentes">📅 Mais recentes primeiro</option><option value="antigos">📅 Mais antigos primeiro</option><option value="loja">🏪 Por nº da loja</option></select>' +
       '<input id="fs-busca" type="search" placeholder="Buscar cliente, endereço ou nº do chamado"></div>' +
       (S.pref.length ? '<p class="mudo peq" style="margin:-4px 0 10px">Aqui ficam os clientes particulares e as lojas. As OS da prefeitura ficam na aba <a href="#prefeitura">🏛️ Prefeitura</a>.</p>' : "") +
       '<div id="lista-serv"></div>';
     c.innerHTML = h;
-    $("#fs-cat").value = F.cat; $("#fs-st").value = F.st; $("#fs-func").value = F.func; $("#fs-busca").value = F.busca;
-    ["#fs-cat", "#fs-st", "#fs-func"].forEach(function (s) { $(s).onchange = function () { lerFiltro(); listar(); }; });
+    $("#fs-cat").value = F.cat; $("#fs-st").value = F.st; $("#fs-func").value = F.func; $("#fs-busca").value = F.busca; $("#fs-ordem").value = F.ordem || "recentes";
+    ["#fs-cat", "#fs-st", "#fs-func", "#fs-ordem"].forEach(function (s) { $(s).onchange = function () { lerFiltro(); listar(); }; });
     $("#fs-busca").oninput = function () { lerFiltro(); listar(); };
     $("#b-novo-serv").onclick = function () { novoServico(null); };
     $("#b-chamado").onclick = importarChamado;
-    function lerFiltro() { F.cat = $("#fs-cat").value; F.st = $("#fs-st").value; F.func = $("#fs-func").value; F.busca = $("#fs-busca").value.trim().toLowerCase(); }
+    function lerFiltro() { F.ordem = $("#fs-ordem").value; F.cat = $("#fs-cat").value; F.st = $("#fs-st").value; F.func = $("#fs-func").value; F.busca = $("#fs-busca").value.trim().toLowerCase(); }
 
     function passa(s) {
       if (F.cat && s.categoria !== F.cat) return false;
@@ -483,6 +484,16 @@
         var partes = S.serv.filter(function (s) { return s.obra_id === o.id; });
         if (!partes.length) return F.st === "todos" && !F.cat && !F.func;
         return partes.some(passa);
+      });
+      obras.sort(function (a, b) {
+        if (F.ordem === "loja") {
+          var la = a.loja_id ? porId(S.lojas, a.loja_id) : null, lb = b.loja_id ? porId(S.lojas, b.loja_id) : null;
+          var na = la ? parseInt(la.codigo, 10) : NaN, nb = lb ? parseInt(lb.codigo, 10) : NaN;
+          if (isNaN(na) !== isNaN(nb)) return isNaN(na) ? 1 : -1;
+          if (na !== nb && !isNaN(na)) return na - nb;
+        }
+        var d = dataObra(b) - dataObra(a);
+        return F.ordem === "antigos" ? -d : d;
       });
       var l = $("#lista-serv");
       if (!obras.length) { l.innerHTML = '<div class="cartao vazio">Nenhum serviço com este filtro.</div>'; return; }
@@ -514,7 +525,29 @@
     listar();
   }
 
-  function seloChamado(o) { return o && o.chamado ? '<span class="selo">📋 Chamado ' + esc(o.chamado) + "</span>" : ""; }
+  // data de abertura do chamado (ou, se não houver, quando o serviço entrou no app)
+  function aberturaChamado(o) {
+    if (o.chamado_aberto) return new Date(o.chamado_aberto + "T12:00:00");
+    var srv = S.serv.filter(function (x) { return x.obra_id === o.id; });
+    for (var i = 0; i < srv.length; i++) {
+      var m = String(srv[i].descricao || "").match(/aberto em (\d{2})\/(\d{2})\/(\d{4})/);
+      if (m) return new Date(m[3] + "-" + m[2] + "-" + m[1] + "T12:00:00");
+    }
+    return null;
+  }
+  function dataObra(o) {
+    var a = o.chamado ? aberturaChamado(o) : null;
+    if (a) return a.getTime();
+    var t = new Date(o.criado_em || 0).getTime();
+    S.serv.forEach(function (x) { if (x.obra_id === o.id) t = Math.max(t, new Date(x.criado_em || 0).getTime()); });
+    return t;
+  }
+  function seloChamado(o) {
+    if (!o || !o.chamado) return "";
+    var a = aberturaChamado(o);
+    return '<span class="selo">📋 Chamado ' + esc(o.chamado) + (a ? " · aberto " + A.data(a) : "") + "</span>";
+  }
+  function isoDeBR(d) { var m = String(d || "").match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? m[3] + "-" + m[2] + "-" + m[1] : null; }
 
   function seloOS(o) {
     if (!o || !o.prefeitura_id) return "";
@@ -594,7 +627,7 @@
         cliente: val(el, "#ns-cli"), telefone: nulo(val(el, "#ns-tel")), email: nulo(val(el, "#ns-email")), endereco: nulo(val(el, "#ns-end")), observacoes: nulo(val(el, "#ns-obs")),
         autoriza_divulgar: $("#ns-divulgar", el).checked ? true : undefined,
         loja_id: lojaEscolhida && $("#ns-loja", el).value === rotuloLoja(lojaEscolhida) ? lojaEscolhida.id : null,
-        chamado: pre.chamado || undefined
+        chamado: pre.chamado || undefined, chamado_aberto: pre.aberto || undefined
       }).select().single()).then(function (o) { S.obras.unshift(o); obra = o; return o; });
       pObra.then(function (o) {
         return q(sb.from("servicos").insert(cats.map(function (cat) {
@@ -681,6 +714,7 @@
     }).filter(Boolean);
   }
   function importarLista(lista, janela) {
+    lista = lista.slice().sort(function (a, b) { return String(isoDeBR(b.data)).localeCompare(String(isoDeBR(a.data))); });
     var novos = lista.filter(function (c) { return c.loja && !c.ja; });
     var sem = lista.filter(function (c) { return !c.loja; }), ja = lista.filter(function (c) { return c.ja; });
     // lançados no app e ainda abertos, mas que não vieram na lista colada (provavelmente finalizados no portal)
@@ -708,7 +742,7 @@
       var b = this, cat = $("#cl-cat", j.el).value;
       A.ocupado(b, true, "Lançando...");
       q(sb.from("obras").insert(novos.map(function (c) {
-        return { cliente: nomeLoja(c.loja), endereco: nulo(enderecoLoja(c.loja)), telefone: nulo(c.loja.telefone), loja_id: c.loja.id, chamado: c.numero };
+        return { cliente: nomeLoja(c.loja), endereco: nulo(enderecoLoja(c.loja)), telefone: nulo(c.loja.telefone), loja_id: c.loja.id, chamado: c.numero, chamado_aberto: isoDeBR(c.data) };
       })).select()).then(function (obras) {
         obras.forEach(function (o) { S.obras.unshift(o); });
         return q(sb.from("servicos").insert(obras.map(function (o) {
@@ -763,7 +797,7 @@
       var prio = val(el, "#ch-prio");
       var desc = "Chamado nº " + num + (dataCh ? " (aberto em " + dataCh + ")" : "") + (prio ? " · prioridade " + prio : "") + "\n" + val(el, "#ch-desc");
       j.fechar();
-      novoServico(null, { loja: l, chamado: num, cat: $("#ch-cat", el).value, desc: desc });
+      novoServico(null, { loja: l, chamado: num, aberto: isoDeBR(dataCh), cat: $("#ch-cat", el).value, desc: desc });
     };
   }
 
