@@ -567,7 +567,7 @@
     return '<span class="selo">🏛️ ' + esc(p ? p.nome : "Prefeitura") + (o.protocolo ? " · OS " + esc(o.protocolo) : "") + "</span>";
   }
 
-  function msgServico(s) {
+  function msgServico(s, juntos) {
     var o = porId(S.obras, s.obra_id), f = porId(S.func, s.funcionario_id);
     var t = "*AGE Elétrica e Pintura*\nServiço de " + (A.CATEG[s.categoria].icone + " *" + A.CATEG[s.categoria].nome.toUpperCase()) + "*\n\n" +
       (o.prefeitura_id ? "🏛️ " + ((porId(S.pref, o.prefeitura_id) || {}).nome || "Prefeitura") + (o.protocolo ? " · OS/Protocolo " + o.protocolo : "") + "\n" +
@@ -576,14 +576,52 @@
       (s.data_prevista ? "Data: " + A.dataSimples(s.data_prevista) + "\n" : "") + (s.descricao ? "\nO que fazer:\n" + s.descricao + "\n" : "") +
       (o.prefeitura_id ? "\n📷 Fotos de ANTES e de DEPOIS são obrigatórias (no relatório do app).\n" : "") +
       (s.pede_assinatura ? "\n✍️ Ao concluir, colher a ASSINATURA do " + (o.prefeitura_id ? "FISCAL" : "responsável no local") + " (no relatório do app).\n" : "");
+    if (juntos && juntos.length) t += "\nTambém nesta loja (" + juntos.length + "):\n" + juntos.map(function (x) {
+      var ox = porId(S.obras, x.obra_id) || {};
+      return "• " + (ox.chamado ? "Chamado nº " + ox.chamado + ": " : "") + resumoServ(x, 140);
+    }).join("\n") + "\n";
     if (f) t += "\nRegistre a chegada, as fotos do serviço e a saída pelo seu link:\n" + linkFunc(f);
     return t;
   }
-  function botaoZap(s) {
+  function botaoZap(s, juntos) {
     var f = porId(S.func, s.funcionario_id);
     if (!f) return "";
     if (!f.telefone) return '<span class="mudo peq">Cadastre o telefone de ' + esc(f.nome) + " para avisar pelo WhatsApp.</span>";
-    return '<a class="botao zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgServico(s))) + '">📲 Avisar ' + esc(f.nome.split(" ")[0]) + " no WhatsApp</a>";
+    return '<a class="botao zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgServico(s, juntos))) + '">📲 Avisar ' + esc(f.nome.split(" ")[0]) + " no WhatsApp</a>";
+  }
+
+  // mesma loja: mesma loja cadastrada ou, sem loja, o mesmo nome de cliente (prefeituras ficam de fora)
+  function mesmaLoja(a, b) {
+    if (!a || !b || ehPrefObra(a) || ehPrefObra(b)) return false;
+    if (a.loja_id || b.loja_id) return a.loja_id === b.loja_id;
+    var ca = String(a.cliente || "").trim().toLowerCase();
+    return !!ca && ca === String(b.cliente || "").trim().toLowerCase();
+  }
+  // ao escolher o funcionário de um serviço, os outros chamados abertos da mesma loja e da mesma área
+  // que estão sem funcionário vão para ele também. Devolve { porServ: {id: [levados]}, outro: n }
+  function levarChamadosDaLoja(lista) {
+    var alvo = {}, porServ = {}, outro = 0, ids = lista.map(function (s) { return s.id; });
+    lista.forEach(function (s) {
+      if (!s.funcionario_id || (s.status !== "aberto" && s.status !== "em_andamento")) return;
+      var o = porId(S.obras, s.obra_id);
+      S.serv.forEach(function (x) {
+        if (ids.indexOf(x.id) >= 0 || alvo[x.id] || x.categoria !== s.categoria || (x.status !== "aberto" && x.status !== "em_andamento")) return;
+        if (!mesmaLoja(o, porId(S.obras, x.obra_id))) return;
+        if (x.funcionario_id) { if (x.funcionario_id !== s.funcionario_id) outro++; return; }
+        alvo[x.id] = s; (porServ[s.id] = porServ[s.id] || []).push(x);
+      });
+    });
+    var grupos = {};
+    Object.keys(alvo).forEach(function (id) { var f = alvo[id].funcionario_id; (grupos[f] = grupos[f] || []).push(id); });
+    return Promise.all(Object.keys(grupos).map(function (f) {
+      return q(sb.from("servicos").update({ funcionario_id: f }).in("id", grupos[f]).select()).then(function (ns) { ns.forEach(function (n) { trocar(S.serv, n); }); });
+    })).then(function () {
+      Object.keys(porServ).forEach(function (k) { porServ[k] = porServ[k].map(function (x) { return porId(S.serv, x.id) || x; }); });
+      var n = Object.keys(alvo).length;
+      if (n) A.avisar(n + " outro" + (n > 1 ? "s chamados" : " chamado") + " desta loja também " + (n > 1 ? "foram" : "foi") + " para " + nomeFunc(lista.filter(function (s) { return porServ[s.id]; })[0].funcionario_id) + ".", "ok");
+      if (outro) A.avisar(outro + " chamado" + (outro > 1 ? "s" : "") + " desta loja já " + (outro > 1 ? "estão" : "está") + " com outro funcionário (não mudei).");
+      return { porServ: porServ, outro: outro };
+    });
   }
 
   function formParte(cat, rotulo) {
@@ -651,8 +689,12 @@
         novos.forEach(function (s) { S.serv.unshift(s); });
         j.fechar();
         A.avisar("Serviço salvo", "ok");
+        return levarChamadosDaLoja(novos).catch(function (e) { falhou(e); return { porServ: {} }; }).then(function (lv) { return { novos: novos, lv: lv }; });
+      }).then(function (r) {
+        if (!r) return;
+        var novos = r.novos;
         rota();
-        var zaps = novos.map(botaoZap).filter(Boolean);
+        var zaps = novos.map(function (s) { return botaoZap(s, r.lv.porServ[s.id]); }).filter(Boolean);
         if (zaps.length) A.janela("<p>Avise a equipe:</p>" + zaps.map(function (z) { return '<div class="acoes">' + z + "</div>"; }).join(""), { titulo: "Serviço salvo" });
       }).catch(function (e) {
         // se a obra foi criada e as partes falharam, a próxima tentativa usa a mesma obra
@@ -974,8 +1016,9 @@
         A.ocupado(b, false);
         A.avisar("Salvo", "ok");
         $("#es-zap", el).innerHTML = botaoZap(n);
-        if (trocouFunc) A.avisar("Avise o novo funcionário pelo botão do WhatsApp.");
-        rota();
+        if (!trocouFunc) { rota(); return; }
+        A.avisar("Avise o novo funcionário pelo botão do WhatsApp.");
+        return levarChamadosDaLoja([n]).then(function (lv) { $("#es-zap", el).innerHTML = botaoZap(n, lv.porServ[n.id]); rota(); }, function (e) { rota(); falhou(e); });
       }).catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
     $("#es-apagar", el).onclick = function () {
