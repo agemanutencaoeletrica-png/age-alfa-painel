@@ -450,7 +450,7 @@
 
   function verServicos(c) {
     var F = filtroServ;
-    var h = '<div class="cab-secao"><h2>Serviços</h2><span><button id="b-chamado">📋 Chamado BH</button> <button class="prim" id="b-novo-serv">+ Novo serviço</button></span></div>' +
+    var h = '<div class="cab-secao"><h2>Serviços</h2><span><button id="b-chamado">📋 Chamados BH' + (lerCaixa().length ? " (" + lerCaixa().length + " na caixa)" : "") + '</button> <button class="prim" id="b-novo-serv">+ Novo serviço</button></span></div>' +
       '<div class="filtros"><select id="fs-cat" aria-label="Categoria"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
       '<select id="fs-st" aria-label="Situação"><option value="ativos">Abertos e em andamento</option><option value="aberto">Abertos</option><option value="em_andamento">Em andamento</option>' +
       '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="equipe">Criados pela equipe</option><option value="todos">Todos</option></select>' +
@@ -664,8 +664,14 @@
       var mos = t.match(/n[uú]mero\s*'(\d+)'\s*criada para o prestador\s*'[^']*17\.134\.491/i);
       var dsc = campo("descricao"), loc = campo("locais"), desc = [dsc, loc ? "Local: " + loc : "", campo("solicitante") ? "Solicitante: " + campo("solicitante") : "",
         campo("coordenador") ? "Coordenador: " + campo("coordenador") : "", mos ? "OS da AGE: " + mos[1] : ""].filter(Boolean).join(" · ");
-      var sa = semAcento(dsc);
+      var sa = semAcento(dsc), sitOS = "";
+      if (mos) {
+        var re = new RegExp("ordem servi[cç]o de n[uú]mero\\s*'" + mos[1] + "'\\s*foi alterado(?: de)?(?: para)?\\s*'([^']+)'", "gi"), mm;
+        while ((mm = re.exec(t))) sitOS = mm[1];
+      }
+      var temOS = /criada para o prestador/i.test(t);
       return { numero: campo("numero").replace(/\D/g, ""), data: campo("abertura"), loja: campo("centro"), prioridade: campo("prioridade"), desc: desc,
+        situacao: sitOS || "", outro: temOS && !mos, detalhes: true,
         cat: /pintura|pintar|parede|piso|alvenaria/.test(sa) && !/tomada|eletric|ilumina|lumin|quadro|disjuntor|cabo|fio/.test(sa) ? "pintura" : "eletrica" };
     }
     var m = t.match(/(\d{3,8})\s*[-–]\s*(\d{2}\/\d{2}\/\d{4})(?:\s+(\d{1,2}:\d{2}))?/);
@@ -710,104 +716,116 @@
       if (!num || vistos[num]) return null;
       vistos[num] = true;
       var prio = (linha.match(/\b(Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)\b/i) || [])[1] || "";
-      return { numero: num, data: md[1], centro: mc[1] + mc[2], prioridade: prio, loja: lojaPorCodigo(mc[1] + mc[2]), ja: S.obras.some(function (o) { return o.chamado === num; }) };
+      var sit = (linha.match(/\b(Pendente|Or[cç]ada|Aprovada|Finalizada|Executada|Conclu[ií]da|Cancelada|Em atendimento|Em execu[cç][aã]o)\b/i) || [])[1] || "";
+      return { numero: num, data: md[1], centro: mc[1] + mc[2], prioridade: prio, situacao: sit };
     }).filter(Boolean);
   }
-  function importarLista(lista, janela) {
-    lista = lista.slice().sort(function (a, b) { return String(isoDeBR(b.data)).localeCompare(String(isoDeBR(a.data))); });
-    var novos = lista.filter(function (c) { return c.loja && !c.ja; });
-    var sem = lista.filter(function (c) { return !c.loja; }), ja = lista.filter(function (c) { return c.ja; });
-    // lançados no app e ainda abertos, mas que não vieram na lista colada (provavelmente finalizados no portal)
-    // só compara quando a lista colada é a mesma que já foi lançada (tem chamados em comum) e dentro do período dela;
-    // assim, colar só a 2ª página ou outra tela não acusa chamados que apenas ficaram fora da cópia
-    var naLista = {}; lista.forEach(function (c) { naLista[c.numero] = 1; });
-    var datas = lista.map(function (c) { return isoDeBR(c.data); }).filter(Boolean).sort(), ini = datas[0], fim = datas[datas.length - 1];
-    var sumidos = !ja.length ? [] : S.obras.filter(function (o) {
-      if (!o.chamado || naLista[o.chamado]) return false;
-      var a = aberturaChamado(o), d = a ? A.isoLocal(a) : null;
-      if (!d || d < ini || d > fim) return false;
-      return S.serv.some(function (x) { return x.obra_id === o.id && (x.status === "aberto" || x.status === "em_andamento"); });
+  // ---- caixa de chamados: junta várias colagens (páginas da lista, telas de detalhes), organiza e só então lança ----
+  var CHAVE_CAIXA = "age_caixa_chamados", caixaMem = null;
+  function lerCaixa() {
+    if (caixaMem) return caixaMem;
+    try { caixaMem = JSON.parse(localStorage.getItem(CHAVE_CAIXA) || "[]"); } catch (e) { caixaMem = []; }
+    return caixaMem;
+  }
+  function gravarCaixa(l) { caixaMem = l; try { localStorage.setItem(CHAVE_CAIXA, JSON.stringify(l)); } catch (e) { /* sem armazenamento: fica só na memória */ } }
+  // junta na caixa: mesmo nº = mesmo chamado (completa o que faltava, não duplica)
+  function juntarNaCaixa(itens) {
+    var cx = lerCaixa().slice(), novos = 0, atual = 0;
+    itens.forEach(function (it) {
+      if (!it.numero) return;
+      var ex = cx.filter(function (c) { return c.numero === it.numero; })[0];
+      var limpo = {}; Object.keys(it).forEach(function (k) { if (it[k] !== "" && it[k] !== null && it[k] !== undefined && it[k] !== false) limpo[k] = it[k]; });
+      if (ex) { Object.assign(ex, limpo); if (it.outro === false && it.detalhes) ex.outro = false; atual++; }
+      else { cx.push(Object.assign({ marcado: null }, limpo)); novos++; }
     });
-    var j = A.janela((novos.length ? '<div class="acoes" style="margin-top:0"><button class="prim" id="cl-ok-topo">Lançar ' + novos.length + " chamado" + (novos.length > 1 ? "s" : "") + "</button></div>" : "") +
-      '<p style="margin-top:0"><b>' + lista.length + "</b> chamados na lista: <b>" + novos.length + "</b> novos" +
-      (ja.length ? ", " + ja.length + " já lançados" : "") + (sem.length ? ", " + sem.length + " com loja não cadastrada" : "") + ".</p>" +
-      '<div class="tabela-caixa"><table><thead><tr><th>Chamado</th><th>Abertura</th><th>Loja</th><th>Situação</th></tr></thead><tbody>' +
-      lista.map(function (c) {
-        return "<tr><td>" + esc(c.numero) + "</td><td>" + esc(c.data) + "</td><td>" + (c.loja ? esc(nomeLoja(c.loja)) : esc(c.centro)) + "</td><td>" +
-          (c.ja ? '<span class="selo">já lançado</span>' : c.loja ? '<span class="selo bom">novo</span>' : '<span class="selo critico">loja não cadastrada</span>') + "</td></tr>";
-      }).join("") + "</tbody></table></div>" +
-      (sumidos.length ? '<div class="aviso" style="margin-top:10px"><b>' + sumidos.length + " chamado" + (sumidos.length > 1 ? "s" : "") + "</b> aberto" + (sumidos.length > 1 ? "s" : "") +
-        " no app não " + (sumidos.length > 1 ? "vieram" : "veio") + " nesta lista, no mesmo período (se você copiou todas as páginas de Ativos, " + (sumidos.length > 1 ? "provavelmente foram finalizados" : "provavelmente foi finalizado") + " no portal): " +
-        sumidos.map(function (o) { return esc(o.chamado) + " (" + esc(o.cliente) + ")"; }).join(", ") + ". Confira e conclua no app.</div>" : "") +
-      '<label for="cl-cat">Área dos chamados novos</label><select id="cl-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
-      '<p class="peq mudo">Os serviços entram <b>sem funcionário</b>. Depois, na aba Serviços, filtre "Sem funcionário" e direcione cada um. A descrição do problema fica no portal do cliente: abra o chamado lá e complete no serviço, se quiser.</p>' +
-      '<div class="acoes">' + (novos.length ? '<button class="prim" id="cl-ok">Lançar ' + novos.length + " chamado" + (novos.length > 1 ? "s" : "") + "</button>" : "") + "</div>",
-      { titulo: "📋 Lista de chamados", larga: true });
-    if (janela) janela.fechar();
-    if (!novos.length) return;
-    // botão de cima: leva ao fim (escolher a área) e lança
-    $("#cl-ok-topo", j.el).onclick = function () { $("#cl-ok", j.el).click(); };
-    $("#cl-ok", j.el).onclick = function () {
-      var b = this, cat = $("#cl-cat", j.el).value;
-      A.ocupado(b, true, "Lançando...");
-      q(sb.from("obras").insert(novos.map(function (c) {
-        return { cliente: nomeLoja(c.loja), endereco: nulo(enderecoLoja(c.loja)), telefone: nulo(c.loja.telefone), loja_id: c.loja.id, chamado: c.numero, chamado_aberto: isoDeBR(c.data) };
-      })).select()).then(function (obras) {
-        obras.forEach(function (o) { S.obras.unshift(o); });
-        return q(sb.from("servicos").insert(obras.map(function (o) {
-          var c = novos.filter(function (x) { return x.numero === o.chamado; })[0];
-          return { obra_id: o.id, categoria: cat, descricao: "Chamado nº " + c.numero + " (aberto em " + c.data + ")" + (c.prioridade ? " · prioridade " + c.prioridade : "") + "\nVer a descrição do problema no portal do cliente." };
-        })).select());
-      }).then(function (serv) {
-        serv.forEach(function (x) { S.serv.unshift(x); });
-        j.fechar(); filtroServ.func = "-";
-        location.hash = "#servicos"; rota();
-        var jr = A.janela("<p><b>" + serv.length + " chamados lançados.</b></p><p>Agora você pode direcionar cada um a um funcionário (lista abaixo, filtrada em “Sem funcionário”) ou montar a rota do dia com as lojas mais próximas umas das outras.</p>" +
-          '<div class="acoes"><button class="prim" id="cl-rota">🧭 Montar rota com as lojas</button><button id="cl-dir">Direcionar agora</button></div>', { titulo: "Chamados lançados" });
-        $("#cl-dir", jr.el).onclick = function () { jr.fechar(); };
-        $("#cl-rota", jr.el).onclick = function () { jr.fechar(); R.modo = "servicos"; R.cat = ""; location.hash = "#rotas"; };
-      }).catch(function (e) { A.ocupado(b, false); falhou(e); });
-    };
+    gravarCaixa(cx);
+    return { novos: novos, atual: atual };
+  }
+  // situação do item na caixa: já lançado, ignorado (com motivo) ou pronto
+  function avaliarItem(c) {
+    if (S.obras.some(function (o) { return o.chamado === c.numero; })) return { ja: true, txt: "já lançado", cor: "" };
+    if (c.outro) return { ignorar: true, txt: "OS de outro prestador", cor: "critico" };
+    if (c.situacao && /or[cç]ad|finaliz|execut|conclu|cancel/i.test(c.situacao)) return { ignorar: true, txt: "já " + c.situacao.toLowerCase(), cor: "critico" };
+    return { ok: true, txt: lojaPorCodigo(c.centro || c.loja) ? "novo" : "novo · loja não cadastrada", cor: lojaPorCodigo(c.centro || c.loja) ? "bom" : "atencao" };
   }
   function importarChamado() {
-    var j = A.janela('<p class="peq mudo" style="margin-top:0">Um chamado: abra no app do cliente, copie o texto e cole aqui.<br><b>Vários de uma vez:</b> no portal (computador), em <b>Meus chamados → Ativos</b>, selecione a tabela com o mouse, copie (Ctrl+C) e cole aqui.</p>' +
-      '<label for="ch-txt">Texto do chamado</label><textarea id="ch-txt" rows="5" placeholder="37377 - 29/09/2026 07:41&#10;L320 - Normal&#10;Elétrica/Gerador | Iluminação | Luminárias queimadas"></textarea>' +
-      '<div class="duas"><div><label for="ch-num">Nº do chamado *</label><input id="ch-num" maxlength="30" inputmode="numeric"></div>' +
-      '<div><label for="ch-loja">Loja (código) *</label><input id="ch-loja" maxlength="10" placeholder="Ex.: 320"></div></div>' +
-      '<div id="ch-achou" class="peq" style="margin-top:4px"></div>' +
-      '<div class="duas"><div><label for="ch-cat">Área</label><select id="ch-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select></div>' +
-      '<div><label for="ch-prio">Prioridade</label><input id="ch-prio" maxlength="30" placeholder="Normal"></div></div>' +
-      '<label for="ch-desc">O que fazer</label><textarea id="ch-desc" rows="3"></textarea>' +
-      '<div id="ch-erro"></div><div class="acoes"><button class="prim" id="ch-ok">Continuar →</button></div>', { titulo: "📋 Importar chamado" });
-    var el = j.el, dataCh = "";
-    function mostrarLoja() {
-      var l = lojaPorCodigo(val(el, "#ch-loja")), c = $("#ch-achou", el);
-      if (!val(el, "#ch-loja")) { c.innerHTML = ""; return; }
-      c.innerHTML = l ? '✅ <b>' + esc(nomeLoja(l)) + "</b> — " + esc(enderecoLoja(l)) : '<span class="selo critico">loja não encontrada</span> confira o código ou cadastre na aba <a href="#lojas">Lojas</a>.';
-    }
+    var j = A.janela('<p class="peq mudo" style="margin-top:0">Cole aqui quantas vezes quiser: <b>cada página</b> de <b>Meus chamados</b> ou de <b>Ordens de serviço</b> (selecione a tabela e Ctrl+C) ' +
+      "e a tela <b>Detalhes</b> de um chamado (completa a descrição). Tudo vai para a caixa abaixo, sem repetir. Depois confira e lance.</p>" +
+      '<textarea id="ch-txt" rows="3" placeholder="Cole aqui (Ctrl+V)"></textarea><div id="ch-msg" class="peq" style="margin-top:4px"></div><div id="cx"></div>',
+      { titulo: "📋 Chamados do BH", larga: true, aoFechar: function () { if (location.hash.slice(1) === "servicos") rota(); } });
+    var el = j.el;
     $("#ch-txt", el).oninput = function () {
-      var lista = lerListaChamados(this.value);
-      if (lista.length >= 2) { this.oninput = null; importarLista(lista, j); return; }
-      var c = lerChamado(this.value);
-      if (c.numero) $("#ch-num", el).value = c.numero;
-      if (c.loja) $("#ch-loja", el).value = c.loja;
-      if (c.prioridade) $("#ch-prio", el).value = c.prioridade;
-      if (c.desc) $("#ch-desc", el).value = c.desc;
-      $("#ch-cat", el).value = c.cat; dataCh = c.data;
-      mostrarLoja();
+      var t = this.value, c, itens = [];
+      if (!t.trim()) return;
+      c = lerChamado(t);
+      if (c.detalhes && c.numero) itens = [Object.assign({ centro: c.loja }, c)];      // tela Detalhes
+      else itens = lerListaChamados(t);                                                  // páginas da lista
+      if (!itens.length && c.numero) itens = [Object.assign({ centro: c.loja ? "L" + c.loja : "" }, c)];  // texto do app no celular
+      if (!itens.length) { $("#ch-msg", el).innerHTML = '<span class="selo critico">não reconheci chamados neste texto</span>'; return; }
+      var r = juntarNaCaixa(itens);
+      this.value = "";
+      $("#ch-msg", el).innerHTML = '<span class="selo bom">✔ ' + (r.novos ? r.novos + " adicionado" + (r.novos > 1 ? "s" : "") : "") + (r.novos && r.atual ? ", " : "") +
+        (r.atual ? r.atual + " já estava" + (r.atual > 1 ? "m" : "") + " na caixa (completado" + (r.atual > 1 ? "s" : "") + ")" : "") + "</span> Pode colar a próxima página.";
+      desenhar();
     };
-    $("#ch-loja", el).oninput = mostrarLoja;
-    $("#ch-ok", el).onclick = function () {
-      var num = val(el, "#ch-num").replace(/\s/g, ""), l = lojaPorCodigo(val(el, "#ch-loja")), erro = $("#ch-erro", el);
-      if (!num) { erro.innerHTML = '<div class="aviso erro">Informe o nº do chamado.</div>'; return; }
-      if (!l) { erro.innerHTML = '<div class="aviso erro">Loja não encontrada pelo código. Confira o número ou cadastre a loja na aba Lojas.</div>'; return; }
-      var ja = S.obras.filter(function (o) { return o.chamado === num; })[0];
-      if (ja && !confirm("O chamado " + num + " já foi lançado (" + ja.cliente + "). Lançar de novo?")) return;
-      var prio = val(el, "#ch-prio");
-      var desc = "Chamado nº " + num + (dataCh ? " (aberto em " + dataCh + ")" : "") + (prio ? " · prioridade " + prio : "") + "\n" + val(el, "#ch-desc");
-      j.fechar();
-      novoServico(null, { loja: l, chamado: num, aberto: isoDeBR(dataCh), cat: $("#ch-cat", el).value, desc: desc });
-    };
+    function desenhar() {
+      var cx = lerCaixa().slice().sort(function (a, b) { return String(isoDeBR(b.data)).localeCompare(String(isoDeBR(a.data))); });
+      if (!cx.length) { $("#cx", el).innerHTML = '<div class="cartao vazio" style="margin-top:10px">A caixa está vazia.</div>'; return; }
+      var av = cx.map(avaliarItem), marc = function (c, a) { return a.ja ? false : c.marcado === null || c.marcado === undefined ? !!a.ok : c.marcado; };
+      var nSel = cx.filter(function (c, i) { return marc(c, av[i]); }).length;
+      var ign = av.filter(function (a) { return a.ignorar; }).length, ja = av.filter(function (a) { return a.ja; }).length;
+      var botao = function (id) { return nSel ? '<button class="prim" id="' + id + '">Lançar ' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + "</button>" : ""; };
+      $("#cx", el).innerHTML = '<div class="cab-secao" style="margin-top:12px"><h2>Caixa: ' + cx.length + " chamado" + (cx.length > 1 ? "s" : "") + "</h2>" +
+        '<span class="mudo peq">' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + (ign ? " · " + ign + " ignorado" + (ign > 1 ? "s" : "") : "") + (ja ? " · " + ja + " já lançado" + (ja > 1 ? "s" : "") : "") + "</span></div>" +
+        '<div class="acoes" style="margin-top:0">' + botao("cx-lancar-topo") + '<button class="peq" id="cx-limpar">🗑 Esvaziar caixa</button></div>' +
+        '<div class="tabela-caixa"><table><thead><tr><th></th><th>Chamado</th><th>Abertura</th><th>Loja</th><th>O que fazer</th><th>Situação</th></tr></thead><tbody>' +
+        cx.map(function (c, i) {
+          var a = av[i], l = lojaPorCodigo(c.centro || c.loja);
+          return "<tr><td>" + (a.ja ? "" : '<input type="checkbox" data-cx="' + esc(c.numero) + '"' + (marc(c, a) ? " checked" : "") + ' aria-label="Lançar ' + esc(c.numero) + '">') + "</td><td>" + esc(c.numero) +
+            "</td><td>" + esc(c.data || "") + "</td><td>" + (l ? esc(nomeLoja(l)) : esc(c.centro || c.loja || "—")) + '</td><td class="peq">' + esc(String(c.desc || "").slice(0, 70)) +
+            "</td><td>" + '<span class="selo ' + a.cor + '">' + esc(a.txt) + "</span>" + (c.situacao && !a.ignorar ? ' <span class="peq mudo">' + esc(c.situacao) + "</span>" : "") + "</td></tr>";
+        }).join("") + "</tbody></table></div>" +
+        '<label for="cx-cat">Área (para os que não dizem)</label><select id="cx-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
+        '<p class="peq mudo">Ficam desmarcados os <b>já orçados/feitos</b> e os de <b>outro prestador</b> (marque se quiser lançar). Loja não cadastrada entra com o código do centro; cadastre a loja depois para entrar nas rotas. ' +
+        "Os serviços entram sem funcionário: depois, direcione na aba Serviços.</p>" +
+        '<div class="acoes">' + botao("cx-lancar") + "</div>";
+      $$("[data-cx]", el).forEach(function (cb) {
+        cb.onchange = function () { var l = lerCaixa(); l.forEach(function (c) { if (c.numero === cb.dataset.cx) c.marcado = cb.checked; }); gravarCaixa(l); desenhar(); };
+      });
+      $("#cx-limpar", el).onclick = function () { if (A.confirmar("Esvaziar a caixa? (os chamados já lançados não são apagados)")) { gravarCaixa([]); desenhar(); } };
+      var lancar = function () { lancarCaixa(this, cx.filter(function (c, i) { return marc(c, av[i]); }), $("#cx-cat", el).value, j); };
+      if ($("#cx-lancar", el)) $("#cx-lancar", el).onclick = lancar;
+      if ($("#cx-lancar-topo", el)) $("#cx-lancar-topo", el).onclick = lancar;
+    }
+    desenhar();
+    $("#ch-txt", el).focus();
+  }
+  function lancarCaixa(b, sel, catPadrao, janela) {
+    if (!sel.length) return;
+    A.ocupado(b, true, "Lançando...");
+    q(sb.from("obras").insert(sel.map(function (c) {
+      var l = lojaPorCodigo(c.centro || c.loja);
+      return { cliente: l ? nomeLoja(l) : "Centro " + (c.centro || c.loja || "?"), endereco: l ? nulo(enderecoLoja(l)) : null, telefone: l ? nulo(l.telefone) : null,
+        loja_id: l ? l.id : null, chamado: c.numero, chamado_aberto: isoDeBR(c.data) };
+    })).select()).then(function (obras) {
+      obras.forEach(function (o) { S.obras.unshift(o); });
+      return q(sb.from("servicos").insert(obras.map(function (o) {
+        var c = sel.filter(function (x) { return x.numero === o.chamado; })[0];
+        return { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao,
+          descricao: "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "") + (c.prioridade ? " · prioridade " + c.prioridade : "") + "\n" +
+            (c.desc || "Ver a descrição do problema no portal do cliente.") };
+      })).select());
+    }).then(function (serv) {
+      serv.forEach(function (x) { S.serv.unshift(x); });
+      var feitos = {}; sel.forEach(function (c) { feitos[c.numero] = 1; });
+      gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
+      janela.fechar(); filtroServ.func = "-";
+      location.hash = "#servicos"; rota();
+      var jr = A.janela("<p><b>" + serv.length + " chamado" + (serv.length > 1 ? "s" : "") + " lançado" + (serv.length > 1 ? "s" : "") + ".</b></p><p>Agora direcione cada um a um funcionário (lista filtrada em “Sem funcionário”) ou monte a rota do dia com as lojas mais próximas umas das outras.</p>" +
+        '<div class="acoes"><button class="prim" id="cl-rota">🧭 Montar rota com as lojas</button><button id="cl-dir">Direcionar agora</button></div>', { titulo: "Chamados lançados" });
+      $("#cl-dir", jr.el).onclick = function () { jr.fechar(); };
+      $("#cl-rota", jr.el).onclick = function () { jr.fechar(); R.modo = "servicos"; R.cat = ""; location.hash = "#rotas"; };
+    }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
 
   function editarObra(id) {
