@@ -683,6 +683,11 @@
   function importarLista(lista, janela) {
     var novos = lista.filter(function (c) { return c.loja && !c.ja; });
     var sem = lista.filter(function (c) { return !c.loja; }), ja = lista.filter(function (c) { return c.ja; });
+    // lançados no app e ainda abertos, mas que não vieram na lista colada (provavelmente finalizados no portal)
+    var naLista = {}; lista.forEach(function (c) { naLista[c.numero] = 1; });
+    var sumidos = S.obras.filter(function (o) {
+      return o.chamado && !naLista[o.chamado] && S.serv.some(function (x) { return x.obra_id === o.id && (x.status === "aberto" || x.status === "em_andamento"); });
+    });
     var j = A.janela('<p style="margin-top:0"><b>' + lista.length + "</b> chamados na lista: <b>" + novos.length + "</b> novos" +
       (ja.length ? ", " + ja.length + " já lançados" : "") + (sem.length ? ", " + sem.length + " com loja não cadastrada" : "") + ".</p>" +
       '<div class="tabela-caixa"><table><thead><tr><th>Chamado</th><th>Abertura</th><th>Loja</th><th>Situação</th></tr></thead><tbody>' +
@@ -690,6 +695,9 @@
         return "<tr><td>" + esc(c.numero) + "</td><td>" + esc(c.data) + "</td><td>" + (c.loja ? esc(nomeLoja(c.loja)) : esc(c.centro)) + "</td><td>" +
           (c.ja ? '<span class="selo">já lançado</span>' : c.loja ? '<span class="selo bom">novo</span>' : '<span class="selo critico">loja não cadastrada</span>') + "</td></tr>";
       }).join("") + "</tbody></table></div>" +
+      (sumidos.length ? '<div class="aviso" style="margin-top:10px"><b>' + sumidos.length + " chamado" + (sumidos.length > 1 ? "s" : "") + "</b> aberto" + (sumidos.length > 1 ? "s" : "") +
+        " no app não " + (sumidos.length > 1 ? "vieram" : "veio") + " nesta lista (se você copiou a lista completa de Ativos, " + (sumidos.length > 1 ? "provavelmente foram finalizados" : "provavelmente foi finalizado") + " no portal): " +
+        sumidos.map(function (o) { return esc(o.chamado) + " (" + esc(o.cliente) + ")"; }).join(", ") + ". Confira e conclua no app.</div>" : "") +
       '<label for="cl-cat">Área dos chamados novos</label><select id="cl-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
       '<p class="peq mudo">Os serviços entram <b>sem funcionário</b>. Depois, na aba Serviços, filtre "Sem funcionário" e direcione cada um. A descrição do problema fica no portal do cliente: abra o chamado lá e complete no serviço, se quiser.</p>' +
       '<div class="acoes">' + (novos.length ? '<button class="prim" id="cl-ok">Lançar ' + novos.length + " chamado" + (novos.length > 1 ? "s" : "") + "</button>" : "") + "</div>",
@@ -709,8 +717,12 @@
         })).select());
       }).then(function (serv) {
         serv.forEach(function (x) { S.serv.unshift(x); });
-        j.fechar(); filtroServ.func = "-"; A.avisar(serv.length + " chamados lançados. Agora direcione cada um a um funcionário.", "ok");
+        j.fechar(); filtroServ.func = "-";
         location.hash = "#servicos"; rota();
+        var jr = A.janela("<p><b>" + serv.length + " chamados lançados.</b></p><p>Agora você pode direcionar cada um a um funcionário (lista abaixo, filtrada em “Sem funcionário”) ou montar a rota do dia com as lojas mais próximas umas das outras.</p>" +
+          '<div class="acoes"><button class="prim" id="cl-rota">🧭 Montar rota com as lojas</button><button id="cl-dir">Direcionar agora</button></div>', { titulo: "Chamados lançados" });
+        $("#cl-dir", jr.el).onclick = function () { jr.fechar(); };
+        $("#cl-rota", jr.el).onclick = function () { jr.fechar(); R.modo = "servicos"; R.cat = ""; location.hash = "#rotas"; };
       }).catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
   }
@@ -2082,6 +2094,14 @@
   // =================================================================
   var R = { partida: "gps", partidaLoja: "", modo: "servicos", cat: "", raio: 15, porDia: 6, juntar: 40, voltar: false, escolhidas: {}, plano: null, origem: null, mapa: null };
 
+  // "📋 3338 · acréscimo de tomada..." (sem a linha automática "Chamado nº ... aberto em ...")
+  function resumoServ(s, max) {
+    var o = porId(S.obras, s.obra_id), d = String(s.descricao || "");
+    if (o && o.chamado) d = d.replace(/^Chamado nº[^\n]*\n?/, "").replace(/^Ver a descrição do problema no portal do cliente\.?$/, "");
+    d = d.replace(/\s+/g, " ").trim();
+    max = max || 70;
+    return (o && o.chamado ? "📋 " + o.chamado + (d ? " · " : "") : "") + (d.length > max ? d.slice(0, max) + "…" : d);
+  }
   function lojasComServico(cat) {
     var mapa = {};
     S.serv.forEach(function (s) {
@@ -2206,7 +2226,7 @@
     return '<li style="margin:6px 0"><b>' + esc(nomeLoja(p)) + "</b> " + (NIVEL[p.geo_precisao] <= 2 ? '<span class="selo atencao">local aproximado</span>' : "") +
       (d !== null ? ' <span class="mudo peq">+' + A.numero(d, 1) + " km</span>" : "") +
       '<div class="peq mudo">' + esc(enderecoLoja(p)) + "</div>" +
-      (p.servicos ? '<div class="peq">' + p.servicos.map(function (s) { return A.seloCategoria(s.categoria) + " " + esc((s.descricao || "").slice(0, 60)); }).join("<br>") + "</div>" : "") + "</li>";
+      (p.servicos ? '<div class="peq">' + p.servicos.map(function (s) { return A.seloCategoria(s.categoria) + " " + esc(resumoServ(s)); }).join("<br>") + "</div>" : "") + "</li>";
   }
 
   function desenharResultado() {
@@ -2287,7 +2307,13 @@
   function msgRota(r) {
     var f = porId(S.func, r.funcionario_id);
     var t = "*AGE Elétrica e Pintura — " + r.nome + "*\n" + (r.data ? "Data: " + A.dataSimples(r.data) + "\n" : "") + r.paradas.length + " paradas, na ordem:\n\n";
-    r.paradas.forEach(function (p, i) { t += (i + 1) + ". " + nomeLoja(p) + "\n   " + enderecoLoja(p) + "\n   " + G.linkNavegar(p) + "\n"; });
+    var abertos = {};
+    lojasComServico("").forEach(function (x) { abertos[x.loja.id] = x.servicos; });
+    r.paradas.forEach(function (p, i) {
+      t += (i + 1) + ". " + nomeLoja(p) + "\n   " + enderecoLoja(p) + "\n";
+      (abertos[p.id] || []).forEach(function (s) { t += "   " + A.CATEG[s.categoria].icone + " " + resumoServ(s, 90) + "\n"; });
+      t += "   " + G.linkNavegar(p) + "\n";
+    });
     var links = G.linksGoogle(r.partida && G.temLocal(r.partida) ? r.partida : null, r.paradas, false);
     t += "\nRota completa no Google Maps" + (links.length > 1 ? " (em partes)" : "") + ":\n" + links.join("\n");
     if (f) t += "\n\nA rota também aparece no seu app:\n" + linkFunc(f);
