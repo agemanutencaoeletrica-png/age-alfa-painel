@@ -101,7 +101,7 @@
       '<button data-relatorio=""><span class="ic">📝</span>Relatório e materiais</button>' +
       ((D.veiculos || []).length ? '<button class="veic" id="b-km"><span class="ic">🚗</span>' + esc(textoKmHoje()) + "</button>" : "") + "</div>";
 
-    (D.rotas || []).forEach(function (r) {
+    (D.rotas || []).filter(function (r) { return (r.paradas || []).length; }).forEach(function (r) {
       var G = window.AGE_GEO, paradas = r.paradas || [], links = G.linksGoogle(null, paradas, false);
       h += '<div class="cab-secao" ><h2>🧭 ' + esc(r.nome) + "</h2>" + (r.data ? '<span class="mudo peq">' + A.dataSimples(r.data) + "</span>" : "") + "</div>" +
         '<div class="cartao"><div class="acoes" style="margin-top:0">' + links.map(function (u, k) {

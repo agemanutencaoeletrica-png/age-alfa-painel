@@ -215,11 +215,14 @@ Serviços). A aba **Hoje** mostra o quadro **🏛️ Prefeitura** com as OS em a
 
 
 ## 📋 Chamados do Supermercados BH (BH 360)
-Na aba **Serviços → 📋 Chamado BH**:
-- **Vários de uma vez:** no portal BH 360 (computador), abra **Meus chamados → Ativos**, selecione a tabela com o mouse, copie (Ctrl+C) e cole na caixa.
-  O app mostra quais são **novos**, quais **já foram lançados** e quais têm **loja não cadastrada**, e lança os novos de uma vez, sem funcionário.
-  Depois, filtre **Sem funcionário** e direcione cada um.
-- **Um chamado:** abra o chamado (tela Detalhes) no portal ou no app do BH, copie tudo e cole. O app preenche nº, loja (pelo centro L036 etc.),
-  área, prioridade, descrição, local, coordenador e o nº da OS da AGE.
-- O nº do chamado aparece no serviço, na mensagem para o funcionário e na busca. Ao concluir, o app lembra de **finalizar o chamado no portal do BH**.
-- Precisa ter rodado o `supabase.sql` atualizado (coluna `chamado`).
+Na aba **Serviços → 📋 Chamados BH** fica uma **caixa de chamados**:
+1. Cole quantas vezes quiser: **cada página** de *Meus chamados* e de *Ordens de serviço* (selecione a tabela, Ctrl+C) e a tela **Detalhes** de um chamado.
+   Tudo entra na caixa **sem repetir** (mesmo nº = mesmo chamado; os detalhes completam a descrição). A caixa fica guardada neste computador até você lançar.
+2. Confira: ficam **desmarcados** os já **orçados/feitos** (situação Orçada, Finalizada, Executada, Concluída, Cancelada) e os de **outro prestador**;
+   aparecem como **já lançado** os que já estão no app. **Loja não cadastrada também entra** (como "Centro P623"); cadastre a loja depois para entrar nas rotas.
+3. Clique em **Lançar**. Os serviços entram sem funcionário; direcione na aba Serviços ou monte a rota.
+
+## ✅ Executados
+Aba **✅ Executados**: serviços concluídos agrupados pelo **dia da execução** (mais recente primeiro), com loja/cliente, nº do chamado,
+funcionário, horário, o que foi feito e as **fotos de antes e depois** do relatório. Filtros: período, área, funcionário e busca.
+Quando o serviço de uma loja é concluído, ela **sai da rota** no app do funcionário; no painel, a rota salva mostra a loja riscada (✔ x de y feitas).

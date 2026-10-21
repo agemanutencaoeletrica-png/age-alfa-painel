@@ -11,7 +11,7 @@
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -378,7 +378,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -450,7 +450,7 @@
 
   function verServicos(c) {
     var F = filtroServ;
-    var h = '<div class="cab-secao"><h2>Serviços</h2><span><button id="b-chamado">📋 Chamado BH</button> <button class="prim" id="b-novo-serv">+ Novo serviço</button></span></div>' +
+    var h = '<div class="cab-secao"><h2>Serviços</h2><span><button id="b-chamado">📋 Chamados BH' + (lerCaixa().length ? " (" + lerCaixa().length + " na caixa)" : "") + '</button> <button class="prim" id="b-novo-serv">+ Novo serviço</button></span></div>' +
       '<div class="filtros"><select id="fs-cat" aria-label="Categoria"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
       '<select id="fs-st" aria-label="Situação"><option value="ativos">Abertos e em andamento</option><option value="aberto">Abertos</option><option value="em_andamento">Em andamento</option>' +
       '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="equipe">Criados pela equipe</option><option value="todos">Todos</option></select>' +
@@ -652,6 +652,8 @@
 
   // ---- chamados do cliente (ex.: app do Supermercados BH): cola o texto e vira um serviço ----
   // Formato reconhecido:  "37377 - 29/09/2026 07:41 / L320 - Normal / Elétrica/Gerador | Iluminação | Luminárias queimadas"
+  // prestador da AGE no portal do BH: CNPJ, "AGE SOLUCOES..." ou o nome do Antônio
+  var EH_AGE = /17\.134\.491|\bage\b|ant[oô]nio/i;
   function lerChamado(texto) {
     var t = String(texto || "").replace(/\r/g, "");
     // tela "Detalhes" do portal: rótulo numa linha e valor na linha seguinte
@@ -661,11 +663,20 @@
       return "";
     }
     if (campo("numero") && campo("centro")) {
-      var mos = t.match(/n[uú]mero\s*'(\d+)'\s*criada para o prestador\s*'[^']*17\.134\.491/i);
+      // OS criadas: "Ordem de serviço de número '11652' criada.Para o prestador 'AGE SOLUCOES ...'" (o nome da AGE varia no portal)
+      var reOS = /n[uú]mero\s*'(\d+)'\s*criada\.?\s*para o prestador\s*'([^']*)'/gi, mo, mos = null, temOS = false;
+      while ((mo = reOS.exec(t))) { temOS = true; if (EH_AGE.test(mo[2])) mos = mo; }
       var dsc = campo("descricao"), loc = campo("locais"), desc = [dsc, loc ? "Local: " + loc : "", campo("solicitante") ? "Solicitante: " + campo("solicitante") : "",
         campo("coordenador") ? "Coordenador: " + campo("coordenador") : "", mos ? "OS da AGE: " + mos[1] : ""].filter(Boolean).join(" · ");
-      var sa = semAcento(dsc);
+      var sa = semAcento(dsc), sitOS = "";
+      if (mos) {
+        var re = new RegExp("ordem servi[cç]o de n[uú]mero\\s*'" + mos[1] + "'\\s*foi alterado(?: de)?(?: para)?\\s*'([^']+)'", "gi"), mm;
+        while ((mm = re.exec(t))) sitOS = mm[1];
+      }
+      var stCh = campo("status chamado");
+      if (/finaliz|cancel/i.test(stCh)) sitOS = stCh;
       return { numero: campo("numero").replace(/\D/g, ""), data: campo("abertura"), loja: campo("centro"), prioridade: campo("prioridade"), desc: desc,
+        situacao: sitOS || "", outro: temOS && !mos, detalhes: true,
         cat: /pintura|pintar|parede|piso|alvenaria/.test(sa) && !/tomada|eletric|ilumina|lumin|quadro|disjuntor|cabo|fio/.test(sa) ? "pintura" : "eletrica" };
     }
     var m = t.match(/(\d{3,8})\s*[-–]\s*(\d{2}\/\d{2}\/\d{4})(?:\s+(\d{1,2}:\d{2}))?/);
@@ -697,6 +708,7 @@
     // tabela copiada com uma célula por linha: junta cada chamado a partir da data de abertura
     vistos = {};
     var blocos = t.split(/(?=\b(?:Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)\b\s+\d{2}\/\d{2}\/\d{4})/i).map(function (b) { return b.replace(/\s+/g, " "); });
+    if (lerLinhas(blocos).length < 2) blocos = t.split(/(?=^\s*\d{2}\/\d{2}\/\d{4}\s*\n\s*\d{3,8}\s*$)/m).map(function (b) { return b.replace(/\s+/g, " "); });
     return lerLinhas(blocos);
   }
   function lerLinhas(linhas) {
@@ -710,95 +722,118 @@
       if (!num || vistos[num]) return null;
       vistos[num] = true;
       var prio = (linha.match(/\b(Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)\b/i) || [])[1] || "";
-      return { numero: num, data: md[1], centro: mc[1] + mc[2], prioridade: prio, loja: lojaPorCodigo(mc[1] + mc[2]), ja: S.obras.some(function (o) { return o.chamado === num; }) };
+      var sit = (linha.match(/\b(Pendente|Or[cç]ada|Aprovada|Finalizada|Executada|Conclu[ií]da|Cancelada|Em atendimento|Em execu[cç][aã]o)\b/i) || [])[1] || "";
+      // aba Finalizados: tem a data de encerramento depois do centro
+      if (!sit && /\d{2}\/\d{2}\/\d{4}/.test(linha.slice(mc.index + mc[0].length))) sit = "Finalizado";
+      return { numero: num, data: md[1], centro: mc[1] + mc[2], prioridade: prio, situacao: sit };
     }).filter(Boolean);
   }
-  function importarLista(lista, janela) {
-    lista = lista.slice().sort(function (a, b) { return String(isoDeBR(b.data)).localeCompare(String(isoDeBR(a.data))); });
-    var novos = lista.filter(function (c) { return c.loja && !c.ja; });
-    var sem = lista.filter(function (c) { return !c.loja; }), ja = lista.filter(function (c) { return c.ja; });
-    // lançados no app e ainda abertos, mas que não vieram na lista colada (provavelmente finalizados no portal)
-    var naLista = {}; lista.forEach(function (c) { naLista[c.numero] = 1; });
-    var sumidos = S.obras.filter(function (o) {
-      return o.chamado && !naLista[o.chamado] && S.serv.some(function (x) { return x.obra_id === o.id && (x.status === "aberto" || x.status === "em_andamento"); });
+  // ---- caixa de chamados: junta várias colagens (páginas da lista, telas de detalhes), organiza e só então lança ----
+  var CHAVE_CAIXA = "age_caixa_chamados", caixaMem = null;
+  function lerCaixa() {
+    if (caixaMem) return caixaMem;
+    try { caixaMem = JSON.parse(localStorage.getItem(CHAVE_CAIXA) || "[]"); } catch (e) { caixaMem = []; }
+    return caixaMem;
+  }
+  function gravarCaixa(l) { caixaMem = l; try { localStorage.setItem(CHAVE_CAIXA, JSON.stringify(l)); } catch (e) { /* sem armazenamento: fica só na memória */ } }
+  // junta na caixa: mesmo nº = mesmo chamado (completa o que faltava, não duplica)
+  function juntarNaCaixa(itens) {
+    var cx = lerCaixa().slice(), novos = 0, atual = 0;
+    itens.forEach(function (it) {
+      if (!it.numero) return;
+      var ex = cx.filter(function (c) { return c.numero === it.numero; })[0];
+      var limpo = {}; Object.keys(it).forEach(function (k) { if (it[k] !== "" && it[k] !== null && it[k] !== undefined && it[k] !== false) limpo[k] = it[k]; });
+      if (ex) { Object.assign(ex, limpo); if (it.outro === false && it.detalhes) ex.outro = false; atual++; }
+      else { cx.push(Object.assign({ marcado: null }, limpo)); novos++; }
     });
-    var j = A.janela('<p style="margin-top:0"><b>' + lista.length + "</b> chamados na lista: <b>" + novos.length + "</b> novos" +
-      (ja.length ? ", " + ja.length + " já lançados" : "") + (sem.length ? ", " + sem.length + " com loja não cadastrada" : "") + ".</p>" +
-      '<div class="tabela-caixa"><table><thead><tr><th>Chamado</th><th>Abertura</th><th>Loja</th><th>Situação</th></tr></thead><tbody>' +
-      lista.map(function (c) {
-        return "<tr><td>" + esc(c.numero) + "</td><td>" + esc(c.data) + "</td><td>" + (c.loja ? esc(nomeLoja(c.loja)) : esc(c.centro)) + "</td><td>" +
-          (c.ja ? '<span class="selo">já lançado</span>' : c.loja ? '<span class="selo bom">novo</span>' : '<span class="selo critico">loja não cadastrada</span>') + "</td></tr>";
-      }).join("") + "</tbody></table></div>" +
-      (sumidos.length ? '<div class="aviso" style="margin-top:10px"><b>' + sumidos.length + " chamado" + (sumidos.length > 1 ? "s" : "") + "</b> aberto" + (sumidos.length > 1 ? "s" : "") +
-        " no app não " + (sumidos.length > 1 ? "vieram" : "veio") + " nesta lista (se você copiou a lista completa de Ativos, " + (sumidos.length > 1 ? "provavelmente foram finalizados" : "provavelmente foi finalizado") + " no portal): " +
-        sumidos.map(function (o) { return esc(o.chamado) + " (" + esc(o.cliente) + ")"; }).join(", ") + ". Confira e conclua no app.</div>" : "") +
-      '<label for="cl-cat">Área dos chamados novos</label><select id="cl-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
-      '<p class="peq mudo">Os serviços entram <b>sem funcionário</b>. Depois, na aba Serviços, filtre "Sem funcionário" e direcione cada um. A descrição do problema fica no portal do cliente: abra o chamado lá e complete no serviço, se quiser.</p>' +
-      '<div class="acoes">' + (novos.length ? '<button class="prim" id="cl-ok">Lançar ' + novos.length + " chamado" + (novos.length > 1 ? "s" : "") + "</button>" : "") + "</div>",
-      { titulo: "📋 Lista de chamados", larga: true });
-    if (janela) janela.fechar();
-    if (!novos.length) return;
-    $("#cl-ok", j.el).onclick = function () {
-      var b = this, cat = $("#cl-cat", j.el).value;
-      A.ocupado(b, true, "Lançando...");
-      q(sb.from("obras").insert(novos.map(function (c) {
-        return { cliente: nomeLoja(c.loja), endereco: nulo(enderecoLoja(c.loja)), telefone: nulo(c.loja.telefone), loja_id: c.loja.id, chamado: c.numero, chamado_aberto: isoDeBR(c.data) };
-      })).select()).then(function (obras) {
-        obras.forEach(function (o) { S.obras.unshift(o); });
-        return q(sb.from("servicos").insert(obras.map(function (o) {
-          var c = novos.filter(function (x) { return x.numero === o.chamado; })[0];
-          return { obra_id: o.id, categoria: cat, descricao: "Chamado nº " + c.numero + " (aberto em " + c.data + ")" + (c.prioridade ? " · prioridade " + c.prioridade : "") + "\nVer a descrição do problema no portal do cliente." };
-        })).select());
-      }).then(function (serv) {
-        serv.forEach(function (x) { S.serv.unshift(x); });
-        j.fechar(); filtroServ.func = "-";
-        location.hash = "#servicos"; rota();
-        var jr = A.janela("<p><b>" + serv.length + " chamados lançados.</b></p><p>Agora você pode direcionar cada um a um funcionário (lista abaixo, filtrada em “Sem funcionário”) ou montar a rota do dia com as lojas mais próximas umas das outras.</p>" +
-          '<div class="acoes"><button class="prim" id="cl-rota">🧭 Montar rota com as lojas</button><button id="cl-dir">Direcionar agora</button></div>', { titulo: "Chamados lançados" });
-        $("#cl-dir", jr.el).onclick = function () { jr.fechar(); };
-        $("#cl-rota", jr.el).onclick = function () { jr.fechar(); R.modo = "servicos"; R.cat = ""; location.hash = "#rotas"; };
-      }).catch(function (e) { A.ocupado(b, false); falhou(e); });
-    };
+    gravarCaixa(cx);
+    return { novos: novos, atual: atual };
+  }
+  // situação do item na caixa: já lançado, ignorado (com motivo) ou pronto
+  function avaliarItem(c) {
+    if (S.obras.some(function (o) { return o.chamado === c.numero; })) return { ja: true, txt: "já lançado", cor: "" };
+    if (c.outro) return { ignorar: true, txt: "OS de outro prestador", cor: "critico" };
+    if (c.situacao && /or[cç]ad|finaliz|execut|conclu|cancel/i.test(c.situacao)) return { ignorar: true, txt: "já " + c.situacao.toLowerCase(), cor: "critico" };
+    return { ok: true, txt: lojaPorCodigo(c.centro || c.loja) ? "novo" : "novo · loja não cadastrada", cor: lojaPorCodigo(c.centro || c.loja) ? "bom" : "atencao" };
   }
   function importarChamado() {
-    var j = A.janela('<p class="peq mudo" style="margin-top:0">Um chamado: abra no app do cliente, copie o texto e cole aqui.<br><b>Vários de uma vez:</b> no portal (computador), em <b>Meus chamados → Ativos</b>, selecione a tabela com o mouse, copie (Ctrl+C) e cole aqui.</p>' +
-      '<label for="ch-txt">Texto do chamado</label><textarea id="ch-txt" rows="5" placeholder="37377 - 29/09/2026 07:41&#10;L320 - Normal&#10;Elétrica/Gerador | Iluminação | Luminárias queimadas"></textarea>' +
-      '<div class="duas"><div><label for="ch-num">Nº do chamado *</label><input id="ch-num" maxlength="30" inputmode="numeric"></div>' +
-      '<div><label for="ch-loja">Loja (código) *</label><input id="ch-loja" maxlength="10" placeholder="Ex.: 320"></div></div>' +
-      '<div id="ch-achou" class="peq" style="margin-top:4px"></div>' +
-      '<div class="duas"><div><label for="ch-cat">Área</label><select id="ch-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select></div>' +
-      '<div><label for="ch-prio">Prioridade</label><input id="ch-prio" maxlength="30" placeholder="Normal"></div></div>' +
-      '<label for="ch-desc">O que fazer</label><textarea id="ch-desc" rows="3"></textarea>' +
-      '<div id="ch-erro"></div><div class="acoes"><button class="prim" id="ch-ok">Continuar →</button></div>', { titulo: "📋 Importar chamado" });
-    var el = j.el, dataCh = "";
-    function mostrarLoja() {
-      var l = lojaPorCodigo(val(el, "#ch-loja")), c = $("#ch-achou", el);
-      if (!val(el, "#ch-loja")) { c.innerHTML = ""; return; }
-      c.innerHTML = l ? '✅ <b>' + esc(nomeLoja(l)) + "</b> — " + esc(enderecoLoja(l)) : '<span class="selo critico">loja não encontrada</span> confira o código ou cadastre na aba <a href="#lojas">Lojas</a>.';
-    }
+    var j = A.janela('<p class="peq mudo" style="margin-top:0">Cole aqui quantas vezes quiser: <b>cada página</b> de <b>Meus chamados</b> ou de <b>Ordens de serviço</b> (selecione a tabela e Ctrl+C) ' +
+      "e a tela <b>Detalhes</b> de um chamado (completa a descrição). Tudo vai para a caixa abaixo, sem repetir. Depois confira e lance.</p>" +
+      '<textarea id="ch-txt" rows="3" placeholder="Cole aqui (Ctrl+V)"></textarea><div id="ch-msg" class="peq" style="margin-top:4px"></div><div id="cx"></div>',
+      { titulo: "📋 Chamados do BH", larga: true, aoFechar: function () { if (location.hash.slice(1) === "servicos") rota(); } });
+    var el = j.el;
     $("#ch-txt", el).oninput = function () {
-      var lista = lerListaChamados(this.value);
-      if (lista.length >= 2) { this.oninput = null; importarLista(lista, j); return; }
-      var c = lerChamado(this.value);
-      if (c.numero) $("#ch-num", el).value = c.numero;
-      if (c.loja) $("#ch-loja", el).value = c.loja;
-      if (c.prioridade) $("#ch-prio", el).value = c.prioridade;
-      if (c.desc) $("#ch-desc", el).value = c.desc;
-      $("#ch-cat", el).value = c.cat; dataCh = c.data;
-      mostrarLoja();
+      var t = this.value, c, itens = [];
+      if (!t.trim()) return;
+      c = lerChamado(t);
+      if (c.detalhes && c.numero) itens = [Object.assign({ centro: c.loja }, c)];      // tela Detalhes
+      else itens = lerListaChamados(t);                                                  // páginas da lista
+      if (!itens.length && c.numero) itens = [Object.assign({ centro: c.loja ? "L" + c.loja : "" }, c)];  // texto do app no celular
+      if (!itens.length) { $("#ch-msg", el).innerHTML = '<span class="selo critico">não reconheci chamados neste texto</span>'; return; }
+      var r = juntarNaCaixa(itens);
+      this.value = "";
+      $("#ch-msg", el).innerHTML = '<span class="selo bom">✔ ' + (r.novos ? r.novos + " adicionado" + (r.novos > 1 ? "s" : "") : "") + (r.novos && r.atual ? ", " : "") +
+        (r.atual ? r.atual + " já estava" + (r.atual > 1 ? "m" : "") + " na caixa (completado" + (r.atual > 1 ? "s" : "") + ")" : "") + "</span> Pode colar a próxima página.";
+      desenhar();
     };
-    $("#ch-loja", el).oninput = mostrarLoja;
-    $("#ch-ok", el).onclick = function () {
-      var num = val(el, "#ch-num").replace(/\s/g, ""), l = lojaPorCodigo(val(el, "#ch-loja")), erro = $("#ch-erro", el);
-      if (!num) { erro.innerHTML = '<div class="aviso erro">Informe o nº do chamado.</div>'; return; }
-      if (!l) { erro.innerHTML = '<div class="aviso erro">Loja não encontrada pelo código. Confira o número ou cadastre a loja na aba Lojas.</div>'; return; }
-      var ja = S.obras.filter(function (o) { return o.chamado === num; })[0];
-      if (ja && !confirm("O chamado " + num + " já foi lançado (" + ja.cliente + "). Lançar de novo?")) return;
-      var prio = val(el, "#ch-prio");
-      var desc = "Chamado nº " + num + (dataCh ? " (aberto em " + dataCh + ")" : "") + (prio ? " · prioridade " + prio : "") + "\n" + val(el, "#ch-desc");
-      j.fechar();
-      novoServico(null, { loja: l, chamado: num, aberto: isoDeBR(dataCh), cat: $("#ch-cat", el).value, desc: desc });
-    };
+    function desenhar() {
+      var cx = lerCaixa().slice().sort(function (a, b) { return String(isoDeBR(b.data)).localeCompare(String(isoDeBR(a.data))); });
+      if (!cx.length) { $("#cx", el).innerHTML = '<div class="cartao vazio" style="margin-top:10px">A caixa está vazia.</div>'; return; }
+      var av = cx.map(avaliarItem), marc = function (c, a) { return a.ja ? false : c.marcado === null || c.marcado === undefined ? !!a.ok : c.marcado; };
+      var nSel = cx.filter(function (c, i) { return marc(c, av[i]); }).length;
+      var ign = av.filter(function (a) { return a.ignorar; }).length, ja = av.filter(function (a) { return a.ja; }).length;
+      var botao = function (id) { return nSel ? '<button class="prim" id="' + id + '">Lançar ' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + "</button>" : ""; };
+      $("#cx", el).innerHTML = '<div class="cab-secao" style="margin-top:12px"><h2>Caixa: ' + cx.length + " chamado" + (cx.length > 1 ? "s" : "") + "</h2>" +
+        '<span class="mudo peq">' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + (ign ? " · " + ign + " ignorado" + (ign > 1 ? "s" : "") : "") + (ja ? " · " + ja + " já lançado" + (ja > 1 ? "s" : "") : "") + "</span></div>" +
+        '<div class="acoes" style="margin-top:0">' + botao("cx-lancar-topo") + '<button class="peq" id="cx-limpar">🗑 Esvaziar caixa</button></div>' +
+        '<div class="tabela-caixa"><table><thead><tr><th></th><th>Chamado</th><th>Abertura</th><th>Loja</th><th>O que fazer</th><th>Situação</th></tr></thead><tbody>' +
+        cx.map(function (c, i) {
+          var a = av[i], l = lojaPorCodigo(c.centro || c.loja);
+          return "<tr><td>" + (a.ja ? "" : '<input type="checkbox" data-cx="' + esc(c.numero) + '"' + (marc(c, a) ? " checked" : "") + ' aria-label="Lançar ' + esc(c.numero) + '">') + "</td><td>" + esc(c.numero) +
+            "</td><td>" + esc(c.data || "") + "</td><td>" + (l ? esc(nomeLoja(l)) : esc(c.centro || c.loja || "—")) + '</td><td class="peq">' + esc(String(c.desc || "").slice(0, 70)) +
+            "</td><td>" + '<span class="selo ' + a.cor + '">' + esc(a.txt) + "</span>" + (c.situacao && !a.ignorar ? ' <span class="peq mudo">' + esc(c.situacao) + "</span>" : "") + "</td></tr>";
+        }).join("") + "</tbody></table></div>" +
+        '<label for="cx-cat">Área (para os que não dizem)</label><select id="cx-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
+        '<p class="peq mudo">Ficam desmarcados os <b>já orçados/feitos</b> e os de <b>outro prestador</b> (marque se quiser lançar). Loja não cadastrada entra com o código do centro; cadastre a loja depois para entrar nas rotas. ' +
+        "Os serviços entram sem funcionário: depois, direcione na aba Serviços.</p>" +
+        '<div class="acoes">' + botao("cx-lancar") + "</div>";
+      $$("[data-cx]", el).forEach(function (cb) {
+        cb.onchange = function () { var l = lerCaixa(); l.forEach(function (c) { if (c.numero === cb.dataset.cx) c.marcado = cb.checked; }); gravarCaixa(l); desenhar(); };
+      });
+      $("#cx-limpar", el).onclick = function () { if (A.confirmar("Esvaziar a caixa? (os chamados já lançados não são apagados)")) { gravarCaixa([]); desenhar(); } };
+      var lancar = function () { lancarCaixa(this, cx.filter(function (c, i) { return marc(c, av[i]); }), $("#cx-cat", el).value, j); };
+      if ($("#cx-lancar", el)) $("#cx-lancar", el).onclick = lancar;
+      if ($("#cx-lancar-topo", el)) $("#cx-lancar-topo", el).onclick = lancar;
+    }
+    desenhar();
+    $("#ch-txt", el).focus();
+  }
+  function lancarCaixa(b, sel, catPadrao, janela) {
+    if (!sel.length) return;
+    A.ocupado(b, true, "Lançando...");
+    q(sb.from("obras").insert(sel.map(function (c) {
+      var l = lojaPorCodigo(c.centro || c.loja);
+      return { cliente: l ? nomeLoja(l) : "Centro " + (c.centro || c.loja || "?"), endereco: l ? nulo(enderecoLoja(l)) : null, telefone: l ? nulo(l.telefone) : null,
+        loja_id: l ? l.id : null, chamado: c.numero, chamado_aberto: isoDeBR(c.data) };
+    })).select()).then(function (obras) {
+      obras.forEach(function (o) { S.obras.unshift(o); });
+      return q(sb.from("servicos").insert(obras.map(function (o) {
+        var c = sel.filter(function (x) { return x.numero === o.chamado; })[0];
+        return { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao,
+          descricao: "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "") + (c.prioridade ? " · prioridade " + c.prioridade : "") + "\n" +
+            (c.desc || "Ver a descrição do problema no portal do cliente.") };
+      })).select());
+    }).then(function (serv) {
+      serv.forEach(function (x) { S.serv.unshift(x); });
+      var feitos = {}; sel.forEach(function (c) { feitos[c.numero] = 1; });
+      gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
+      janela.fechar(); filtroServ.func = "-";
+      location.hash = "#servicos"; rota();
+      var jr = A.janela("<p><b>" + serv.length + " chamado" + (serv.length > 1 ? "s" : "") + " lançado" + (serv.length > 1 ? "s" : "") + ".</b></p><p>Agora direcione cada um a um funcionário (lista filtrada em “Sem funcionário”) ou monte a rota do dia com as lojas mais próximas umas das outras.</p>" +
+        '<div class="acoes"><button class="prim" id="cl-rota">🧭 Montar rota com as lojas</button><button id="cl-dir">Direcionar agora</button></div>', { titulo: "Chamados lançados" });
+      $("#cl-dir", jr.el).onclick = function () { jr.fechar(); };
+      $("#cl-rota", jr.el).onclick = function () { jr.fechar(); R.modo = "servicos"; R.cat = ""; location.hash = "#rotas"; };
+    }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
 
   function editarObra(id) {
@@ -1276,6 +1311,72 @@
   }
   function P_compartilha() {
     try { return !!(navigator.canShare && navigator.canShare({ files: [new File(["x"], "x.jpg", { type: "image/jpeg" })] })); } catch (e) { return false; }
+  }
+
+  // =================================================================
+  // SERVIÇOS EXECUTADOS (por dia de execução, com loja e fotos)
+  // =================================================================
+  var filtroExec = { dias: "30", cat: "", func: "", busca: "" };
+  function dataExecucao(s) {
+    if (s.concluido_em) return new Date(s.concluido_em);
+    var rs = S.rel.filter(function (r) { return r.servico_id === s.id && r.concluido; });
+    return rs.length ? new Date(rs[0].criado_em) : new Date(s.criado_em);
+  }
+  function verExecutados(c) {
+    var F = filtroExec;
+    c.innerHTML = '<div class="cab-secao"><h2>✅ Serviços executados</h2></div>' +
+      '<div class="filtros"><select id="fx-dias" aria-label="Período"><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="365">Último ano</option><option value="">Tudo</option></select>' +
+      '<select id="fx-cat" aria-label="Área"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
+      '<select id="fx-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
+      '<input id="fx-busca" type="search" placeholder="Buscar loja, cliente ou nº do chamado"></div><div id="fx-res"></div>';
+    $("#fx-dias").value = F.dias; $("#fx-cat").value = F.cat; $("#fx-func").value = F.func; $("#fx-busca").value = F.busca;
+    ["#fx-dias", "#fx-cat", "#fx-func"].forEach(function (id) { $(id).onchange = function () { ler(); listar(); }; });
+    $("#fx-busca").oninput = function () { ler(); listar(); };
+    function ler() { F.dias = $("#fx-dias").value; F.cat = $("#fx-cat").value; F.func = $("#fx-func").value; F.busca = semAcento($("#fx-busca").value.trim()); }
+    function listar() {
+      var limite = F.dias ? Date.now() - Number(F.dias) * 864e5 : 0;
+      var lista = S.serv.filter(function (s) {
+        if (s.status !== "concluido") return false;
+        if (F.cat && s.categoria !== F.cat) return false;
+        if (F.func && s.funcionario_id !== F.func) return false;
+        if (dataExecucao(s).getTime() < limite) return false;
+        var o = porId(S.obras, s.obra_id);
+        if (F.busca && semAcento([o && o.cliente, o && o.endereco, o && o.chamado, o && o.protocolo].join(" ")).indexOf(F.busca) < 0) return false;
+        return true;
+      }).sort(function (a, b) { return dataExecucao(b) - dataExecucao(a); });
+      var r = $("#fx-res");
+      if (!lista.length) { r.innerHTML = '<div class="cartao vazio">Nenhum serviço executado neste período.</div>'; return; }
+      var dias = {}, ordem = [];
+      lista.forEach(function (s) { var d = A.isoLocal(dataExecucao(s)); if (!dias[d]) { dias[d] = []; ordem.push(d); } dias[d].push(s); });
+      r.innerHTML = '<p class="mudo peq" style="margin:-4px 0 10px">' + lista.length + " serviço" + (lista.length > 1 ? "s" : "") + " executado" + (lista.length > 1 ? "s" : "") + " em " + ordem.length + " dia" + (ordem.length > 1 ? "s" : "") + ".</p>" +
+        ordem.map(function (d) {
+          var ss = dias[d], lojas = {};
+          ss.forEach(function (s) { var o = porId(S.obras, s.obra_id); lojas[(o && (o.loja_id || o.id)) || s.id] = 1; });
+          return '<div class="cab-secao" style="margin-top:14px"><h2>📅 ' + A.dataSimples(d) + "</h2><span class=\"mudo peq\">" + ss.length + " serviço" + (ss.length > 1 ? "s" : "") +
+            " · " + Object.keys(lojas).length + " local" + (Object.keys(lojas).length > 1 ? "is" : "") + "</span></div>" + ss.map(cartaoExecutado).join("");
+        }).join("");
+      hidratarFotos(r);
+      $$("[data-exec-rel]", r).forEach(function (b) { b.onclick = function () { abrirRelatorio(b.dataset.execRel); }; });
+      $$("[data-exec-serv]", r).forEach(function (b) { b.onclick = function () { abrirServico(b.dataset.execServ); }; });
+    }
+    function cartaoExecutado(s) {
+      var o = porId(S.obras, s.obra_id) || {}, rels = S.rel.filter(function (x) { return x.servico_id === s.id; });
+      var antes = [], depois = [];
+      rels.forEach(function (x) { antes = antes.concat(x.fotos_antes || []); depois = depois.concat(x.fotos || []); });
+      rels.forEach(function (x) { (x.fotos_antes || []).forEach(function (f) { infoFoto[f] = "Foto ANTES · " + esc(o.cliente || "") + " · " + A.dataHora(x.criado_em); }); (x.fotos || []).forEach(function (f) { infoFoto[f] = "Foto · " + esc(o.cliente || "") + " · " + A.dataHora(x.criado_em); }); });
+      var fotos = antes.slice(0, 3).map(function (f) { return htmlFoto(f, "antes"); }).concat(depois.slice(0, antes.length ? 3 : 6).map(function (f) { return htmlFoto(f, antes.length ? "depois" : ""); }));
+      var mais = antes.length + depois.length - fotos.length;
+      return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente || "Serviço") + "</h3>" + seloOS(o) + seloChamado(o) +
+        '<span class="dir mudo peq">' + A.hora(dataExecucao(s)) + "</span></div>" +
+        '<div class="linha">' + A.seloCategoria(s.categoria) + '<span class="peq">👷 ' + esc(nomeFunc(s.funcionario_id) || "—") + "</span>" +
+        (o.chamado ? '<span class="selo atencao">finalizar chamado ' + esc(o.chamado) + " no portal</span>" : "") + "</div>" +
+        (o.endereco ? '<div class="peq mudo">📍 ' + esc(o.endereco) + "</div>" : "") +
+        (s.descricao ? '<div class="peq" style="margin-top:4px">' + esc(resumoServ(s, 160)) + "</div>" : "") +
+        (fotos.length ? '<div class="fotos" style="margin-top:8px">' + fotos.join("") + "</div>" + (mais > 0 ? '<div class="peq mudo">+ ' + mais + " foto" + (mais > 1 ? "s" : "") + " no relatório</div>" : "") :
+          '<div class="peq mudo" style="margin-top:6px">Sem fotos no relatório.</div>') +
+        '<div class="acoes">' + (rels.length ? '<button class="peq" data-exec-rel="' + rels[0].id + '">📝 Ver relatório</button>' : "") + '<button class="peq" data-exec-serv="' + s.id + '">Abrir serviço</button></div></div>';
+    }
+    listar();
   }
 
   function verRelatorios(c) {
@@ -2340,6 +2441,7 @@
   }
   function msgRota(r) {
     var f = porId(S.func, r.funcionario_id);
+    r = Object.assign({}, r, { paradas: r.id ? (r.paradas || []).filter(function (p) { return !paradaFeita(p, r); }) : r.paradas });
     var t = "*AGE Elétrica e Pintura — " + r.nome + "*\n" + (r.data ? "Data: " + A.dataSimples(r.data) + "\n" : "") + r.paradas.length + " paradas, na ordem:\n\n";
     var abertos = {};
     lojasComServico("").forEach(function (x) { abertos[x.loja.id] = x.servicos; });
@@ -2373,16 +2475,31 @@
       }).catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
   }
+  // loja da rota já atendida: serviço dela concluído depois que a rota foi criada e nada mais aberto
+  function paradaFeita(p, r) {
+    if (!p.loja_id) return false;
+    var feito = false, aberto = false;
+    S.serv.forEach(function (x) {
+      var o = porId(S.obras, x.obra_id);
+      if (!o || o.loja_id !== p.loja_id) return;
+      if (x.status === "aberto" || x.status === "em_andamento") aberto = true;
+      else if (x.status === "concluido" && x.concluido_em && x.concluido_em >= r.criado_em) feito = true;
+    });
+    return feito && !aberto;
+  }
   function desenharSalvas() {
     var c = $("#rt-salvas");
     if (!c) return;
     if (!S.rotas.length) { c.innerHTML = '<div class="cartao vazio">Nenhuma rota salva.</div>'; return; }
     c.innerHTML = S.rotas.slice(0, 60).map(function (r) {
-      var f = porId(S.func, r.funcionario_id), links = G.linksGoogle(r.partida && G.temLocal(r.partida) ? r.partida : null, r.paradas || [], false);
-      return '<div class="cartao"><div class="linha"><h3>' + esc(r.nome) + "</h3>" + (r.data ? '<span class="selo">📅 ' + A.dataSimples(r.data) + "</span>" : "") +
+      var f = porId(S.func, r.funcionario_id), pend = (r.paradas || []).filter(function (p) { return !paradaFeita(p, r); });
+      var links = G.linksGoogle(r.partida && G.temLocal(r.partida) ? r.partida : null, pend, false), feitas = (r.paradas || []).length - pend.length;
+      return '<div class="cartao"' + (!pend.length ? ' style="opacity:.75"' : "") + '><div class="linha"><h3>' + esc(r.nome) + "</h3>" + (r.data ? '<span class="selo">📅 ' + A.dataSimples(r.data) + "</span>" : "") +
+        (!pend.length ? '<span class="selo bom">✅ concluída</span>' : feitas ? '<span class="selo atencao">✔ ' + feitas + " de " + (r.paradas || []).length + " feitas</span>" : "") +
         '<span class="dir mudo peq">' + (r.paradas || []).length + " paradas" + (r.km ? " · ≈ " + A.numero(r.km, 0) + " km" : "") + "</span></div>" +
         '<div class="peq">' + (f ? "👷 " + esc(f.nome) : '<span class="mudo">sem funcionário</span>') + " · " +
-        esc((r.paradas || []).map(function (p) { return p.codigo || p.nome; }).join(" → ")) + "</div>" +
+        (r.paradas || []).map(function (p) { var t = esc(p.codigo || p.nome); return paradaFeita(p, r) ? "<s>" + t + "</s> ✔" : t; }).join(" → ") +
+        (feitas ? ' <span class="mudo">(as feitas saíram do app do funcionário e estão em <a href="#executados">✅ Executados</a>)</span>' : "") + "</div>" +
         '<div class="acoes">' + links.map(function (u, k) { return '<a class="botao peq" target="_blank" rel="noopener" href="' + esc(u) + '">🗺 Google Maps' + (links.length > 1 ? " " + (k + 1) : "") + "</a>"; }).join("") +
         (f && f.telefone ? '<a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgRota(r))) + '">📲 WhatsApp</a>' : "") +
         '<button class="peq perigo" data-apagar-rota="' + r.id + '">Apagar</button></div></div>';
