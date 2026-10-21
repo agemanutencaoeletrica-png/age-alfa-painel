@@ -495,9 +495,21 @@
         var d = dataObra(b) - dataObra(a);
         return F.ordem === "antigos" ? -d : d;
       });
+      // chamados diferentes da mesma loja ficam juntos (o grupo fica na posição do mais recente/antigo)
+      var grupos = {}, ordemG = [];
+      obras.forEach(function (o) {
+        var k = o.loja_id ? "l:" + o.loja_id : "c:" + String(o.cliente || "").trim().toLowerCase();
+        if (!grupos[k]) { grupos[k] = []; ordemG.push(k); }
+        grupos[k].push(o);
+      });
       var l = $("#lista-serv");
       if (!obras.length) { l.innerHTML = '<div class="cartao vazio">Nenhum serviço com este filtro.</div>'; return; }
-      l.innerHTML = obras.map(function (o) {
+      l.innerHTML = ordemG.map(function (k) {
+        var g = grupos[k];
+        return (g.length > 1 ? '<div class="peq mudo" style="margin:12px 0 4px;font-weight:600">🏪 ' + esc(g[0].cliente) + " · " + g.length + " nesta loja</div>" : "") +
+          g.map(cartaoObra).join("");
+      }).join("");
+      function cartaoObra(o) {
         var partes = S.serv.filter(function (s) { return s.obra_id === o.id && passa(s); });
         return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente) + "</h3>" + seloOS(o) + seloChamado(o) +
           '<span class="dir"><button class="peq" data-parte="' + o.id + '">+ Parte</button> <button class="peq" data-orc-obra="' + o.id + '">💲 Orçamento</button> ' +
@@ -513,7 +525,7 @@
               (s.descricao ? '<div class="peq" style="margin-top:4px;white-space:pre-wrap">' + esc(s.descricao.length > 220 ? s.descricao.slice(0, 220) + "…" : s.descricao) + "</div>" : "") +
               "</div>";
           }).join("") + "</div>";
-      }).join("");
+      }
       $$("[data-serv]", l).forEach(function (d) {
         d.onclick = function () { abrirServico(d.dataset.serv); };
         d.onkeydown = function (ev) { if (ev.key === "Enter") abrirServico(d.dataset.serv); };
@@ -662,7 +674,8 @@
       for (var i = 0; i < ls.length - 1; i++) if (semAcento(ls[i]) === rot) return ls[i + 1];
       return "";
     }
-    if (campo("numero") && campo("centro")) {
+    // a página da lista traz o filtro "Número / 0 ... Centro / Selecione uma opção": isso não é a tela Detalhes
+    if (/^\d*[1-9]\d*$/.test(campo("numero")) && /^[a-z]?\s*\d/i.test(campo("centro"))) {
       // OS criadas: "Ordem de serviço de número '11652' criada.Para o prestador 'AGE SOLUCOES ...'" (o nome da AGE varia no portal)
       var reOS = /n[uú]mero\s*'(\d+)'\s*criada\.?\s*para o prestador\s*'([^']*)'/gi, mo, mos = null, temOS = false;
       while ((mo = reOS.exec(t))) { temOS = true; if (EH_AGE.test(mo[2])) mos = mo; }
@@ -787,6 +800,12 @@
     function desenhar() {
       var cx = lerCaixa().slice().sort(function (a, b) { return String(isoDeBR(b.data)).localeCompare(String(isoDeBR(a.data))); });
       if (!cx.length) { $("#cx", el).innerHTML = '<div class="cartao vazio" style="margin-top:10px">A caixa está vazia.</div>'; return; }
+      // chamados da mesma loja juntos: o grupo fica na posição do chamado mais recente
+      var chaveLoja = function (c) { var t = String(c.centro || c.loja || "").toUpperCase(), n = parseInt(t.replace(/\D/g, ""), 10); return isNaN(n) ? "?" + c.numero : (t.match(/^P/) ? "P" : "L") + n; };
+      var gr = {}, ordG = [];
+      cx.forEach(function (c) { var k = chaveLoja(c); if (!gr[k]) { gr[k] = []; ordG.push(k); } gr[k].push(c); });
+      cx = [].concat.apply([], ordG.map(function (k) { return gr[k]; }));
+      var qtdLoja = function (c) { return gr[chaveLoja(c)].length; };
       var av = cx.map(avaliarItem), marc = function (c, a) { return a.ja ? false : c.marcado === null || c.marcado === undefined ? !!a.ok : c.marcado; };
       var nSel = cx.filter(function (c, i) { return marc(c, av[i]); }).length;
       var ign = av.filter(function (a) { return a.ignorar; }).length, ja = av.filter(function (a) { return a.ja; }).length;
@@ -801,8 +820,10 @@
         '<div class="acoes" style="margin-top:0">' + botao("cx-lancar-topo") + '<button class="peq" id="cx-limpar">🗑 Esvaziar caixa</button></div>' +
         '<div class="tabela-caixa"><table><thead><tr><th></th><th>Chamado</th><th>Abertura</th><th>Loja</th><th>O que fazer</th><th>Situação</th></tr></thead><tbody>' +
         cx.map(function (c, i) {
-          var a = av[i], l = lojaPorCodigo(c.centro || c.loja);
-          return "<tr><td>" + (a.ja ? (a.atualizar ? '<input type="checkbox" data-cxa="' + esc(c.numero) + '"' + (marcAt(c, a) ? " checked" : "") + ' aria-label="Atualizar ' + esc(c.numero) + '">' : "") : '<input type="checkbox" data-cx="' + esc(c.numero) + '"' + (marc(c, a) ? " checked" : "") + ' aria-label="Lançar ' + esc(c.numero) + '">') + "</td><td>" + esc(c.numero) +
+          var a = av[i], l = lojaPorCodigo(c.centro || c.loja), q = qtdLoja(c);
+          var cab = q > 1 && (i === 0 || chaveLoja(cx[i - 1]) !== chaveLoja(c)) ?
+            '<tr class="grupo-loja"><td colspan="6" class="peq" style="font-weight:600;background:rgba(127,127,127,.12)">🏪 ' + esc(l ? nomeLoja(l) : c.centro || c.loja) + " · " + q + " chamados nesta loja</td></tr>" : "";
+          return cab + "<tr><td>" + (a.ja ? (a.atualizar ? '<input type="checkbox" data-cxa="' + esc(c.numero) + '"' + (marcAt(c, a) ? " checked" : "") + ' aria-label="Atualizar ' + esc(c.numero) + '">' : "") : '<input type="checkbox" data-cx="' + esc(c.numero) + '"' + (marc(c, a) ? " checked" : "") + ' aria-label="Lançar ' + esc(c.numero) + '">') + "</td><td>" + esc(c.numero) +
             "</td><td>" + esc(c.data || "") + "</td><td>" + (l ? esc(nomeLoja(l)) : esc(c.centro || c.loja || "—")) + '</td><td class="peq">' + esc(String(c.desc || "").slice(0, 70)) +
             "</td><td>" + '<span class="selo ' + a.cor + '">' + esc(a.txt) + "</span>" + (c.situacao && !a.ignorar ? ' <span class="peq mudo">' + esc(c.situacao) + "</span>" : "") + "</td></tr>";
         }).join("") + "</tbody></table></div>" +
