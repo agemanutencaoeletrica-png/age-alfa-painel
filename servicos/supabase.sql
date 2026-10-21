@@ -274,6 +274,25 @@ create table if not exists public.km_registros (
 create index if not exists km_veic_idx on public.km_registros (veiculo_id, criado_em);
 create index if not exists km_func_idx on public.km_registros (funcionario_id, criado_em);
 
+-- Pagamentos da equipe (Pix): lidos do comprovante do banco, com a imagem guardada nas fotos (pasta admin/)
+create table if not exists public.pagamentos (
+  id             uuid primary key default gen_random_uuid(),
+  funcionario_id uuid references public.funcionarios (id) on delete set null,
+  valor          numeric(12,2) not null check (valor > 0),
+  pago_em        timestamptz not null,
+  tipo           text not null default 'diaria',
+  favorecido     text,             -- nome que aparece no comprovante
+  id_transacao   text,             -- evita registrar o mesmo Pix duas vezes
+  descricao      text,
+  comprovante    text,             -- caminho da imagem do comprovante
+  forma          text not null default 'pix',   -- pix ou especie (dinheiro)
+  criado_em      timestamptz not null default now()
+);
+alter table public.pagamentos add column if not exists forma text not null default 'pix';
+alter table public.funcionarios add column if not exists pix text;   -- chave Pix: o app reconhece os comprovantes
+create unique index if not exists pagamentos_trans_idx on public.pagamentos (id_transacao) where id_transacao is not null;
+create index if not exists pagamentos_func_idx on public.pagamentos (funcionario_id, pago_em);
+
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
   id             uuid primary key default gen_random_uuid(),
@@ -338,7 +357,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros'] loop
+                             'veiculos', 'km_registros', 'pagamentos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
@@ -730,6 +749,11 @@ create policy age_fotos_func_envia on storage.objects for insert to anon, authen
 drop policy if exists age_fotos_admin_le on storage.objects;
 create policy age_fotos_admin_le on storage.objects for select to authenticated
   using (bucket_id = 'fotos' and public.eh_admin());
+
+-- você (admin) guarda os comprovantes de pagamento na pasta admin/
+drop policy if exists age_fotos_admin_envia on storage.objects;
+create policy age_fotos_admin_envia on storage.objects for insert to authenticated
+  with check (bucket_id = 'fotos' and public.eh_admin() and (storage.foldername(name))[1] = 'admin');
 
 drop policy if exists age_fotos_admin_apaga on storage.objects;
 create policy age_fotos_admin_apaga on storage.objects for delete to authenticated
