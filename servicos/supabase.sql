@@ -138,6 +138,9 @@ alter table public.relatorios add column if not exists assinado_em  timestamptz;
 alter table public.servicos   add column if not exists pede_assinatura boolean not null default false;
 -- o cliente autorizou divulgar as fotos do serviço nas redes sociais (botão 📣 Divulgar)
 alter table public.obras      add column if not exists autoriza_divulgar boolean not null default false;
+-- nº do chamado do cliente (ex.: app de chamados do Supermercados BH)
+alter table public.obras      add column if not exists chamado text;
+create index if not exists obras_chamado_idx on public.obras (chamado);
 
 -- ---------- Serviços para prefeituras (órgãos públicos) ----------
 -- Várias prefeituras; cada uma com seus contratos (planilha de preços) e as

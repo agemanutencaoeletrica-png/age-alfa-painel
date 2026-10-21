@@ -450,13 +450,13 @@
 
   function verServicos(c) {
     var F = filtroServ;
-    var h = '<div class="cab-secao"><h2>Serviços</h2><button class="prim" id="b-novo-serv">+ Novo serviço</button></div>' +
+    var h = '<div class="cab-secao"><h2>Serviços</h2><span><button id="b-chamado">📋 Chamado BH</button> <button class="prim" id="b-novo-serv">+ Novo serviço</button></span></div>' +
       '<div class="filtros"><select id="fs-cat" aria-label="Categoria"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
       '<select id="fs-st" aria-label="Situação"><option value="ativos">Abertos e em andamento</option><option value="aberto">Abertos</option><option value="em_andamento">Em andamento</option>' +
       '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="equipe">Criados pela equipe</option><option value="todos">Todos</option></select>' +
       '<select id="fs-func" aria-label="Funcionário"><option value="">Todos os funcionários</option><option value="-">Sem funcionário</option>' +
       S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
-      '<input id="fs-busca" type="search" placeholder="Buscar cliente ou endereço"></div>' +
+      '<input id="fs-busca" type="search" placeholder="Buscar cliente, endereço ou nº do chamado"></div>' +
       (S.pref.length ? '<p class="mudo peq" style="margin:-4px 0 10px">Aqui ficam os clientes particulares e as lojas. As OS da prefeitura ficam na aba <a href="#prefeitura">🏛️ Prefeitura</a>.</p>' : "") +
       '<div id="lista-serv"></div>';
     c.innerHTML = h;
@@ -464,6 +464,7 @@
     ["#fs-cat", "#fs-st", "#fs-func"].forEach(function (s) { $(s).onchange = function () { lerFiltro(); listar(); }; });
     $("#fs-busca").oninput = function () { lerFiltro(); listar(); };
     $("#b-novo-serv").onclick = function () { novoServico(null); };
+    $("#b-chamado").onclick = importarChamado;
     function lerFiltro() { F.cat = $("#fs-cat").value; F.st = $("#fs-st").value; F.func = $("#fs-func").value; F.busca = $("#fs-busca").value.trim().toLowerCase(); }
 
     function passa(s) {
@@ -478,7 +479,7 @@
     function listar() {
       var obras = S.obras.filter(function (o) {
         if (ehPrefObra(o)) return false;
-        if (F.busca && ((o.cliente || "") + " " + (o.endereco || "") + " " + (o.telefone || "")).toLowerCase().indexOf(F.busca) < 0) return false;
+        if (F.busca && ((o.cliente || "") + " " + (o.endereco || "") + " " + (o.telefone || "") + " " + (o.chamado || "")).toLowerCase().indexOf(F.busca) < 0) return false;
         var partes = S.serv.filter(function (s) { return s.obra_id === o.id; });
         if (!partes.length) return F.st === "todos" && !F.cat && !F.func;
         return partes.some(passa);
@@ -487,7 +488,7 @@
       if (!obras.length) { l.innerHTML = '<div class="cartao vazio">Nenhum serviço com este filtro.</div>'; return; }
       l.innerHTML = obras.map(function (o) {
         var partes = S.serv.filter(function (s) { return s.obra_id === o.id && passa(s); });
-        return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente) + "</h3>" + seloOS(o) +
+        return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente) + "</h3>" + seloOS(o) + seloChamado(o) +
           '<span class="dir"><button class="peq" data-parte="' + o.id + '">+ Parte</button> <button class="peq" data-orc-obra="' + o.id + '">💲 Orçamento</button> ' +
           '<button class="peq" data-obra="' + o.id + '">Editar</button></span></div>' +
           (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
@@ -513,6 +514,8 @@
     listar();
   }
 
+  function seloChamado(o) { return o && o.chamado ? '<span class="selo">📋 Chamado ' + esc(o.chamado) + "</span>" : ""; }
+
   function seloOS(o) {
     if (!o || !o.prefeitura_id) return "";
     var p = porId(S.pref, o.prefeitura_id);
@@ -524,7 +527,7 @@
     var t = "*AGE Elétrica e Pintura*\nServiço de " + (A.CATEG[s.categoria].icone + " *" + A.CATEG[s.categoria].nome.toUpperCase()) + "*\n\n" +
       (o.prefeitura_id ? "🏛️ " + ((porId(S.pref, o.prefeitura_id) || {}).nome || "Prefeitura") + (o.protocolo ? " · OS/Protocolo " + o.protocolo : "") + "\n" +
         (o.fiscal ? "Fiscal: " + o.fiscal + "\n" : "") : "") +
-      "Cliente: " + o.cliente + "\n" + (o.referencia ? "Referência: " + o.referencia + "\n" : "") + (o.endereco ? "Endereço: " + o.endereco + "\n" : "") + (o.telefone ? "Telefone: " + o.telefone + "\n" : "") +
+      "Cliente: " + o.cliente + "\n" + (o.chamado ? "Chamado nº " + o.chamado + "\n" : "") + (o.referencia ? "Referência: " + o.referencia + "\n" : "") + (o.endereco ? "Endereço: " + o.endereco + "\n" : "") + (o.telefone ? "Telefone: " + o.telefone + "\n" : "") +
       (s.data_prevista ? "Data: " + A.dataSimples(s.data_prevista) + "\n" : "") + (s.descricao ? "\nO que fazer:\n" + s.descricao + "\n" : "") +
       (o.prefeitura_id ? "\n📷 Fotos de ANTES e de DEPOIS são obrigatórias (no relatório do app).\n" : "") +
       (s.pede_assinatura ? "\n✍️ Ao concluir, colher a ASSINATURA do " + (o.prefeitura_id ? "FISCAL" : "responsável no local") + " (no relatório do app).\n" : "");
@@ -547,8 +550,9 @@
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="ns-' + cat + '-assin"> ✍️ Liberar assinatura do responsável neste serviço <span class="mudo peq">(desligado: o funcionário não vê o quadro de assinatura)</span></label></div></div>';
   }
 
-  function novoServico(obraId) {
+  function novoServico(obraId, pre) {
     var obra = obraId ? porId(S.obras, obraId) : null;
+    pre = pre || {};
     var j = A.janela(
       (obra ? '<div class="cartao" style="margin:0"><b>' + esc(obra.cliente) + "</b><div class=\"peq mudo\">" + esc(obra.endereco || "") + "</div></div>" :
         (S.lojas.length ? '<label for="ns-loja">Loja da rede (opcional)</label><input id="ns-loja" list="ns-dl-lojas" placeholder="Digite o número, nome ou cidade da loja">' +
@@ -575,6 +579,11 @@
     ["eletrica", "pintura"].forEach(function (cat) {
       $("#ns-" + cat, el).onchange = function () { $("#ns-" + cat + "-campos", el).classList.toggle("oculto", !this.checked); };
     });
+    // vindo de um chamado: loja, área e descrição já preenchidas
+    if (pre.loja && $("#ns-loja", el)) { $("#ns-loja", el).value = rotuloLoja(pre.loja); $("#ns-loja", el).onchange(); }
+    else if (pre.cliente && $("#ns-cli", el)) $("#ns-cli", el).value = pre.cliente;
+    if (pre.obs && $("#ns-obs", el)) $("#ns-obs", el).value = pre.obs;
+    if (pre.cat) { $("#ns-" + pre.cat, el).checked = true; $("#ns-" + pre.cat, el).onchange(); $("#ns-" + pre.cat + "-desc", el).value = pre.desc || ""; }
     $("#ns-salvar", el).onclick = function () {
       var b = this, erro = $("#ns-erro", el);
       var cats = ["eletrica", "pintura"].filter(function (cat) { return $("#ns-" + cat, el).checked; });
@@ -584,7 +593,8 @@
       var pObra = obra ? Promise.resolve(obra) : q(sb.from("obras").insert({
         cliente: val(el, "#ns-cli"), telefone: nulo(val(el, "#ns-tel")), email: nulo(val(el, "#ns-email")), endereco: nulo(val(el, "#ns-end")), observacoes: nulo(val(el, "#ns-obs")),
         autoriza_divulgar: $("#ns-divulgar", el).checked ? true : undefined,
-        loja_id: lojaEscolhida && $("#ns-loja", el).value === rotuloLoja(lojaEscolhida) ? lojaEscolhida.id : null
+        loja_id: lojaEscolhida && $("#ns-loja", el).value === rotuloLoja(lojaEscolhida) ? lojaEscolhida.id : null,
+        chamado: pre.chamado || undefined
       }).select().single()).then(function (o) { S.obras.unshift(o); obra = o; return o; });
       pObra.then(function (o) {
         return q(sb.from("servicos").insert(cats.map(function (cat) {
@@ -604,6 +614,144 @@
         A.ocupado(b, false);
         erro.innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>";
       });
+    };
+  }
+
+  // ---- chamados do cliente (ex.: app do Supermercados BH): cola o texto e vira um serviço ----
+  // Formato reconhecido:  "37377 - 29/09/2026 07:41 / L320 - Normal / Elétrica/Gerador | Iluminação | Luminárias queimadas"
+  function lerChamado(texto) {
+    var t = String(texto || "").replace(/\r/g, "");
+    // tela "Detalhes" do portal: rótulo numa linha e valor na linha seguinte
+    var ls = t.split("\n").map(function (x) { return x.trim(); }).filter(Boolean);
+    function campo(rot) {
+      for (var i = 0; i < ls.length - 1; i++) if (semAcento(ls[i]) === rot) return ls[i + 1];
+      return "";
+    }
+    if (campo("numero") && campo("centro")) {
+      var mos = t.match(/n[uú]mero\s*'(\d+)'\s*criada para o prestador\s*'[^']*17\.134\.491/i);
+      var dsc = campo("descricao"), loc = campo("locais"), desc = [dsc, loc ? "Local: " + loc : "", campo("solicitante") ? "Solicitante: " + campo("solicitante") : "",
+        campo("coordenador") ? "Coordenador: " + campo("coordenador") : "", mos ? "OS da AGE: " + mos[1] : ""].filter(Boolean).join(" · ");
+      var sa = semAcento(dsc);
+      return { numero: campo("numero").replace(/\D/g, ""), data: campo("abertura"), loja: campo("centro"), prioridade: campo("prioridade"), desc: desc,
+        cat: /pintura|pintar|parede|piso|alvenaria/.test(sa) && !/tomada|eletric|ilumina|lumin|quadro|disjuntor|cabo|fio/.test(sa) ? "pintura" : "eletrica" };
+    }
+    var m = t.match(/(\d{3,8})\s*[-–]\s*(\d{2}\/\d{2}\/\d{4})(?:\s+(\d{1,2}:\d{2}))?/);
+    var ml = t.match(/\bL\s*0*(\d{1,4})\b(?:\s*[-–]\s*([A-Za-zÀ-ú]+))?/);
+    var linhas = t.split(/\n+/).map(function (x) { return x.trim(); }).filter(Boolean);
+    var desc = linhas.filter(function (x) { return x.indexOf("|") >= 0; }).join(" ") ||
+      linhas.filter(function (x) { return !(m && x.indexOf(m[1]) >= 0) && !(ml && /^L\s*\d/.test(x)); }).join(" ");
+    var semAc = semAcento(desc);
+    var cat = /pintura|civil|alvenaria|parede|piso/.test(semAc) && !/eletric|gerador|ilumina|tomada|quadro|disjuntor/.test(semAc) ? "pintura" : "eletrica";
+    return { numero: m ? m[1] : "", data: m ? m[2] + (m[3] ? " " + m[3] : "") : "", loja: ml ? ml[1] : "", prioridade: ml && ml[2] ? ml[2] : "", desc: desc.replace(/\s+/g, " ").trim(), cat: cat };
+  }
+  // centro do cliente -> loja cadastrada. "L320"/"320" = loja; "P623" = posto
+  function lojaPorCodigo(cod) {
+    var t = String(cod || "").trim().toUpperCase(), pre = (t.match(/^[A-Z]/) || [""])[0], n = parseInt(t.replace(/\D/g, ""), 10);
+    if (isNaN(n)) return null;
+    var tipo = pre === "P" ? "posto" : pre === "L" || !pre ? "loja" : null;
+    if (!tipo) return null;
+    for (var i = 0; i < S.lojas.length; i++) {
+      var l = S.lojas[i];
+      if ((l.tipo || "loja") === tipo && parseInt(String(l.codigo || "").replace(/\D/g, ""), 10) === n) return l;
+    }
+    return null;
+  }
+  // lista copiada do portal (Meus chamados ou Ordens de serviço): uma linha por chamado
+  function lerListaChamados(texto) {
+    var vistos = {}, t = String(texto || "");
+    var porLinha = lerLinhas(t.split(/\n+/));
+    if (porLinha.length >= 2) return porLinha;
+    // tabela copiada com uma célula por linha: junta cada chamado a partir da data de abertura
+    vistos = {};
+    var blocos = t.split(/(?=\b(?:Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)\b\s+\d{2}\/\d{2}\/\d{4})/i).map(function (b) { return b.replace(/\s+/g, " "); });
+    return lerLinhas(blocos);
+  }
+  function lerLinhas(linhas) {
+    var vistos = {};
+    return linhas.map(function (linha) {
+      var md = linha.match(/(\d{2}\/\d{2}\/\d{4})/), mc = linha.match(/\b([LP])\s*0*(\d{1,4})\b/);
+      if (!md || !mc) return null;
+      var antes = linha.slice(0, md.index), depois = linha.slice(md.index + md[0].length);
+      var num = (depois.match(/^\D*?\b(\d{3,8})\b/) || [])[1];
+      if (!num) { var nums = antes.match(/\b\d{3,8}\b/g) || []; num = nums[nums.length - 1]; }
+      if (!num || vistos[num]) return null;
+      vistos[num] = true;
+      var prio = (linha.match(/\b(Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)\b/i) || [])[1] || "";
+      return { numero: num, data: md[1], centro: mc[1] + mc[2], prioridade: prio, loja: lojaPorCodigo(mc[1] + mc[2]), ja: S.obras.some(function (o) { return o.chamado === num; }) };
+    }).filter(Boolean);
+  }
+  function importarLista(lista, janela) {
+    var novos = lista.filter(function (c) { return c.loja && !c.ja; });
+    var sem = lista.filter(function (c) { return !c.loja; }), ja = lista.filter(function (c) { return c.ja; });
+    var j = A.janela('<p style="margin-top:0"><b>' + lista.length + "</b> chamados na lista: <b>" + novos.length + "</b> novos" +
+      (ja.length ? ", " + ja.length + " já lançados" : "") + (sem.length ? ", " + sem.length + " com loja não cadastrada" : "") + ".</p>" +
+      '<div class="tabela-caixa"><table><thead><tr><th>Chamado</th><th>Abertura</th><th>Loja</th><th>Situação</th></tr></thead><tbody>' +
+      lista.map(function (c) {
+        return "<tr><td>" + esc(c.numero) + "</td><td>" + esc(c.data) + "</td><td>" + (c.loja ? esc(nomeLoja(c.loja)) : esc(c.centro)) + "</td><td>" +
+          (c.ja ? '<span class="selo">já lançado</span>' : c.loja ? '<span class="selo bom">novo</span>' : '<span class="selo critico">loja não cadastrada</span>') + "</td></tr>";
+      }).join("") + "</tbody></table></div>" +
+      '<label for="cl-cat">Área dos chamados novos</label><select id="cl-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
+      '<p class="peq mudo">Os serviços entram <b>sem funcionário</b>. Depois, na aba Serviços, filtre "Sem funcionário" e direcione cada um. A descrição do problema fica no portal do cliente: abra o chamado lá e complete no serviço, se quiser.</p>' +
+      '<div class="acoes">' + (novos.length ? '<button class="prim" id="cl-ok">Lançar ' + novos.length + " chamado" + (novos.length > 1 ? "s" : "") + "</button>" : "") + "</div>",
+      { titulo: "📋 Lista de chamados", larga: true });
+    if (janela) janela.fechar();
+    if (!novos.length) return;
+    $("#cl-ok", j.el).onclick = function () {
+      var b = this, cat = $("#cl-cat", j.el).value;
+      A.ocupado(b, true, "Lançando...");
+      q(sb.from("obras").insert(novos.map(function (c) {
+        return { cliente: nomeLoja(c.loja), endereco: nulo(enderecoLoja(c.loja)), telefone: nulo(c.loja.telefone), loja_id: c.loja.id, chamado: c.numero };
+      })).select()).then(function (obras) {
+        obras.forEach(function (o) { S.obras.unshift(o); });
+        return q(sb.from("servicos").insert(obras.map(function (o) {
+          var c = novos.filter(function (x) { return x.numero === o.chamado; })[0];
+          return { obra_id: o.id, categoria: cat, descricao: "Chamado nº " + c.numero + " (aberto em " + c.data + ")" + (c.prioridade ? " · prioridade " + c.prioridade : "") + "\nVer a descrição do problema no portal do cliente." };
+        })).select());
+      }).then(function (serv) {
+        serv.forEach(function (x) { S.serv.unshift(x); });
+        j.fechar(); filtroServ.func = "-"; A.avisar(serv.length + " chamados lançados. Agora direcione cada um a um funcionário.", "ok");
+        location.hash = "#servicos"; rota();
+      }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+    };
+  }
+  function importarChamado() {
+    var j = A.janela('<p class="peq mudo" style="margin-top:0">Um chamado: abra no app do cliente, copie o texto e cole aqui.<br><b>Vários de uma vez:</b> no portal (computador), em <b>Meus chamados → Ativos</b>, selecione a tabela com o mouse, copie (Ctrl+C) e cole aqui.</p>' +
+      '<label for="ch-txt">Texto do chamado</label><textarea id="ch-txt" rows="5" placeholder="37377 - 29/09/2026 07:41&#10;L320 - Normal&#10;Elétrica/Gerador | Iluminação | Luminárias queimadas"></textarea>' +
+      '<div class="duas"><div><label for="ch-num">Nº do chamado *</label><input id="ch-num" maxlength="30" inputmode="numeric"></div>' +
+      '<div><label for="ch-loja">Loja (código) *</label><input id="ch-loja" maxlength="10" placeholder="Ex.: 320"></div></div>' +
+      '<div id="ch-achou" class="peq" style="margin-top:4px"></div>' +
+      '<div class="duas"><div><label for="ch-cat">Área</label><select id="ch-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select></div>' +
+      '<div><label for="ch-prio">Prioridade</label><input id="ch-prio" maxlength="30" placeholder="Normal"></div></div>' +
+      '<label for="ch-desc">O que fazer</label><textarea id="ch-desc" rows="3"></textarea>' +
+      '<div id="ch-erro"></div><div class="acoes"><button class="prim" id="ch-ok">Continuar →</button></div>', { titulo: "📋 Importar chamado" });
+    var el = j.el, dataCh = "";
+    function mostrarLoja() {
+      var l = lojaPorCodigo(val(el, "#ch-loja")), c = $("#ch-achou", el);
+      if (!val(el, "#ch-loja")) { c.innerHTML = ""; return; }
+      c.innerHTML = l ? '✅ <b>' + esc(nomeLoja(l)) + "</b> — " + esc(enderecoLoja(l)) : '<span class="selo critico">loja não encontrada</span> confira o código ou cadastre na aba <a href="#lojas">Lojas</a>.';
+    }
+    $("#ch-txt", el).oninput = function () {
+      var lista = lerListaChamados(this.value);
+      if (lista.length >= 2) { this.oninput = null; importarLista(lista, j); return; }
+      var c = lerChamado(this.value);
+      if (c.numero) $("#ch-num", el).value = c.numero;
+      if (c.loja) $("#ch-loja", el).value = c.loja;
+      if (c.prioridade) $("#ch-prio", el).value = c.prioridade;
+      if (c.desc) $("#ch-desc", el).value = c.desc;
+      $("#ch-cat", el).value = c.cat; dataCh = c.data;
+      mostrarLoja();
+    };
+    $("#ch-loja", el).oninput = mostrarLoja;
+    $("#ch-ok", el).onclick = function () {
+      var num = val(el, "#ch-num").replace(/\s/g, ""), l = lojaPorCodigo(val(el, "#ch-loja")), erro = $("#ch-erro", el);
+      if (!num) { erro.innerHTML = '<div class="aviso erro">Informe o nº do chamado.</div>'; return; }
+      if (!l) { erro.innerHTML = '<div class="aviso erro">Loja não encontrada pelo código. Confira o número ou cadastre a loja na aba Lojas.</div>'; return; }
+      var ja = S.obras.filter(function (o) { return o.chamado === num; })[0];
+      if (ja && !confirm("O chamado " + num + " já foi lançado (" + ja.cliente + "). Lançar de novo?")) return;
+      var prio = val(el, "#ch-prio");
+      var desc = "Chamado nº " + num + (dataCh ? " (aberto em " + dataCh + ")" : "") + (prio ? " · prioridade " + prio : "") + "\n" + val(el, "#ch-desc");
+      j.fechar();
+      novoServico(null, { loja: l, chamado: num, cat: $("#ch-cat", el).value, desc: desc });
     };
   }
 
@@ -643,7 +791,8 @@
       '<div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
       (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe' + (s.funcionario_id ? " (" + esc(nomeFunc(s.funcionario_id)) + ")" : "") + "</span>" : "") +
       '<span class="dir mudo peq">criado ' + A.data(s.criado_em) + "</span></div>" +
-      "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" + seloOS(o) +
+      "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" + seloOS(o) + seloChamado(o) +
+      (o.chamado && s.status === "concluido" ? '<div class="aviso" style="margin:6px 0">Serviço concluído: lembre de <b>finalizar o chamado ' + esc(o.chamado) + "</b> no app do cliente.</div>" : "") +
       (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
       '<div class="duas"><div><label for="es-func">Funcionário</label><select id="es-func">' + opcoesFunc(s.categoria, s.funcionario_id) + "</select></div>" +
       '<div><label for="es-data">Data prevista</label><input type="date" id="es-data" value="' + esc(s.data_prevista || "") + '"></div></div>' +
