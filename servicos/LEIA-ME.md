@@ -226,3 +226,14 @@ Na aba **Serviços → 📋 Chamados BH** fica uma **caixa de chamados**:
 Aba **✅ Executados**: serviços concluídos agrupados pelo **dia da execução** (mais recente primeiro), com loja/cliente, nº do chamado,
 funcionário, horário, o que foi feito e as **fotos de antes e depois** do relatório. Filtros: período, área, funcionário e busca.
 Quando o serviço de uma loja é concluído, ela **sai da rota** no app do funcionário; no painel, a rota salva mostra a loja riscada (✔ x de y feitas).
+
+## 🧾 Visita de orçamento
+No relatório, o funcionário marca **"Foi só a visita para o orçamento"** quando o serviço ainda não foi feito (vem marcado
+sozinho quando a descrição diz "fazer orçamento" ou "orçar"). O serviço fica **Orçamento feito (aguardando aprovação)**:
+sai da lista do funcionário e da rota, **não** vai para Executados e aparece no Hoje e no filtro da aba Serviços.
+Quando o cliente aprovar, abra o serviço, volte a situação para **Aberto** e escolha o funcionário.
+
+## Chamados da mesma loja
+Na caixa de chamados e na aba Serviços, os chamados da mesma loja ficam juntos. Ao escolher o funcionário de um chamado,
+os outros chamados abertos da mesma loja e da mesma área que estão **sem funcionário** vão para ele também
+(os que já têm outro funcionário não mudam), e a mensagem do WhatsApp lista todos.

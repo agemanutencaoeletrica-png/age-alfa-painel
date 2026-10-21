@@ -8,8 +8,8 @@
     pintura: { nome: "Pintura", icone: "🖌️" }
   };
   var AREA = { eletrica: "Elétrica", pintura: "Pintura", ambos: "Elétrica e pintura" };
-  var STATUS = { aberto: "Aberto", em_andamento: "Em andamento", concluido: "Concluído", cancelado: "Cancelado" };
-  var STATUS_COR = { aberto: "atencao", em_andamento: "", concluido: "bom", cancelado: "critico" };
+  var STATUS = { aberto: "Aberto", em_andamento: "Em andamento", aguardando: "Orçamento feito (aguardando aprovação)", concluido: "Concluído", cancelado: "Cancelado" };
+  var STATUS_COR = { aberto: "atencao", em_andamento: "", aguardando: "atencao", concluido: "bom", cancelado: "critico" };
   var TIPO_PONTO = { chegada: "Chegada", servico: "Serviço", saida: "Saída" };
 
   function esc(t) {

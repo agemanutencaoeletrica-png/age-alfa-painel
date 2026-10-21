@@ -538,7 +538,8 @@
       '<div id="fr-antes-ok" class="mudo peq oculto" style="margin-top:4px">✔ As fotos de antes já foram enviadas num relatório anterior.</div></div>' +
       '<label id="fr-fotos-r">Fotos (até 6)</label><input type="file" accept="image/*" multiple id="fr-arq" class="oculto">' +
       '<div class="fotos" id="fr-fotos"></div><button class="peq" id="fr-add-foto" style="margin-top:8px">📷 Adicionar fotos</button>' +
-      '<label class="marca-linha"><input type="checkbox" id="fr-concl"> Serviço concluído</label>' +
+      '<label class="marca-linha"><input type="checkbox" id="fr-orc"> 🧾 Foi só a visita para o orçamento (o serviço ainda não foi feito)</label>' +
+      '<label class="marca-linha"><input type="checkbox" id="fr-concl"> ✅ Serviço concluído (já foi executado)</label>' +
       '<div id="fr-assin-aviso" class="aviso oculto" style="margin-top:8px">✍️ Este serviço pede a <b>assinatura do responsável</b> no local.</div>' +
       '<div id="fr-assin" class="cartao oculto" style="margin-top:10px">' +
       '<h3 id="fr-assin-tit">✍️ Assinatura do responsável no local</h3><p class="mudo peq" id="fr-assin-txt" style="margin:4px 0 8px">Peça ao gerente (ou ao cliente) para assinar com o dedo.</p>' +
@@ -654,8 +655,16 @@
       $("#fr-sem-assin-l", el).classList.toggle("oculto", !obrig);
       if (ver) { quadro.ajustar(); if (rolar) $("#fr-assin", el).scrollIntoView({ behavior: "smooth", block: "center" }); }
     }
-    $("#fr-concl", el).onchange = function () { mostrarAssin(true); };
-    $("#fr-serv", el).addEventListener("change", function () { mostrarAssin(false); });
+    $("#fr-concl", el).onchange = function () { if (this.checked) $("#fr-orc", el).checked = false; mostrarAssin(true); };
+    $("#fr-orc", el).onchange = function () { if (this.checked) { $("#fr-concl", el).checked = false; mostrarAssin(false); } };
+    // serviço que pede orçamento ("FAZER ORÇAMENTO", "orçar materiais..."): já vem marcado como visita de orçamento
+    function sugerirOrc() {
+      var sv = servicoPorId($("#fr-serv", el).value);
+      $("#fr-orc", el).checked = !!(sv && !sv.prefeitura && /fazer\s+or[cç]amento|\bor[cç]ar\b|levantamento/i.test(sv.descricao || ""));
+      if ($("#fr-orc", el).checked) $("#fr-concl", el).checked = false;
+    }
+    sugerirOrc();
+    $("#fr-serv", el).addEventListener("change", function () { sugerirOrc(); mostrarAssin(false); });
     $("#fr-limpar", el).onclick = function () { quadro.limpar(); };
     $("#fr-sem-assin", el).onchange = function () { $(".quadro-assin", el).style.opacity = this.checked ? ".35" : "1"; };
 
@@ -665,7 +674,7 @@
         return { item: $(".m-item", d).value.trim(), qtd: A.lerNumero($(".m-qtd", d).value), un: $(".m-un", d).value };
       }).filter(function (m) { return m.item; });
       var tipoServ = $("#fr-tipo", el).value.trim(), desc = $("#fr-desc", el).value.trim();
-      var concl = $("#fr-concl", el).checked;
+      var concl = $("#fr-concl", el).checked, orc = !concl && $("#fr-orc", el).checked;
       if (!tipoServ && !desc) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o tipo de serviço ou a descrição.</div>'; return; }
       var sPref = servicoPorId($("#fr-serv", el).value), pref = !!(sPref && sPref.prefeitura);
       if (pref && concl && !fotosAntes.length && !sPref.tem_fotos_antes) {
@@ -683,6 +692,7 @@
       }
       if (usarAssin && !nomeAssin) { $("#fr-erro", el).innerHTML = '<div class="aviso erro">Escreva o nome de quem assinou.</div>'; $("#fr-assin-nome", el).focus(); return; }
       if (concl && !A.confirmar("Marcar o serviço como CONCLUÍDO? Ele sai da sua lista.")) return;
+      if (orc && !A.confirmar("Enviar como VISITA DE ORÇAMENTO? O serviço sai da sua lista e fica aguardando a aprovação do orçamento.")) return;
       $("#fr-erro", el).innerHTML = "";
       A.ocupado(b, true, "Enviando...");
       var hoje = A.isoLocal(new Date());
@@ -703,6 +713,7 @@
           p_assinatura: a ? a.caminho : null, p_assinado_por: a ? nomeAssin : null
         };
         if (pref) args.p_fotos_antes = fotosAntes.map(function (f) { return f.caminho; });
+        if (orc) args.p_orcamento = true;
         return sb.rpc("enviar_relatorio", args);
       }).then(function (r) {
         if (r.error) throw r.error;
