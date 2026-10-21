@@ -753,7 +753,10 @@
       var cel = lin[i].split("\t").map(function (x) { return x.trim(); });
       if (cel.length < 5 || !/^\d{3,8}$/.test(cel[0])) continue;
       if (/^\d{2,8}$/.test(cel[1]) && /^\d{2}\/\d{2}\/\d{4}$/.test(cel[2])) {
-        if (osAge[cel[0]] || EH_AGE.test(cel[4] || "")) { reqAge[cel[1]] = 1; var sr = situacaoDepois(cel, 5, i); if (sr) sitReq[cel[1]] = sr; }
+        if (osAge[cel[0]] || EH_AGE.test(cel[4] || "")) {
+          reqAge[cel[1]] = 1; var sr = situacaoDepois(cel, 5, i); if (sr) sitReq[cel[1]] = sr;
+          if (EH_AGE.test(cel[4] || "")) { osAge[cel[0]] = 1; if (!p.os) p.os = cel[0]; }   // a aba só de requisições também diz a OS da AGE
+        }
       } else if (EH_AGE.test(cel[2] || "")) {
         osAge[cel[0]] = 1; p.os = cel[0];
         var vs = cel.slice(4, 6).filter(function (x) { return /^\d{1,3}(\.\d{3})*,\d{2}$/.test(x); });
@@ -811,7 +814,12 @@
     if (p.reclamacao) return { txt: "🚨 RECLAMAÇÃO da loja", cor: "critico" };
     if (/avalia/i.test(st)) return { txt: "⏳ em avaliação pela loja", cor: "atencao" };
     if (/execut/i.test(os)) return { txt: "✔ executado no portal", cor: "bom" };
-    if (/aprov/i.test(os)) return { txt: "🔧 aprovado: executar", cor: "atencao" };
+    // material: requisição de compra da AGE ainda em compra/análise, ou já comprada
+    var reqs = (p.req || []).filter(function (r) { return !/cancel/i.test(r.sit); });
+    var emCompra = reqs.some(function (r) { return /compra|an[aá]lise|pendente|aberta/i.test(r.sit) || !r.sit; });
+    var comprado = reqs.length && reqs.every(function (r) { return /finaliz|entreg|atendid/i.test(r.sit); });
+    if (emCompra && !/reprov|cancel/i.test(os)) return { txt: "🛒 " + (/aprov/i.test(os) ? "aprovado · " : "") + "material em compra", cor: "atencao" };
+    if (/aprov/i.test(os)) return { txt: "🔧 aprovado" + (comprado ? " · material comprado" : "") + ": executar", cor: "atencao" };
     if (/or[cç]ad/i.test(os)) return { txt: "💲 orçado: aguardando aprovação", cor: "" };
     if (/reprov/i.test(os)) return { txt: "✖ orçamento reprovado", cor: "critico" };
     if (/cancel/i.test(os)) return { txt: "✖ OS cancelada", cor: "critico" };
