@@ -71,7 +71,7 @@ create table if not exists public.servicos (
   funcionario_id uuid references public.funcionarios (id) on delete set null,
   descricao      text,
   data_prevista  date,
-  status         text not null default 'aberto' check (status in ('aberto', 'em_andamento', 'concluido', 'cancelado')),
+  status         text not null default 'aberto' check (status in ('aberto', 'em_andamento', 'aguardando', 'concluido', 'cancelado')),
   criado_em      timestamptz not null default now(),
   concluido_em   timestamptz
 );
@@ -202,6 +202,10 @@ alter table public.obras add column if not exists tipo_publico  text check (tipo
 alter table public.obras add column if not exists referencia    text;   -- nº do poste, sala, bloco...
 alter table public.obras add column if not exists fiscal        text;   -- nome do fiscal da prefeitura
 alter table public.relatorios add column if not exists fotos_antes text[] not null default '{}';
+-- visita só de orçamento: o serviço fica "aguardando aprovação" (não vai para Executados)
+alter table public.relatorios add column if not exists orcamento boolean not null default false;
+alter table public.servicos drop constraint if exists servicos_status_check;
+alter table public.servicos add constraint servicos_status_check check (status in ('aberto', 'em_andamento', 'aguardando', 'concluido', 'cancelado'));
 
 -- Licitações de que a AGE participa (só o dono vê) e documentos de habilitação
 create table if not exists public.licitacoes (
@@ -403,7 +407,7 @@ begin
                from jsonb_array_elements(r.paradas) with ordinality e(x, ord)
                where not (
                  exists (select 1 from public.servicos s2 join public.obras o2 on o2.id = s2.obra_id
-                         where o2.loja_id::text = e.x->>'loja_id' and s2.status = 'concluido' and s2.concluido_em >= r.criado_em)
+                         where o2.loja_id::text = e.x->>'loja_id' and s2.status in ('concluido', 'aguardando') and s2.concluido_em >= r.criado_em)
                  and not exists (select 1 from public.servicos s3 join public.obras o3 on o3.id = s3.obra_id
                          where o3.loja_id::text = e.x->>'loja_id' and s3.status in ('aberto', 'em_andamento'))
                )), '[]'::jsonb))
@@ -494,6 +498,7 @@ end $$;
 -- versões antigas: removidas para não ficar duas funções com o mesmo nome
 drop function if exists public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean);
 drop function if exists public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean, text, text);
+drop function if exists public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean, text, text, text[]);
 
 create or replace function public.enviar_relatorio(
   p_token        text,
@@ -505,7 +510,8 @@ create or replace function public.enviar_relatorio(
   p_concluido    boolean default false,
   p_assinatura   text    default null,
   p_assinado_por text    default null,
-  p_fotos_antes  text[]  default '{}'
+  p_fotos_antes  text[]  default '{}',
+  p_orcamento    boolean default false
 ) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
@@ -558,10 +564,10 @@ begin
     end if;
   end if;
 
-  insert into public.relatorios (servico_id, funcionario_id, tipo_servico, descricao, materiais, fotos, fotos_antes, concluido,
+  insert into public.relatorios (servico_id, funcionario_id, tipo_servico, descricao, materiais, fotos, fotos_antes, concluido, orcamento,
                                  assinatura, assinado_por, assinado_em)
   values (p_servico_id, f.id, left(trim(p_tipo_servico), 200), left(trim(p_descricao), 5000),
-          p_materiais, p_fotos, p_fotos_antes, coalesce(p_concluido, false),
+          p_materiais, p_fotos, p_fotos_antes, coalesce(p_concluido, false), coalesce(p_orcamento, false) and not coalesce(p_concluido, false),
           p_assinatura, case when p_assinatura is not null then left(trim(p_assinado_por), 120) end,
           case when p_assinatura is not null then now() end)
   returning id into v_id;
@@ -569,6 +575,10 @@ begin
   if coalesce(p_concluido, false) then
     update public.servicos set status = 'concluido', concluido_em = now()
     where id = p_servico_id and status <> 'cancelado';
+  elsif coalesce(p_orcamento, false) then
+    -- só a visita de orçamento: o serviço ainda não foi feito (sai da lista do funcionário e não conta como executado)
+    update public.servicos set status = 'aguardando', concluido_em = now()
+    where id = p_servico_id and status in ('aberto', 'em_andamento');
   else
     update public.servicos set status = 'em_andamento' where id = p_servico_id and status = 'aberto';
   end if;
@@ -698,7 +708,7 @@ grant execute on function public.token_valido(text) to anon, authenticated;
 grant execute on function public.func_dados(text) to anon, authenticated;
 grant execute on function public.registrar_ponto(text, text, text, uuid, double precision, double precision,
                                                 double precision, timestamptz, text) to anon, authenticated;
-grant execute on function public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean, text, text, text[]) to anon, authenticated;
+grant execute on function public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean, text, text, text[], boolean) to anon, authenticated;
 grant execute on function public.criar_servico_func(text, text, text, text, text, text) to anon, authenticated;
 grant execute on function public.registrar_km(text, uuid, text, integer, text, double precision, double precision,
                                              double precision, timestamptz) to anon, authenticated;

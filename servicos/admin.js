@@ -400,13 +400,15 @@
       var abP = ativos.filter(function (s) { return s.categoria === "pintura"; }).length;
       var novos = S.rel.filter(function (r) { return !r.lido; }).length;
       var aguard = S.orc.filter(function (o) { return o.status === "enviado"; });
+      var visitasOrc = S.serv.filter(function (s) { return s.status === "aguardando"; }).length;
       var h = '<div class="grade">' +
         '<div class="ladrilho"><div class="r">⚡ Elétrica</div><div class="v">' + abE + '</div><div class="d">serviços ativos</div></div>' +
         '<div class="ladrilho"><div class="r">🖌️ Pintura</div><div class="v">' + abP + '</div><div class="d">serviços ativos</div></div>' +
         (S.pref.length || osPref ? '<a class="ladrilho" href="#prefeitura" style="text-decoration:none;color:inherit"><div class="r">🏛️ Prefeitura</div><div class="v">' + osPref + '</div><div class="d">OS em aberto</div></a>' : "") +
         '<div class="ladrilho"><div class="r">Relatórios</div><div class="v">' + novos + '</div><div class="d">novos para ler</div></div>' +
         '<div class="ladrilho"><div class="r">Orçamentos</div><div class="v">' + aguard.length + '</div><div class="d">' +
-        A.dinheiro(aguard.reduce(function (t, o) { return t + Number(o.total); }, 0)) + " aguardando cliente</div></div></div>";
+        A.dinheiro(aguard.reduce(function (t, o) { return t + Number(o.total); }, 0)) + " aguardando cliente</div></div>" +
+        (visitasOrc ? '<a class="ladrilho" href="#servicos" id="h-visitas-orc" style="text-decoration:none;color:inherit"><div class="r">🧾 Visitas de orçamento</div><div class="v">' + visitasOrc + '</div><div class="d">aguardando aprovação</div></a>' : "") + "</div>";
       var daEquipe = S.serv.filter(function (s) { return s.criado_pelo_funcionario && new Date(s.criado_em) >= ini; });
       if (daEquipe.length) h += '<div class="aviso">🆕 A equipe cadastrou ' + (daEquipe.length === 1 ? "1 serviço" : daEquipe.length + " serviços") +
         ' hoje: ' + daEquipe.slice(0, 5).map(function (s) { var o = porId(S.obras, s.obra_id); return esc((o ? o.cliente : "") + " (" + nomeFunc(s.funcionario_id) + ")"); }).join(", ") +
@@ -433,6 +435,7 @@
           "</div>";
       });
       c.innerHTML = h;
+      if ($("#h-visitas-orc")) $("#h-visitas-orc").onclick = function () { filtroServ.st = "aguardando"; };
       hidratarFotos(c);
     }).catch(function (e) { c.innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
   }
@@ -452,7 +455,8 @@
     var F = filtroServ;
     var h = '<div class="cab-secao"><h2>Serviços</h2><span><button id="b-chamado">📋 Chamados BH' + (lerCaixa().length ? " (" + lerCaixa().length + " na caixa)" : "") + '</button> <button class="prim" id="b-novo-serv">+ Novo serviço</button></span></div>' +
       '<div class="filtros"><select id="fs-cat" aria-label="Categoria"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
-      '<select id="fs-st" aria-label="Situação"><option value="ativos">Abertos e em andamento</option><option value="aberto">Abertos</option><option value="em_andamento">Em andamento</option>' +
+      '<select id="fs-st" aria-label="Situação"><option value="ativos">Abertos, em andamento e orçamentos</option><option value="aberto">Abertos</option><option value="em_andamento">Em andamento</option>' +
+      '<option value="aguardando">🧾 Orçamento feito (aguardando aprovação)</option>' +
       '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="equipe">Criados pela equipe</option><option value="todos">Todos</option></select>' +
       '<select id="fs-func" aria-label="Funcionário"><option value="">Todos os funcionários</option><option value="-">Sem funcionário</option>' +
       S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
@@ -470,7 +474,7 @@
 
     function passa(s) {
       if (F.cat && s.categoria !== F.cat) return false;
-      if (F.st === "ativos" && !(s.status === "aberto" || s.status === "em_andamento")) return false;
+      if (F.st === "ativos" && !(s.status === "aberto" || s.status === "em_andamento" || s.status === "aguardando")) return false;
       if (F.st === "equipe" && !s.criado_pelo_funcionario) return false;
       if (F.st !== "ativos" && F.st !== "todos" && F.st !== "equipe" && s.status !== F.st) return false;
       if (F.func === "-" && s.funcionario_id) return false;
@@ -977,6 +981,8 @@
       '<span class="dir mudo peq">criado ' + A.data(s.criado_em) + "</span></div>" +
       "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" + seloOS(o) + seloChamado(o) +
       (o.chamado && s.status === "concluido" ? '<div class="aviso" style="margin:6px 0">Serviço concluído: lembre de <b>finalizar o chamado ' + esc(o.chamado) + "</b> no app do cliente.</div>" : "") +
+      (s.status === "aguardando" ? '<div class="aviso" style="margin:6px 0">🧾 Visita de orçamento feita: o serviço <b>ainda não foi executado</b>. ' + (o.chamado ? "Lance o orçamento do chamado " + esc(o.chamado) + " no portal. " : "") +
+        "Quando for aprovado, volte a situação para <b>Aberto</b> e escolha o funcionário.</div>" : "") +
       (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
       '<div class="duas"><div><label for="es-func">Funcionário</label><select id="es-func">' + opcoesFunc(s.categoria, s.funcionario_id) + "</select></div>" +
       '<div><label for="es-data">Data prevista</label><input type="date" id="es-data" value="' + esc(s.data_prevista || "") + '"></div></div>' +
@@ -1007,8 +1013,10 @@
       var b = this, st = $("#es-st", el).value;
       var dados = { funcionario_id: nulo($("#es-func", el).value), data_prevista: nulo($("#es-data", el).value), status: st, descricao: nulo(val(el, "#es-desc")),
         pede_assinatura: $("#es-assin", el).checked };
-      if (st === "concluido" && s.status !== "concluido") dados.concluido_em = new Date().toISOString();
-      if (st !== "concluido") dados.concluido_em = null;
+      // concluido_em = quando terminou o serviço ou a visita de orçamento
+      var fim = function (x) { return x === "concluido" || x === "aguardando"; };
+      if (fim(st) && st !== s.status) dados.concluido_em = new Date().toISOString();
+      if (!fim(st)) dados.concluido_em = null;
       var trocouFunc = dados.funcionario_id && dados.funcionario_id !== s.funcionario_id;
       A.ocupado(b, true, "Salvando...");
       q(sb.from("servicos").update(dados).eq("id", id).select().single()).then(function (n) {
@@ -1256,7 +1264,7 @@
   function htmlCartaoRel(r) {
     var s = porId(S.serv, r.servico_id), o = s ? porId(S.obras, s.obra_id) : null;
     return '<div class="cartao clic" data-rel="' + r.id + '"' + (r.lido ? "" : ' style="border-left:4px solid var(--critico)"') + '><div class="linha">' +
-      (s ? A.seloCategoria(s.categoria) : "") + (r.lido ? "" : '<span class="selo critico">novo</span>') + (r.concluido ? '<span class="selo bom">concluído</span>' : "") +
+      (s ? A.seloCategoria(s.categoria) : "") + (r.lido ? "" : '<span class="selo critico">novo</span>') + (r.concluido ? '<span class="selo bom">concluído</span>' : "") + (r.orcamento ? '<span class="selo atencao">🧾 visita de orçamento</span>' : "") +
       (r.assinatura ? '<span class="selo bom">✍️ assinado</span>' : (r.concluido && s && s.pede_assinatura ? '<span class="selo atencao">sem assinatura</span>' : "")) +
       '<span class="dir mudo peq">' + A.dataHora(r.criado_em) + "</span></div>" +
       '<div style="margin-top:6px"><b>' + esc(r.tipo_servico || "Relatório") + "</b> · " + esc(o ? o.cliente : "serviço apagado") + "</div>" +
@@ -1505,7 +1513,7 @@
     var r = porId(S.rel, id), s = porId(S.serv, r.servico_id), o = s ? porId(S.obras, s.obra_id) : null;
     var mats = r.materiais || [], pref = !!(o && o.prefeitura_id);
     var j = A.janela(
-      '<div class="linha">' + (s ? A.seloCategoria(s.categoria) : "") + (r.concluido ? '<span class="selo bom">funcionário marcou como concluído</span>' : "") +
+      '<div class="linha">' + (s ? A.seloCategoria(s.categoria) : "") + (r.concluido ? '<span class="selo bom">funcionário marcou como concluído</span>' : "") + (r.orcamento ? '<span class="selo atencao">🧾 só a visita de orçamento (serviço ainda não feito)</span>' : "") +
       '<span class="dir mudo peq">' + A.dataHora(r.criado_em) + "</span></div>" +
       (pref ? seloOS(o) : "") + '<p><b>Cliente:</b> ' + esc(o ? o.cliente : "serviço apagado") + (o && o.endereco ? " · " + esc(o.endereco) : "") + "<br><b>Funcionário:</b> " + esc(nomeFunc(r.funcionario_id)) +
       "<br><b>Tipo de serviço:</b> " + esc(r.tipo_servico || "—") + "</p>" +
@@ -2587,7 +2595,7 @@
       var o = porId(S.obras, x.obra_id);
       if (!o || o.loja_id !== p.loja_id) return;
       if (x.status === "aberto" || x.status === "em_andamento") aberto = true;
-      else if (x.status === "concluido" && x.concluido_em && x.concluido_em >= r.criado_em) feito = true;
+      else if ((x.status === "concluido" || x.status === "aguardando") && x.concluido_em && x.concluido_em >= r.criado_em) feito = true;
     });
     return feito && !aberto;
   }
