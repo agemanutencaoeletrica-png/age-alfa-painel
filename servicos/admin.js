@@ -718,9 +718,15 @@
     var novos = lista.filter(function (c) { return c.loja && !c.ja; });
     var sem = lista.filter(function (c) { return !c.loja; }), ja = lista.filter(function (c) { return c.ja; });
     // lançados no app e ainda abertos, mas que não vieram na lista colada (provavelmente finalizados no portal)
+    // só compara quando a lista colada é a mesma que já foi lançada (tem chamados em comum) e dentro do período dela;
+    // assim, colar só a 2ª página ou outra tela não acusa chamados que apenas ficaram fora da cópia
     var naLista = {}; lista.forEach(function (c) { naLista[c.numero] = 1; });
-    var sumidos = S.obras.filter(function (o) {
-      return o.chamado && !naLista[o.chamado] && S.serv.some(function (x) { return x.obra_id === o.id && (x.status === "aberto" || x.status === "em_andamento"); });
+    var datas = lista.map(function (c) { return isoDeBR(c.data); }).filter(Boolean).sort(), ini = datas[0], fim = datas[datas.length - 1];
+    var sumidos = !ja.length ? [] : S.obras.filter(function (o) {
+      if (!o.chamado || naLista[o.chamado]) return false;
+      var a = aberturaChamado(o), d = a ? A.isoLocal(a) : null;
+      if (!d || d < ini || d > fim) return false;
+      return S.serv.some(function (x) { return x.obra_id === o.id && (x.status === "aberto" || x.status === "em_andamento"); });
     });
     var j = A.janela('<p style="margin-top:0"><b>' + lista.length + "</b> chamados na lista: <b>" + novos.length + "</b> novos" +
       (ja.length ? ", " + ja.length + " já lançados" : "") + (sem.length ? ", " + sem.length + " com loja não cadastrada" : "") + ".</p>" +
@@ -730,7 +736,7 @@
           (c.ja ? '<span class="selo">já lançado</span>' : c.loja ? '<span class="selo bom">novo</span>' : '<span class="selo critico">loja não cadastrada</span>') + "</td></tr>";
       }).join("") + "</tbody></table></div>" +
       (sumidos.length ? '<div class="aviso" style="margin-top:10px"><b>' + sumidos.length + " chamado" + (sumidos.length > 1 ? "s" : "") + "</b> aberto" + (sumidos.length > 1 ? "s" : "") +
-        " no app não " + (sumidos.length > 1 ? "vieram" : "veio") + " nesta lista (se você copiou a lista completa de Ativos, " + (sumidos.length > 1 ? "provavelmente foram finalizados" : "provavelmente foi finalizado") + " no portal): " +
+        " no app não " + (sumidos.length > 1 ? "vieram" : "veio") + " nesta lista, no mesmo período (se você copiou todas as páginas de Ativos, " + (sumidos.length > 1 ? "provavelmente foram finalizados" : "provavelmente foi finalizado") + " no portal): " +
         sumidos.map(function (o) { return esc(o.chamado) + " (" + esc(o.cliente) + ")"; }).join(", ") + ". Confira e conclua no app.</div>" : "") +
       '<label for="cl-cat">Área dos chamados novos</label><select id="cl-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
       '<p class="peq mudo">Os serviços entram <b>sem funcionário</b>. Depois, na aba Serviços, filtre "Sem funcionário" e direcione cada um. A descrição do problema fica no portal do cliente: abra o chamado lá e complete no serviço, se quiser.</p>' +
