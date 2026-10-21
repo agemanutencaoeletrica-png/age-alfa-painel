@@ -397,7 +397,16 @@ begin
       where p.funcionario_id = f.id and p.criado_em >= v_inicio
     ), '[]'::jsonb),
     'rotas', coalesce((
-      select jsonb_agg(jsonb_build_object('id', r.id, 'nome', r.nome, 'data', r.data, 'paradas', r.paradas, 'km', r.km)
+      -- paradas já atendidas (serviço da loja concluído depois da rota e nada mais aberto nela) saem da rota
+      select jsonb_agg(jsonb_build_object('id', r.id, 'nome', r.nome, 'data', r.data, 'km', r.km, 'paradas', coalesce((
+               select jsonb_agg(e.x order by e.ord)
+               from jsonb_array_elements(r.paradas) with ordinality e(x, ord)
+               where not (
+                 exists (select 1 from public.servicos s2 join public.obras o2 on o2.id = s2.obra_id
+                         where o2.loja_id::text = e.x->>'loja_id' and s2.status = 'concluido' and s2.concluido_em >= r.criado_em)
+                 and not exists (select 1 from public.servicos s3 join public.obras o3 on o3.id = s3.obra_id
+                         where o3.loja_id::text = e.x->>'loja_id' and s3.status in ('aberto', 'em_andamento'))
+               )), '[]'::jsonb))
              order by r.data nulls last, r.criado_em)
       from public.rotas r
       where r.funcionario_id = f.id

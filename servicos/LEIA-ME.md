@@ -223,3 +223,8 @@ Na aba **Serviços → 📋 Chamado BH**:
   área, prioridade, descrição, local, coordenador e o nº da OS da AGE.
 - O nº do chamado aparece no serviço, na mensagem para o funcionário e na busca. Ao concluir, o app lembra de **finalizar o chamado no portal do BH**.
 - Precisa ter rodado o `supabase.sql` atualizado (coluna `chamado`).
+
+## ✅ Executados
+Aba **✅ Executados**: serviços concluídos agrupados pelo **dia da execução** (mais recente primeiro), com loja/cliente, nº do chamado,
+funcionário, horário, o que foi feito e as **fotos de antes e depois** do relatório. Filtros: período, área, funcionário e busca.
+Quando o serviço de uma loja é concluído, ela **sai da rota** no app do funcionário; no painel, a rota salva mostra a loja riscada (✔ x de y feitas).

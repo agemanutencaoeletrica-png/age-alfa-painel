@@ -11,7 +11,7 @@
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -378,7 +378,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -728,7 +728,8 @@
       if (!d || d < ini || d > fim) return false;
       return S.serv.some(function (x) { return x.obra_id === o.id && (x.status === "aberto" || x.status === "em_andamento"); });
     });
-    var j = A.janela('<p style="margin-top:0"><b>' + lista.length + "</b> chamados na lista: <b>" + novos.length + "</b> novos" +
+    var j = A.janela((novos.length ? '<div class="acoes" style="margin-top:0"><button class="prim" id="cl-ok-topo">Lançar ' + novos.length + " chamado" + (novos.length > 1 ? "s" : "") + "</button></div>" : "") +
+      '<p style="margin-top:0"><b>' + lista.length + "</b> chamados na lista: <b>" + novos.length + "</b> novos" +
       (ja.length ? ", " + ja.length + " já lançados" : "") + (sem.length ? ", " + sem.length + " com loja não cadastrada" : "") + ".</p>" +
       '<div class="tabela-caixa"><table><thead><tr><th>Chamado</th><th>Abertura</th><th>Loja</th><th>Situação</th></tr></thead><tbody>' +
       lista.map(function (c) {
@@ -744,6 +745,8 @@
       { titulo: "📋 Lista de chamados", larga: true });
     if (janela) janela.fechar();
     if (!novos.length) return;
+    // botão de cima: leva ao fim (escolher a área) e lança
+    $("#cl-ok-topo", j.el).onclick = function () { $("#cl-ok", j.el).click(); };
     $("#cl-ok", j.el).onclick = function () {
       var b = this, cat = $("#cl-cat", j.el).value;
       A.ocupado(b, true, "Lançando...");
@@ -1282,6 +1285,72 @@
   }
   function P_compartilha() {
     try { return !!(navigator.canShare && navigator.canShare({ files: [new File(["x"], "x.jpg", { type: "image/jpeg" })] })); } catch (e) { return false; }
+  }
+
+  // =================================================================
+  // SERVIÇOS EXECUTADOS (por dia de execução, com loja e fotos)
+  // =================================================================
+  var filtroExec = { dias: "30", cat: "", func: "", busca: "" };
+  function dataExecucao(s) {
+    if (s.concluido_em) return new Date(s.concluido_em);
+    var rs = S.rel.filter(function (r) { return r.servico_id === s.id && r.concluido; });
+    return rs.length ? new Date(rs[0].criado_em) : new Date(s.criado_em);
+  }
+  function verExecutados(c) {
+    var F = filtroExec;
+    c.innerHTML = '<div class="cab-secao"><h2>✅ Serviços executados</h2></div>' +
+      '<div class="filtros"><select id="fx-dias" aria-label="Período"><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="365">Último ano</option><option value="">Tudo</option></select>' +
+      '<select id="fx-cat" aria-label="Área"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
+      '<select id="fx-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
+      '<input id="fx-busca" type="search" placeholder="Buscar loja, cliente ou nº do chamado"></div><div id="fx-res"></div>';
+    $("#fx-dias").value = F.dias; $("#fx-cat").value = F.cat; $("#fx-func").value = F.func; $("#fx-busca").value = F.busca;
+    ["#fx-dias", "#fx-cat", "#fx-func"].forEach(function (id) { $(id).onchange = function () { ler(); listar(); }; });
+    $("#fx-busca").oninput = function () { ler(); listar(); };
+    function ler() { F.dias = $("#fx-dias").value; F.cat = $("#fx-cat").value; F.func = $("#fx-func").value; F.busca = semAcento($("#fx-busca").value.trim()); }
+    function listar() {
+      var limite = F.dias ? Date.now() - Number(F.dias) * 864e5 : 0;
+      var lista = S.serv.filter(function (s) {
+        if (s.status !== "concluido") return false;
+        if (F.cat && s.categoria !== F.cat) return false;
+        if (F.func && s.funcionario_id !== F.func) return false;
+        if (dataExecucao(s).getTime() < limite) return false;
+        var o = porId(S.obras, s.obra_id);
+        if (F.busca && semAcento([o && o.cliente, o && o.endereco, o && o.chamado, o && o.protocolo].join(" ")).indexOf(F.busca) < 0) return false;
+        return true;
+      }).sort(function (a, b) { return dataExecucao(b) - dataExecucao(a); });
+      var r = $("#fx-res");
+      if (!lista.length) { r.innerHTML = '<div class="cartao vazio">Nenhum serviço executado neste período.</div>'; return; }
+      var dias = {}, ordem = [];
+      lista.forEach(function (s) { var d = A.isoLocal(dataExecucao(s)); if (!dias[d]) { dias[d] = []; ordem.push(d); } dias[d].push(s); });
+      r.innerHTML = '<p class="mudo peq" style="margin:-4px 0 10px">' + lista.length + " serviço" + (lista.length > 1 ? "s" : "") + " executado" + (lista.length > 1 ? "s" : "") + " em " + ordem.length + " dia" + (ordem.length > 1 ? "s" : "") + ".</p>" +
+        ordem.map(function (d) {
+          var ss = dias[d], lojas = {};
+          ss.forEach(function (s) { var o = porId(S.obras, s.obra_id); lojas[(o && (o.loja_id || o.id)) || s.id] = 1; });
+          return '<div class="cab-secao" style="margin-top:14px"><h2>📅 ' + A.dataSimples(d) + "</h2><span class=\"mudo peq\">" + ss.length + " serviço" + (ss.length > 1 ? "s" : "") +
+            " · " + Object.keys(lojas).length + " local" + (Object.keys(lojas).length > 1 ? "is" : "") + "</span></div>" + ss.map(cartaoExecutado).join("");
+        }).join("");
+      hidratarFotos(r);
+      $$("[data-exec-rel]", r).forEach(function (b) { b.onclick = function () { abrirRelatorio(b.dataset.execRel); }; });
+      $$("[data-exec-serv]", r).forEach(function (b) { b.onclick = function () { abrirServico(b.dataset.execServ); }; });
+    }
+    function cartaoExecutado(s) {
+      var o = porId(S.obras, s.obra_id) || {}, rels = S.rel.filter(function (x) { return x.servico_id === s.id; });
+      var antes = [], depois = [];
+      rels.forEach(function (x) { antes = antes.concat(x.fotos_antes || []); depois = depois.concat(x.fotos || []); });
+      rels.forEach(function (x) { (x.fotos_antes || []).forEach(function (f) { infoFoto[f] = "Foto ANTES · " + esc(o.cliente || "") + " · " + A.dataHora(x.criado_em); }); (x.fotos || []).forEach(function (f) { infoFoto[f] = "Foto · " + esc(o.cliente || "") + " · " + A.dataHora(x.criado_em); }); });
+      var fotos = antes.slice(0, 3).map(function (f) { return htmlFoto(f, "antes"); }).concat(depois.slice(0, antes.length ? 3 : 6).map(function (f) { return htmlFoto(f, antes.length ? "depois" : ""); }));
+      var mais = antes.length + depois.length - fotos.length;
+      return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente || "Serviço") + "</h3>" + seloOS(o) + seloChamado(o) +
+        '<span class="dir mudo peq">' + A.hora(dataExecucao(s)) + "</span></div>" +
+        '<div class="linha">' + A.seloCategoria(s.categoria) + '<span class="peq">👷 ' + esc(nomeFunc(s.funcionario_id) || "—") + "</span>" +
+        (o.chamado ? '<span class="selo atencao">finalizar chamado ' + esc(o.chamado) + " no portal</span>" : "") + "</div>" +
+        (o.endereco ? '<div class="peq mudo">📍 ' + esc(o.endereco) + "</div>" : "") +
+        (s.descricao ? '<div class="peq" style="margin-top:4px">' + esc(resumoServ(s, 160)) + "</div>" : "") +
+        (fotos.length ? '<div class="fotos" style="margin-top:8px">' + fotos.join("") + "</div>" + (mais > 0 ? '<div class="peq mudo">+ ' + mais + " foto" + (mais > 1 ? "s" : "") + " no relatório</div>" : "") :
+          '<div class="peq mudo" style="margin-top:6px">Sem fotos no relatório.</div>') +
+        '<div class="acoes">' + (rels.length ? '<button class="peq" data-exec-rel="' + rels[0].id + '">📝 Ver relatório</button>' : "") + '<button class="peq" data-exec-serv="' + s.id + '">Abrir serviço</button></div></div>';
+    }
+    listar();
   }
 
   function verRelatorios(c) {
@@ -2346,6 +2415,7 @@
   }
   function msgRota(r) {
     var f = porId(S.func, r.funcionario_id);
+    r = Object.assign({}, r, { paradas: r.id ? (r.paradas || []).filter(function (p) { return !paradaFeita(p, r); }) : r.paradas });
     var t = "*AGE Elétrica e Pintura — " + r.nome + "*\n" + (r.data ? "Data: " + A.dataSimples(r.data) + "\n" : "") + r.paradas.length + " paradas, na ordem:\n\n";
     var abertos = {};
     lojasComServico("").forEach(function (x) { abertos[x.loja.id] = x.servicos; });
@@ -2379,16 +2449,31 @@
       }).catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
   }
+  // loja da rota já atendida: serviço dela concluído depois que a rota foi criada e nada mais aberto
+  function paradaFeita(p, r) {
+    if (!p.loja_id) return false;
+    var feito = false, aberto = false;
+    S.serv.forEach(function (x) {
+      var o = porId(S.obras, x.obra_id);
+      if (!o || o.loja_id !== p.loja_id) return;
+      if (x.status === "aberto" || x.status === "em_andamento") aberto = true;
+      else if (x.status === "concluido" && x.concluido_em && x.concluido_em >= r.criado_em) feito = true;
+    });
+    return feito && !aberto;
+  }
   function desenharSalvas() {
     var c = $("#rt-salvas");
     if (!c) return;
     if (!S.rotas.length) { c.innerHTML = '<div class="cartao vazio">Nenhuma rota salva.</div>'; return; }
     c.innerHTML = S.rotas.slice(0, 60).map(function (r) {
-      var f = porId(S.func, r.funcionario_id), links = G.linksGoogle(r.partida && G.temLocal(r.partida) ? r.partida : null, r.paradas || [], false);
-      return '<div class="cartao"><div class="linha"><h3>' + esc(r.nome) + "</h3>" + (r.data ? '<span class="selo">📅 ' + A.dataSimples(r.data) + "</span>" : "") +
+      var f = porId(S.func, r.funcionario_id), pend = (r.paradas || []).filter(function (p) { return !paradaFeita(p, r); });
+      var links = G.linksGoogle(r.partida && G.temLocal(r.partida) ? r.partida : null, pend, false), feitas = (r.paradas || []).length - pend.length;
+      return '<div class="cartao"' + (!pend.length ? ' style="opacity:.75"' : "") + '><div class="linha"><h3>' + esc(r.nome) + "</h3>" + (r.data ? '<span class="selo">📅 ' + A.dataSimples(r.data) + "</span>" : "") +
+        (!pend.length ? '<span class="selo bom">✅ concluída</span>' : feitas ? '<span class="selo atencao">✔ ' + feitas + " de " + (r.paradas || []).length + " feitas</span>" : "") +
         '<span class="dir mudo peq">' + (r.paradas || []).length + " paradas" + (r.km ? " · ≈ " + A.numero(r.km, 0) + " km" : "") + "</span></div>" +
         '<div class="peq">' + (f ? "👷 " + esc(f.nome) : '<span class="mudo">sem funcionário</span>') + " · " +
-        esc((r.paradas || []).map(function (p) { return p.codigo || p.nome; }).join(" → ")) + "</div>" +
+        (r.paradas || []).map(function (p) { var t = esc(p.codigo || p.nome); return paradaFeita(p, r) ? "<s>" + t + "</s> ✔" : t; }).join(" → ") +
+        (feitas ? ' <span class="mudo">(as feitas saíram do app do funcionário e estão em <a href="#executados">✅ Executados</a>)</span>' : "") + "</div>" +
         '<div class="acoes">' + links.map(function (u, k) { return '<a class="botao peq" target="_blank" rel="noopener" href="' + esc(u) + '">🗺 Google Maps' + (links.length > 1 ? " " + (k + 1) : "") + "</a>"; }).join("") +
         (f && f.telefone ? '<a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgRota(r))) + '">📲 WhatsApp</a>' : "") +
         '<button class="peq perigo" data-apagar-rota="' + r.id + '">Apagar</button></div></div>';
