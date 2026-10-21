@@ -666,8 +666,15 @@
       // OS criadas: "Ordem de serviço de número '11652' criada.Para o prestador 'AGE SOLUCOES ...'" (o nome da AGE varia no portal)
       var reOS = /n[uú]mero\s*'(\d+)'\s*criada\.?\s*para o prestador\s*'([^']*)'/gi, mo, mos = null, temOS = false;
       while ((mo = reOS.exec(t))) { temOS = true; if (EH_AGE.test(mo[2])) mos = mo; }
+      // comentários do histórico (sem as linhas automáticas do portal)
+      var iH = -1; for (var k = 0; k < ls.length; k++) if (semAcento(ls[k]) === "historico") { iH = k; break; }
+      var hist = iH < 0 ? [] : ls.slice(iH + 1).filter(function (x) {
+        return !/^\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}/.test(x) && !/^(status |ordem de servi|ordens de servi|requisi[cç][oõ]es de compra$|descri[cç][aã]o$|enviar$)/i.test(x);
+      });
+      var histTxt = hist.join(" / ");
+      if (histTxt.length > 500) histTxt = histTxt.slice(0, 500) + "…";
       var dsc = campo("descricao"), loc = campo("locais"), desc = [dsc, loc ? "Local: " + loc : "", campo("solicitante") ? "Solicitante: " + campo("solicitante") : "",
-        campo("coordenador") ? "Coordenador: " + campo("coordenador") : "", mos ? "OS da AGE: " + mos[1] : ""].filter(Boolean).join(" · ");
+        campo("coordenador") ? "Coordenador: " + campo("coordenador") : "", mos ? "OS da AGE: " + mos[1] : "", histTxt ? "Histórico: " + histTxt : ""].filter(Boolean).join(" · ");
       var sa = semAcento(dsc), sitOS = "";
       if (mos) {
         var re = new RegExp("ordem servi[cç]o de n[uú]mero\\s*'" + mos[1] + "'\\s*foi alterado(?: de)?(?: para)?\\s*'([^']+)'", "gi"), mm;
@@ -751,7 +758,8 @@
   }
   // situação do item na caixa: já lançado, ignorado (com motivo) ou pronto
   function avaliarItem(c) {
-    if (S.obras.some(function (o) { return o.chamado === c.numero; })) return { ja: true, txt: "já lançado", cor: "" };
+    if (S.obras.some(function (o) { return o.chamado === c.numero; }))
+      return c.desc && c.detalhes ? { ja: true, atualizar: true, txt: "já lançado · descrição nova", cor: "atencao" } : { ja: true, txt: "já lançado", cor: "" };
     if (c.outro) return { ignorar: true, txt: "OS de outro prestador", cor: "critico" };
     if (c.situacao && /or[cç]ad|finaliz|execut|conclu|cancel/i.test(c.situacao)) return { ignorar: true, txt: "já " + c.situacao.toLowerCase(), cor: "critico" };
     return { ok: true, txt: lojaPorCodigo(c.centro || c.loja) ? "novo" : "novo · loja não cadastrada", cor: lojaPorCodigo(c.centro || c.loja) ? "bom" : "atencao" };
@@ -782,14 +790,19 @@
       var av = cx.map(avaliarItem), marc = function (c, a) { return a.ja ? false : c.marcado === null || c.marcado === undefined ? !!a.ok : c.marcado; };
       var nSel = cx.filter(function (c, i) { return marc(c, av[i]); }).length;
       var ign = av.filter(function (a) { return a.ignorar; }).length, ja = av.filter(function (a) { return a.ja; }).length;
-      var botao = function (id) { return nSel ? '<button class="prim" id="' + id + '">Lançar ' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + "</button>" : ""; };
+      var marcAt = function (c, a) { return a.atualizar && c.atualizar !== false; };
+      var nAt = cx.filter(function (c, i) { return marcAt(c, av[i]); }).length;
+      var botao = function (id) {
+        return (nSel ? '<button class="prim" id="' + id + '">Lançar ' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + "</button>" : "") +
+          (nAt ? '<button class="bom" id="' + id + '-at">✏️ Atualizar descrição de ' + nAt + " já lançado" + (nAt > 1 ? "s" : "") + "</button>" : "");
+      };
       $("#cx", el).innerHTML = '<div class="cab-secao" style="margin-top:12px"><h2>Caixa: ' + cx.length + " chamado" + (cx.length > 1 ? "s" : "") + "</h2>" +
         '<span class="mudo peq">' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + (ign ? " · " + ign + " ignorado" + (ign > 1 ? "s" : "") : "") + (ja ? " · " + ja + " já lançado" + (ja > 1 ? "s" : "") : "") + "</span></div>" +
         '<div class="acoes" style="margin-top:0">' + botao("cx-lancar-topo") + '<button class="peq" id="cx-limpar">🗑 Esvaziar caixa</button></div>' +
         '<div class="tabela-caixa"><table><thead><tr><th></th><th>Chamado</th><th>Abertura</th><th>Loja</th><th>O que fazer</th><th>Situação</th></tr></thead><tbody>' +
         cx.map(function (c, i) {
           var a = av[i], l = lojaPorCodigo(c.centro || c.loja);
-          return "<tr><td>" + (a.ja ? "" : '<input type="checkbox" data-cx="' + esc(c.numero) + '"' + (marc(c, a) ? " checked" : "") + ' aria-label="Lançar ' + esc(c.numero) + '">') + "</td><td>" + esc(c.numero) +
+          return "<tr><td>" + (a.ja ? (a.atualizar ? '<input type="checkbox" data-cxa="' + esc(c.numero) + '"' + (marcAt(c, a) ? " checked" : "") + ' aria-label="Atualizar ' + esc(c.numero) + '">' : "") : '<input type="checkbox" data-cx="' + esc(c.numero) + '"' + (marc(c, a) ? " checked" : "") + ' aria-label="Lançar ' + esc(c.numero) + '">') + "</td><td>" + esc(c.numero) +
             "</td><td>" + esc(c.data || "") + "</td><td>" + (l ? esc(nomeLoja(l)) : esc(c.centro || c.loja || "—")) + '</td><td class="peq">' + esc(String(c.desc || "").slice(0, 70)) +
             "</td><td>" + '<span class="selo ' + a.cor + '">' + esc(a.txt) + "</span>" + (c.situacao && !a.ignorar ? ' <span class="peq mudo">' + esc(c.situacao) + "</span>" : "") + "</td></tr>";
         }).join("") + "</tbody></table></div>" +
@@ -801,12 +814,39 @@
         cb.onchange = function () { var l = lerCaixa(); l.forEach(function (c) { if (c.numero === cb.dataset.cx) c.marcado = cb.checked; }); gravarCaixa(l); desenhar(); };
       });
       $("#cx-limpar", el).onclick = function () { if (A.confirmar("Esvaziar a caixa? (os chamados já lançados não são apagados)")) { gravarCaixa([]); desenhar(); } };
+      $$("[data-cxa]", el).forEach(function (cb) {
+        cb.onchange = function () { var l = lerCaixa(); l.forEach(function (c) { if (c.numero === cb.dataset.cxa) c.atualizar = cb.checked; }); gravarCaixa(l); desenhar(); };
+      });
+      var atualizar = function () { atualizarJaLancados(this, cx.filter(function (c, i) { return marcAt(c, av[i]); }), desenhar); };
+      ["#cx-lancar-at", "#cx-lancar-topo-at"].forEach(function (id) { if ($(id, el)) $(id, el).onclick = atualizar; });
       var lancar = function () { lancarCaixa(this, cx.filter(function (c, i) { return marc(c, av[i]); }), $("#cx-cat", el).value, j); };
       if ($("#cx-lancar", el)) $("#cx-lancar", el).onclick = lancar;
       if ($("#cx-lancar-topo", el)) $("#cx-lancar-topo", el).onclick = lancar;
     }
     desenhar();
     $("#ch-txt", el).focus();
+  }
+  // chamado que já virou serviço: troca o "o que fazer" pela descrição completa da tela Detalhes
+  function atualizarJaLancados(b, sel, redesenhar) {
+    var tarefas = [];
+    sel.forEach(function (c) {
+      S.obras.filter(function (o) { return o.chamado === c.numero; }).forEach(function (o) {
+        S.serv.filter(function (x) { return x.obra_id === o.id; }).forEach(function (x) {
+          var d = String(x.descricao || ""), l1 = /^Chamado nº/.test(d) ? d.split("\n")[0] : "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "");
+          tarefas.push({ serv: x, desc: l1 + "\n" + c.desc });
+        });
+      });
+    });
+    if (!tarefas.length) return;
+    A.ocupado(b, true, "Atualizando...");
+    Promise.all(tarefas.map(function (t) {
+      return q(sb.from("servicos").update({ descricao: t.desc }).eq("id", t.serv.id).select().single()).then(function (n) { trocar(S.serv, n); });
+    })).then(function () {
+      var feitos = {}; sel.forEach(function (c) { feitos[c.numero] = 1; });
+      gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
+      A.avisar(tarefas.length + " serviço" + (tarefas.length > 1 ? "s" : "") + " com a descrição atualizada", "ok");
+      redesenhar();
+    }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
   function lancarCaixa(b, sel, catPadrao, janela) {
     if (!sel.length) return;
