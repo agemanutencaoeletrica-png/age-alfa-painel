@@ -2,7 +2,7 @@
 // Sempre busca a versão nova na internet; se estiver sem sinal, abre a última
 // versão guardada. Dados do Supabase e fotos NUNCA ficam guardados aqui.
 var CACHE = "age-servicos-v21";
-var BASICOS = ["./index.html", "./funcionario.html", "./estilo.css", "./comum.js", "./admin.js", "./funcionario.js", "./geo.js", "./lojas-doc.js", "./prefeitura.js", "./config.js",
+var BASICOS = ["./index.html", "./funcionario.html", "./estilo.css", "./comum.js", "./admin.js", "./funcionario.js", "./geo.js", "./lojas-doc.js", "./prefeitura.js", "./pagamentos.js", "./config.js",
   "./icone.svg", "./icone-192.png", "./icone-512.png", "./manifest.webmanifest", "./manifest-funcionario.webmanifest"];
 
 self.addEventListener("install", function (e) {

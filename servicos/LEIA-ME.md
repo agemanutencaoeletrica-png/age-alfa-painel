@@ -269,3 +269,12 @@ Antes de finalizar no portal, o serviço avisa se falta **registro de chegada** 
 - **Receber (Android, app instalado na tela inicial):** no WhatsApp, toque em Compartilhar → **AGE Ponto** (funcionário) para
   anexar fotos/texto ao relatório de um serviço (marcadas "recebida por compartilhamento"), ou → **AGE Painel** para colocar
   o texto na caixa de chamados ou criar um serviço. Depois de atualizar o app, reinstale o ícone se ele não aparecer na lista.
+
+## 💰 Pagamentos da equipe (Pix e dinheiro)
+1. Em **Equipe**, cadastre a **Chave Pix** de cada funcionário (telefone, CPF, e-mail ou chave aleatória).
+2. No app do banco, abra o comprovante e toque em **Compartilhar → AGE Painel** (pode mandar vários), ou na aba
+   **💰 Pagamentos** toque em **📥 Comprovante Pix** e escolha as imagens/PDFs. O app lê valor, data, horário e quem
+   recebeu, e separa por funcionário (pela chave Pix, CPF, telefone ou nome). Confira e salve. O mesmo Pix não entra duas vezes.
+3. Pagamento em **dinheiro**: parte **💵 Dinheiro (espécie)** → **Novo pagamento em dinheiro**.
+4. Relatório: por período e funcionário, separado **por semana** (seg a dom) com total de cada um, Pix e dinheiro;
+   ⬇ planilha (CSV) e 📤 compartilhar. Precisa rodar o **supabase.sql** de novo (cria a tabela de pagamentos).
