@@ -401,12 +401,16 @@
       var novos = S.rel.filter(function (r) { return !r.lido; }).length;
       var aguard = S.orc.filter(function (o) { return o.status === "enviado"; });
       var visitasOrc = S.serv.filter(function (s) { return s.status === "aguardando"; }).length;
-      var probl = S.obras.filter(function (o) { return problemaPortal(o.portal); }), reprov = probl.length;
+      var probl = S.obras.filter(function (o) { return problemaPortal(o.portal); }), reprov = probl.length, pend = pendencias();
       var h = (probl.length ? '<div class="aviso erro" style="margin-bottom:12px">' + probl.map(function (o) {
           var pr = o.portal.reprovado || o.portal.reclamacao, sv = S.serv.filter(function (x) { return x.obra_id === o.id; })[0];
           return '<div style="margin:2px 0' + (sv ? ';cursor:pointer" data-h-prob="' + sv.id + '" role="button" tabindex="0"' : '"') + '>🚨 <b>' + esc(o.cliente) + "</b> · chamado " + esc(o.chamado || "") + " · " +
             (o.portal.reprovado ? "REPROVADO" : "RECLAMAÇÃO") + " em " + esc(pr.data || "") + ": “" + esc(String(pr.motivo || pr.txt || "").slice(0, 160)) + "”</div>";
         }).join("") + "</div>" : "") +
+        (pend.length ? '<div class="cartao" style="margin-bottom:12px;border-left:4px solid var(--atencao)"><h3 style="margin:0 0 6px">📌 Pendências dos chamados (' + pend.length + ")</h3>" + pend.map(function (x) {
+          return '<div class="peq" style="margin:4px 0;cursor:pointer" data-h-prob="' + x.serv.id + '" role="button" tabindex="0"><span class="selo ' + x.cor + '">' + esc(x.txt) + "</span> <b>" + esc(x.obra.cliente) + "</b> · chamado " + esc(x.obra.chamado) + "</div>";
+        }).join("") + '<div class="mudo peq" style="margin-top:6px">Some sozinha quando você atualiza o chamado (colando os Detalhes) ou muda o serviço no app.</div></div>' : "") +
+        htmlRevisao(semConferir()) +
         '<div class="grade">' +
         '<div class="ladrilho"><div class="r">⚡ Elétrica</div><div class="v">' + abE + '</div><div class="d">serviços ativos</div></div>' +
         '<div class="ladrilho"><div class="r">🖌️ Pintura</div><div class="v">' + abP + '</div><div class="d">serviços ativos</div></div>' +
@@ -754,7 +758,7 @@
     }
     for (i = 0; i < lin.length; i++) {
       var cel = lin[i].split("\t").map(function (x) { return x.trim(); });
-      if (cel.length < 5 || !/^\d{3,8}$/.test(cel[0])) continue;
+      if (cel.length < 4 || !/^\d{3,8}$/.test(cel[0])) continue;
       if (/^\d{2,8}$/.test(cel[1]) && /^\d{2}\/\d{2}\/\d{4}$/.test(cel[2])) {
         if (osAge[cel[0]] || EH_AGE.test(cel[4] || "")) {
           reqAge[cel[1]] = 1; var sr = situacaoDepois(cel, 5, i); if (sr) sitReq[cel[1]] = sr;
@@ -816,6 +820,47 @@
     "pessimo", "nao estou ciente", "voltou a (dar|queimar|desarmar|parar|vazar|apagar)", "mesmo problema", "servico incompleto"].join("|"));
   // chamado com problema na loja: reprovado ou com reclamação
   function problemaPortal(p) { return !!(p && (p.reprovado || p.reclamacao)); }
+  // o que falta fazer em um chamado, pela situação no portal e no app. Calculado na hora:
+  // ao colar os Detalhes novos (Atualizar) ou mudar o serviço no app, a pendência some sozinha.
+  function pendenciaChamado(o) {
+    if (!o || !o.chamado || ehPrefObra(o)) return null;
+    var p = o.portal || {}, st = String(p.status || ""), os = String(p.osSit || "");
+    if (problemaPortal(p) || /finaliz/i.test(st)) return null;   // reprovado/reclamação já tem o alerta vermelho
+    var sv = S.serv.filter(function (x) { return x.obra_id === o.id && x.status !== "cancelado"; });
+    if (!sv.length) return null;
+    var abertos = sv.filter(function (x) { return x.status === "aberto" || x.status === "em_andamento"; });
+    var aguard = sv.filter(function (x) { return x.status === "aguardando"; });
+    var semFunc = abertos.filter(function (x) { return !x.funcionario_id; });
+    var r = function (txt, cor, x) { return { obra: o, serv: x || sv[0], txt: txt, cor: cor }; };
+    if (p.outroPrest && (abertos.length || aguard.length)) return r("✖ não pertence à AGE (" + p.outroPrest + "): cancele o serviço", "critico", abertos[0] || aguard[0]);
+    if (/cancel/i.test(st) && (abertos.length || aguard.length)) return r("✖ chamado cancelado no portal: cancele o serviço no app", "critico", abertos[0] || aguard[0]);
+    if (/reprov/i.test(os) && (abertos.length || aguard.length)) return r("✖ orçamento reprovado no portal: renegocie ou cancele", "critico", abertos[0] || aguard[0]);
+    if (/aprov/i.test(os) && aguard.length) return r("🔧 aprovado no portal: volte o serviço para Aberto e escolha o funcionário", "atencao", aguard[0]);
+    if (aguard.length && (!os || /pendente/i.test(os))) return r("🧾 visita de orçamento feita: lance o orçamento no portal", "atencao", aguard[0]);
+    if (/aprov/i.test(os) && semFunc.length) return r("🔧 aprovado: escolha o funcionário para executar", "atencao", semFunc[0]);
+    if (/pendente/i.test(os) && semFunc.length) return r("🧾 OS pendente: mande alguém fazer o orçamento", "atencao", semFunc[0]);
+    var concl = sv.every(function (x) { return x.status === "concluido"; });
+    if (concl && !/execut/i.test(os) && !/avalia/i.test(st)) {
+      var ult = sv.map(function (x) { return x.concluido_em || ""; }).sort().pop();
+      // sem situação do portal, só lembra dos concluídos nos últimos 30 dias
+      if (o.portal || (ult && Date.now() - new Date(ult).getTime() < 30 * 86400000))
+        return r("✅ executado no app: finalize o chamado no portal" + (provaFalta(sv[0], null).length ? " (⚠️ confira: sem foto de depois)" : ""), "atencao");
+    }
+    return null;
+  }
+  function pendencias() { return S.obras.map(pendenciaChamado).filter(Boolean); }
+  // revisão: chamados lançados, com serviço em aberto, que ainda não foram conferidos no portal (Detalhes nunca colados)
+  function semConferir() {
+    return S.obras.filter(function (o) {
+      return o.chamado && !ehPrefObra(o) && !o.portal && S.serv.some(function (x) { return x.obra_id === o.id && (x.status === "aberto" || x.status === "em_andamento" || x.status === "aguardando"); });
+    }).sort(function (a, b) { return dataObra(b) - dataObra(a); });
+  }
+  function htmlRevisao(lista) {
+    if (!lista.length) return "";
+    return '<details class="cartao" style="margin:10px 0"><summary><b>🔍 Revisão: ' + lista.length + " chamado" + (lista.length > 1 ? "s lançados ainda não conferidos" : " lançado ainda não conferido") + " no portal</b></summary>" +
+      '<p class="peq mudo" style="margin:6px 0">Abra cada um no portal, copie a tela <b>Detalhes</b> e cole na caixa de chamados. O app confere se é da AGE (os que não forem, cancela) e a etapa.</p>' +
+      '<div class="peq">' + lista.map(function (o) { return "<b>" + esc(o.chamado) + "</b> " + esc(o.cliente); }).join(" · ") + "</div></details>";
+  }
   // etapa do chamado no portal, para o selo
   function etapaPortal(p) {
     if (!p) return null;
@@ -989,8 +1034,10 @@
     return achou;
   }
   function avaliarItem(c) {
-    if (S.obras.some(function (o) { return o.chamado === c.numero; }))
+    if (S.obras.some(function (o) { return o.chamado === c.numero; })) {
+      if (c.outro && c.detalhes) return { ja: true, atualizar: true, naoAge: true, txt: "✖ lançado no app, mas não pertence à AGE", cor: "critico" };
       return c.desc && c.detalhes ? { ja: true, atualizar: true, txt: "já lançado · descrição nova", cor: "atencao" } : { ja: true, txt: "já lançado", cor: "" };
+    }
     if (c.outro) return { ignorar: true, txt: "OS de outro prestador", cor: "critico" };
     if (c.situacao && /or[cç]ad|finaliz|execut|conclu|cancel/i.test(c.situacao)) return { ignorar: true, txt: "já " + c.situacao.toLowerCase(), cor: "critico" };
     var par = servicoParecido(c);
@@ -1000,7 +1047,7 @@
   function importarChamado() {
     var j = A.janela('<p class="peq mudo" style="margin-top:0">Cole aqui quantas vezes quiser: <b>cada página</b> de <b>Meus chamados</b> ou de <b>Ordens de serviço</b> (selecione a tabela e Ctrl+C) ' +
       "e a tela <b>Detalhes</b> de um chamado (completa a descrição). Tudo vai para a caixa abaixo, sem repetir. Depois confira e lance.</p>" +
-      '<textarea id="ch-txt" rows="3" placeholder="Cole aqui (Ctrl+V)"></textarea><div id="ch-msg" class="peq" style="margin-top:4px"></div><div id="cx"></div>',
+      '<textarea id="ch-txt" rows="3" placeholder="Cole aqui (Ctrl+V)"></textarea><div id="ch-msg" class="peq" style="margin-top:4px"></div><div id="cx-rev"></div><div id="cx"></div>',
       { titulo: "📋 Chamados do BH", larga: true, aoFechar: function () { if (location.hash.slice(1) === "servicos") rota(); } });
     var el = j.el;
     $("#ch-txt", el).oninput = function () {
@@ -1016,9 +1063,13 @@
       // chamado de outro prestador (sem OS da AGE): sai da caixa e avisa
       var naoAge = itens.filter(function (it) { return it.outro && !S.obras.some(function (o) { return o.chamado === it.numero; }); });
       if (naoAge.length) gravarCaixa(lerCaixa().filter(function (c) { return !naoAge.some(function (it) { return it.numero === c.numero; }); }));
+      var naoAgeLanc = itens.filter(function (it) { return it.outro && it.detalhes && S.obras.some(function (o) { return o.chamado === it.numero; }); });
       var alertas = lerCaixa().filter(function (c) { return itens.some(function (it) { return it.numero === c.numero; }) && problemaPortal(c.portal); });
       $("#ch-msg", el).innerHTML = '<span class="selo bom">✔ ' + (r.novos ? r.novos + " adicionado" + (r.novos > 1 ? "s" : "") : "") + (r.novos && r.atual ? ", " : "") +
         (r.atual ? r.atual + " já estava" + (r.atual > 1 ? "m" : "") + " na caixa (completado" + (r.atual > 1 ? "s" : "") + ")" : "") + "</span> Pode colar a próxima página." +
+        naoAgeLanc.map(function (it) {
+          return '<div class="aviso erro" style="margin-top:6px">✖ <b>Chamado ' + esc(it.numero) + " já está lançado no app, mas não pertence à AGE</b>" + (it.portal && it.portal.outroPrest ? " (" + esc(it.portal.outroPrest) + ")" : "") + ". O serviço foi cancelado.</div>";
+        }).join("") +
         naoAge.map(function (it) {
           return '<div class="aviso erro" style="margin-top:6px">✖ <b>Chamado ' + esc(it.numero) + " não pertence à AGE</b>" + (it.portal && it.portal.outroPrest ? " (" + esc(it.portal.outroPrest) + ")" : " (OS de outro prestador)") + ". Retirado da caixa.</div>";
         }).join("") +
@@ -1027,9 +1078,13 @@
           return '<div class="aviso erro" style="margin-top:6px">🚨 <b>Chamado ' + esc(c.numero) + ": " + (c.portal.reprovado ? "REPROVADO pela loja" : "RECLAMAÇÃO da loja") + "</b> em " + esc(pr.data || "") +
             ": “" + esc(String(pr.motivo || pr.txt || "").slice(0, 200)) + "”</div>";
         }).join("");
+      // Detalhes de chamado que já está no app: atualiza na hora (descrição, etapa, reprovação, não é da AGE)
+      var jaNoApp = lerCaixa().filter(function (c) { return c.detalhes && itens.some(function (it) { return it.numero === c.numero && it.detalhes; }) && S.obras.some(function (o) { return o.chamado === c.numero; }); });
+      if (jaNoApp.length) atualizarJaLancados(null, jaNoApp, desenhar);
       desenhar();
     };
     function desenhar() {
+      $("#cx-rev", el).innerHTML = htmlRevisao(semConferir());
       var cx = lerCaixa().slice().sort(function (a, b) { return String(isoDeBR(b.data)).localeCompare(String(isoDeBR(a.data))); });
       if (!cx.length) { $("#cx", el).innerHTML = '<div class="cartao vazio" style="margin-top:10px">A caixa está vazia.</div>'; return; }
       // chamados da mesma loja juntos: o grupo fica na posição do chamado mais recente
@@ -1087,7 +1142,7 @@
   }
   // chamado que já virou serviço: troca o "o que fazer" pela descrição completa da tela Detalhes
   function atualizarJaLancados(b, sel, redesenhar) {
-    var tarefas = [], obrasAt = [], reabrir = 0;
+    var tarefas = [], obrasAt = [], reabrir = 0, cancelados = 0;
     sel.forEach(function (c) {
       S.obras.filter(function (o) { return o.chamado === c.numero; }).forEach(function (o) {
         var pv = juntarPortal(o.portal, c.portal);
@@ -1096,6 +1151,8 @@
           var d = String(x.descricao || ""), l1 = /^Chamado nº/.test(d) ? d.split("\n")[0] : "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "");
           var corpo = /Histórico:/.test(d) && !/Histórico:/.test(c.desc || "") ? d.split("\n").slice(/^Chamado nº/.test(d) ? 1 : 0).join("\n") : c.desc;
           var dados = { descricao: l1 + "\n" + corpo };
+          // revisão: o chamado é de outro prestador — cancela o que ainda não foi feito
+          if (c.outro && x.status !== "concluido" && x.status !== "cancelado") { dados.status = "cancelado"; dados.descricao = l1 + "\nNão pertence à AGE" + (pv && pv.outroPrest ? " (" + pv.outroPrest + ")" : "") + ".\n" + corpo; cancelados++; return tarefas.push({ serv: x, dados: dados }); }
           // reprovado pela loja: o serviço volta a ficar aberto para a equipe voltar lá
           if (problemaPortal(pv) && (x.status === "concluido" || x.status === "aguardando")) { dados.status = "aberto"; dados.concluido_em = null; reabrir++; }
           tarefas.push({ serv: x, dados: dados });
@@ -1103,7 +1160,7 @@
       });
     });
     if (!tarefas.length && !obrasAt.length) return;
-    A.ocupado(b, true, "Atualizando...");
+    if (b) A.ocupado(b, true, "Atualizando...");
     Promise.all(obrasAt.map(function (t) {
       return q(sb.from("obras").update({ portal: t.portal }).eq("id", t.obra.id).select().single()).then(function (n) { trocar(S.obras, n); });
     }).concat(tarefas.map(function (t) {
@@ -1112,9 +1169,10 @@
       var feitos = {}; sel.forEach(function (c) { feitos[c.numero] = 1; });
       gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
       A.avisar(tarefas.length + " serviço" + (tarefas.length > 1 ? "s" : "") + " atualizado" + (tarefas.length > 1 ? "s" : ""), "ok");
+      if (cancelados) A.avisar("✖ " + cancelados + " serviço" + (cancelados > 1 ? "s cancelados" : " cancelado") + ": o chamado não pertence à AGE.", "erro");
       if (reabrir) A.avisar("⚠️ " + reabrir + " serviço" + (reabrir > 1 ? "s reprovados voltaram" : " reprovado voltou") + " para Aberto: a loja reprovou ou reclamou.", "erro");
       redesenhar();
-    }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+    }).catch(function (e) { if (b) A.ocupado(b, false); falhou(e); });
   }
   // chamado que já tinha serviço lançado à mão na loja: grava o nº do chamado nesse serviço em vez de criar outro
   function vincularChamado(b, c, obra, redesenhar) {
@@ -1199,6 +1257,7 @@
       (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe' + (s.funcionario_id ? " (" + esc(nomeFunc(s.funcionario_id)) + ")" : "") + "</span>" : "") +
       '<span class="dir mudo peq">criado ' + A.data(s.criado_em) + "</span></div>" +
       "<h3 style=\"margin-top:8px\">" + esc(o.cliente) + "</h3>" + seloOS(o) + seloChamado(o) +
+      (pendenciaChamado(o) ? '<div class="aviso" style="margin:6px 0">📌 <b>Pendente:</b> ' + esc(pendenciaChamado(o).txt) + "</div>" : "") +
       (o.portal && o.portal.reprovado ? '<div class="aviso erro" style="margin:6px 0">⚠️ <b>A loja reprovou a execução</b> em ' + esc(o.portal.reprovado.data || "") +
         (o.portal.reprovado.nota !== null && o.portal.reprovado.nota !== undefined ? " (nota " + esc(o.portal.reprovado.nota) + ")" : "") + (o.portal.reprovado.motivo ? ": “" + esc(o.portal.reprovado.motivo) + "”" : "") +
         ". Volte à loja, faça o serviço com registro de chegada e fotos de depois.</div>" : "") +
