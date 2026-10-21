@@ -652,6 +652,8 @@
 
   // ---- chamados do cliente (ex.: app do Supermercados BH): cola o texto e vira um serviço ----
   // Formato reconhecido:  "37377 - 29/09/2026 07:41 / L320 - Normal / Elétrica/Gerador | Iluminação | Luminárias queimadas"
+  // prestador da AGE no portal do BH: CNPJ, "AGE SOLUCOES..." ou o nome do Antônio
+  var EH_AGE = /17\.134\.491|\bage\b|ant[oô]nio/i;
   function lerChamado(texto) {
     var t = String(texto || "").replace(/\r/g, "");
     // tela "Detalhes" do portal: rótulo numa linha e valor na linha seguinte
@@ -661,7 +663,9 @@
       return "";
     }
     if (campo("numero") && campo("centro")) {
-      var mos = t.match(/n[uú]mero\s*'(\d+)'\s*criada para o prestador\s*'[^']*17\.134\.491/i);
+      // OS criadas: "Ordem de serviço de número '11652' criada.Para o prestador 'AGE SOLUCOES ...'" (o nome da AGE varia no portal)
+      var reOS = /n[uú]mero\s*'(\d+)'\s*criada\.?\s*para o prestador\s*'([^']*)'/gi, mo, mos = null, temOS = false;
+      while ((mo = reOS.exec(t))) { temOS = true; if (EH_AGE.test(mo[2])) mos = mo; }
       var dsc = campo("descricao"), loc = campo("locais"), desc = [dsc, loc ? "Local: " + loc : "", campo("solicitante") ? "Solicitante: " + campo("solicitante") : "",
         campo("coordenador") ? "Coordenador: " + campo("coordenador") : "", mos ? "OS da AGE: " + mos[1] : ""].filter(Boolean).join(" · ");
       var sa = semAcento(dsc), sitOS = "";
@@ -669,7 +673,8 @@
         var re = new RegExp("ordem servi[cç]o de n[uú]mero\\s*'" + mos[1] + "'\\s*foi alterado(?: de)?(?: para)?\\s*'([^']+)'", "gi"), mm;
         while ((mm = re.exec(t))) sitOS = mm[1];
       }
-      var temOS = /criada para o prestador/i.test(t);
+      var stCh = campo("status chamado");
+      if (/finaliz|cancel/i.test(stCh)) sitOS = stCh;
       return { numero: campo("numero").replace(/\D/g, ""), data: campo("abertura"), loja: campo("centro"), prioridade: campo("prioridade"), desc: desc,
         situacao: sitOS || "", outro: temOS && !mos, detalhes: true,
         cat: /pintura|pintar|parede|piso|alvenaria/.test(sa) && !/tomada|eletric|ilumina|lumin|quadro|disjuntor|cabo|fio/.test(sa) ? "pintura" : "eletrica" };
@@ -703,6 +708,7 @@
     // tabela copiada com uma célula por linha: junta cada chamado a partir da data de abertura
     vistos = {};
     var blocos = t.split(/(?=\b(?:Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)\b\s+\d{2}\/\d{2}\/\d{4})/i).map(function (b) { return b.replace(/\s+/g, " "); });
+    if (lerLinhas(blocos).length < 2) blocos = t.split(/(?=^\s*\d{2}\/\d{2}\/\d{4}\s*\n\s*\d{3,8}\s*$)/m).map(function (b) { return b.replace(/\s+/g, " "); });
     return lerLinhas(blocos);
   }
   function lerLinhas(linhas) {
@@ -717,6 +723,8 @@
       vistos[num] = true;
       var prio = (linha.match(/\b(Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)\b/i) || [])[1] || "";
       var sit = (linha.match(/\b(Pendente|Or[cç]ada|Aprovada|Finalizada|Executada|Conclu[ií]da|Cancelada|Em atendimento|Em execu[cç][aã]o)\b/i) || [])[1] || "";
+      // aba Finalizados: tem a data de encerramento depois do centro
+      if (!sit && /\d{2}\/\d{2}\/\d{4}/.test(linha.slice(mc.index + mc[0].length))) sit = "Finalizado";
       return { numero: num, data: md[1], centro: mc[1] + mc[2], prioridade: prio, situacao: sit };
     }).filter(Boolean);
   }
