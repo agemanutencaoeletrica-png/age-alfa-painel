@@ -724,9 +724,12 @@
   // OS da AGE e a situação dela, valor, requisições de compra, reprovação pela loja e comentários.
   // Campo ausente = a aba colada não diz (ao juntar colagens, não apaga o que outra aba trouxe).
   function lerPortal(t, ls, stChamado) {
-    var p = { outros: [], comentarios: [] }, m, i, osAge = {}, reqAge = {}, sitOS = {}, sitReq = {};
+    var p = { outros: [], comentarios: [] }, m, i, osAge = {}, reqAge = {}, sitOS = {}, sitReq = {}, prest = {}, ordem = {};
     var re = /n[uú]mero\s*'(\d+)'\s*criada\.?\s*para o prestador\s*'([^']*)'/gi;
-    while ((m = re.exec(t))) { if (EH_AGE.test(m[2])) { osAge[m[1]] = 1; p.os = m[1]; } else if (p.outros.indexOf(m[1]) < 0) p.outros.push(m[1]); }
+    while ((m = re.exec(t))) {
+      if (!(m[1] in ordem)) ordem[m[1]] = m.index;
+      if (EH_AGE.test(m[2])) { osAge[m[1]] = 1; p.os = m[1]; } else { prest[m[1]] = m[2]; if (p.outros.indexOf(m[1]) < 0) p.outros.push(m[1]); }
+    }
     // situação das OS, na ordem do histórico (duas formas de escrever no portal)
     var ev = [];
     re = /ordem (?:de )?servi[cç]o de n[uú]mero\s*'(\d+)'\s*foi alterad[oa](?: de)?(?: para)?\s*'([^']+)'/gi;
@@ -758,13 +761,22 @@
           if (EH_AGE.test(cel[4] || "")) { osAge[cel[0]] = 1; if (!p.os) p.os = cel[0]; }   // a aba só de requisições também diz a OS da AGE
         }
       } else if (EH_AGE.test(cel[2] || "")) {
-        osAge[cel[0]] = 1; p.os = cel[0];
+        osAge[cel[0]] = 1; p.os = cel[0]; if (!(cel[0] in ordem)) ordem[cel[0]] = Number(cel[0]);
         var vs = cel.slice(4, 6).filter(function (x) { return /^\d{1,3}(\.\d{3})*,\d{2}$/.test(x); });
         if (vs.length) p.valor = A.lerNumero(vs[vs.length - 1]);
         var so = situacaoDepois(cel, 6, i); if (so) sitOS[cel[0]] = so;
-      } else if (cel[2] && p.outros.indexOf(cel[0]) < 0) p.outros.push(cel[0]);
+      } else if (cel[2]) {
+        prest[cel[0]] = cel[2]; if (p.outros.indexOf(cel[0]) < 0) p.outros.push(cel[0]); if (!(cel[0] in ordem)) ordem[cel[0]] = Number(cel[0]);
+        var so2 = situacaoDepois(cel, 6, i); if (so2) sitOS[cel[0]] = so2;
+      }
     }
     if (p.os && sitOS[p.os]) p.osSit = sitOS[p.os];
+    // de quem é o chamado: vale a última OS criada que ainda está valendo (não cancelada nem reprovada)
+    var vale = function (n) { return !/cancel|reprov/i.test(sitOS[n] || ""); };
+    var todas = Object.keys(osAge).concat(p.outros).filter(vale).sort(function (a, b) { return (ordem[a] || 0) - (ordem[b] || 0); });
+    var dono = todas[todas.length - 1];
+    if (todas.length) p.outroPrest = "";
+    if (dono && !osAge[dono]) p.outroPrest = "OS " + dono + " · " + String(prest[dono] || "outro prestador").replace(/\s*-\s*\(\d[\d./-]*\).*$/, "");
     var reqs = Object.keys(reqAge).map(function (n) { return { n: n, sit: sitReq[n] || "" }; });
     if (reqs.length) p.req = reqs;
     if (stChamado) p.status = stChamado;
@@ -867,7 +879,7 @@
       if (problemaPortal(p)) sitOS = "";   // reprovado ou reclamação: tem que voltar lá, não é "já executado"
       delete p.comentarios;
       return { numero: campo("numero").replace(/\D/g, ""), data: campo("abertura"), loja: campo("centro"), prioridade: campo("prioridade"), desc: desc,
-        situacao: sitOS, outro: p.outros.length > 0 && !p.os, detalhes: true, portal: p,
+        situacao: sitOS, outro: !!p.outroPrest, detalhes: true, portal: p,
         cat: /pintura|pintar|parede|piso|alvenaria/.test(sa) && !/tomada|eletric|ilumina|lumin|quadro|disjuntor|cabo|fio/.test(sa) ? "pintura" : "eletrica" };
     }
     var m = t.match(/(\d{3,8})\s*[-–]\s*(\d{2}\/\d{2}\/\d{4})(?:\s+(\d{1,2}:\d{2}))?/);
@@ -950,11 +962,39 @@
     return { novos: novos, atual: atual };
   }
   // situação do item na caixa: já lançado, ignorado (com motivo) ou pronto
+  // palavras que identificam o pedido ("ventiladores" -> "ventil"), sem as que aparecem em quase todo chamado
+  var PALAVRA_COMUM = /^(solici|instal|servic|favor|necess|precis|estamo|fazer|orcame|orcar|verifi|manute|urgent|quanta|materi|execuc|horas|setor|local|loja|para|dentr|todos|todas|esta|estao|nesse|nessa|ainda|outro|outra|sendo|tambe|pois)/;
+  function chavesPedido(t) {
+    var r = [];
+    semAcento(String(t || "").split(" · ")[0].replace(/^Chamado nº[^\n]*\n?/, "")).split(/[^a-z0-9]+/).forEach(function (w) {
+      if (w.length < 5 || /^\d+$/.test(w)) return;
+      var k = w.slice(0, 6);
+      if (!PALAVRA_COMUM.test(k) && r.indexOf(k) < 0) r.push(k);
+    });
+    return r;
+  }
+  // serviço já cadastrado na mesma loja, sem nº de chamado, pedindo a mesma coisa (lançado à mão antes do chamado)
+  function servicoParecido(c) {
+    var l = lojaPorCodigo(c.centro || c.loja), ch = chavesPedido(c.desc);
+    if (!l || !ch.length) return null;
+    var achou = null;
+    S.obras.forEach(function (o) {
+      if (achou || o.loja_id !== l.id || o.chamado) return;
+      S.serv.forEach(function (x) {
+        if (achou || x.obra_id !== o.id || x.status === "cancelado") return;
+        var cx = chavesPedido(x.descricao);
+        if (ch.some(function (k) { return cx.indexOf(k) >= 0; })) achou = { obra: o, serv: x };
+      });
+    });
+    return achou;
+  }
   function avaliarItem(c) {
     if (S.obras.some(function (o) { return o.chamado === c.numero; }))
       return c.desc && c.detalhes ? { ja: true, atualizar: true, txt: "já lançado · descrição nova", cor: "atencao" } : { ja: true, txt: "já lançado", cor: "" };
     if (c.outro) return { ignorar: true, txt: "OS de outro prestador", cor: "critico" };
     if (c.situacao && /or[cç]ad|finaliz|execut|conclu|cancel/i.test(c.situacao)) return { ignorar: true, txt: "já " + c.situacao.toLowerCase(), cor: "critico" };
+    var par = servicoParecido(c);
+    if (par) return { dup: par, txt: "⚠️ parece repetido: já existe na loja “" + resumoServ(par.serv, 50) + "” (" + A.STATUS[par.serv.status] + ")", cor: "critico" };
     return { ok: true, txt: lojaPorCodigo(c.centro || c.loja) ? "novo" : "novo · loja não cadastrada", cor: lojaPorCodigo(c.centro || c.loja) ? "bom" : "atencao" };
   }
   function importarChamado() {
@@ -973,9 +1013,15 @@
       if (!itens.length) { $("#ch-msg", el).innerHTML = '<span class="selo critico">não reconheci chamados neste texto</span>'; return; }
       var r = juntarNaCaixa(itens);
       this.value = "";
+      // chamado de outro prestador (sem OS da AGE): sai da caixa e avisa
+      var naoAge = itens.filter(function (it) { return it.outro && !S.obras.some(function (o) { return o.chamado === it.numero; }); });
+      if (naoAge.length) gravarCaixa(lerCaixa().filter(function (c) { return !naoAge.some(function (it) { return it.numero === c.numero; }); }));
       var alertas = lerCaixa().filter(function (c) { return itens.some(function (it) { return it.numero === c.numero; }) && problemaPortal(c.portal); });
       $("#ch-msg", el).innerHTML = '<span class="selo bom">✔ ' + (r.novos ? r.novos + " adicionado" + (r.novos > 1 ? "s" : "") : "") + (r.novos && r.atual ? ", " : "") +
         (r.atual ? r.atual + " já estava" + (r.atual > 1 ? "m" : "") + " na caixa (completado" + (r.atual > 1 ? "s" : "") + ")" : "") + "</span> Pode colar a próxima página." +
+        naoAge.map(function (it) {
+          return '<div class="aviso erro" style="margin-top:6px">✖ <b>Chamado ' + esc(it.numero) + " não pertence à AGE</b>" + (it.portal && it.portal.outroPrest ? " (" + esc(it.portal.outroPrest) + ")" : " (OS de outro prestador)") + ". Retirado da caixa.</div>";
+        }).join("") +
         alertas.map(function (c) {
           var pr = c.portal.reprovado || c.portal.reclamacao;
           return '<div class="aviso erro" style="margin-top:6px">🚨 <b>Chamado ' + esc(c.numero) + ": " + (c.portal.reprovado ? "REPROVADO pela loja" : "RECLAMAÇÃO da loja") + "</b> em " + esc(pr.data || "") +
@@ -1011,7 +1057,7 @@
             '<tr class="grupo-loja"><td colspan="6" class="peq" style="font-weight:600;background:rgba(127,127,127,.12)">🏪 ' + esc(l ? nomeLoja(l) : c.centro || c.loja) + " · " + q + " chamados nesta loja</td></tr>" : "";
           return cab + "<tr><td>" + (a.ja ? (a.atualizar ? '<input type="checkbox" data-cxa="' + esc(c.numero) + '"' + (marcAt(c, a) ? " checked" : "") + ' aria-label="Atualizar ' + esc(c.numero) + '">' : "") : '<input type="checkbox" data-cx="' + esc(c.numero) + '"' + (marc(c, a) ? " checked" : "") + ' aria-label="Lançar ' + esc(c.numero) + '">') + "</td><td>" + esc(c.numero) +
             "</td><td>" + esc(c.data || "") + "</td><td>" + (l ? esc(nomeLoja(l)) : esc(c.centro || c.loja || "—")) + '</td><td class="peq">' + esc(String(c.desc || "").slice(0, 70)) +
-            "</td><td>" + '<span class="selo ' + a.cor + '">' + esc(a.txt) + "</span>" + (c.portal ? " " + seloPortal(c.portal) : c.situacao && !a.ignorar ? ' <span class="peq mudo">' + esc(c.situacao) + "</span>" : "") + "</td></tr>";
+            "</td><td>" + '<span class="selo ' + a.cor + '">' + esc(a.txt) + "</span>" + (a.dup ? ' <button class="peq bom" data-cx-vinc="' + esc(c.numero) + '">🔗 Vincular a esse serviço</button>' : "") + (c.portal ? " " + seloPortal(c.portal) : c.situacao && !a.ignorar ? ' <span class="peq mudo">' + esc(c.situacao) + "</span>" : "") + "</td></tr>";
         }).join("") + "</tbody></table></div>" +
         '<label for="cx-cat">Área (para os que não dizem)</label><select id="cx-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
         '<p class="peq mudo">Ficam desmarcados os <b>já orçados/feitos</b> e os de <b>outro prestador</b> (marque se quiser lançar). Loja não cadastrada entra com o código do centro; cadastre a loja depois para entrar nas rotas. ' +
@@ -1019,6 +1065,12 @@
         '<div class="acoes">' + botao("cx-lancar") + "</div>";
       $$("[data-cx]", el).forEach(function (cb) {
         cb.onchange = function () { var l = lerCaixa(); l.forEach(function (c) { if (c.numero === cb.dataset.cx) c.marcado = cb.checked; }); gravarCaixa(l); desenhar(); };
+      });
+      $$("[data-cx-vinc]", el).forEach(function (bt) {
+        bt.onclick = function () {
+          var i = cx.map(function (c) { return c.numero; }).indexOf(bt.dataset.cxVinc);
+          vincularChamado(bt, cx[i], av[i].dup.obra, desenhar);
+        };
       });
       $("#cx-limpar", el).onclick = function () { if (A.confirmar("Esvaziar a caixa? (os chamados já lançados não são apagados)")) { gravarCaixa([]); desenhar(); } };
       $$("[data-cxa]", el).forEach(function (cb) {
@@ -1061,6 +1113,24 @@
       gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
       A.avisar(tarefas.length + " serviço" + (tarefas.length > 1 ? "s" : "") + " atualizado" + (tarefas.length > 1 ? "s" : ""), "ok");
       if (reabrir) A.avisar("⚠️ " + reabrir + " serviço" + (reabrir > 1 ? "s reprovados voltaram" : " reprovado voltou") + " para Aberto: a loja reprovou ou reclamou.", "erro");
+      redesenhar();
+    }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+  }
+  // chamado que já tinha serviço lançado à mão na loja: grava o nº do chamado nesse serviço em vez de criar outro
+  function vincularChamado(b, c, obra, redesenhar) {
+    var dadosObra = { chamado: c.numero, chamado_aberto: isoDeBR(c.data) };
+    if (c.portal) dadosObra.portal = c.portal;
+    A.ocupado(b, true, "Vinculando...");
+    q(sb.from("obras").update(dadosObra).eq("id", obra.id).select().single()).then(function (o) {
+      trocar(S.obras, o);
+      var l1 = "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "") + (c.prioridade ? " · prioridade " + c.prioridade : "");
+      return Promise.all(S.serv.filter(function (x) { return x.obra_id === o.id; }).map(function (x) {
+        var antes = String(x.descricao || "").trim();
+        return q(sb.from("servicos").update({ descricao: l1 + "\n" + (c.desc || "") + (antes ? "\nAnotação anterior: " + antes : "") }).eq("id", x.id).select().single()).then(function (n) { trocar(S.serv, n); });
+      }));
+    }).then(function () {
+      gravarCaixa(lerCaixa().filter(function (x) { return x.numero !== c.numero; }));
+      A.avisar("Chamado " + c.numero + " vinculado ao serviço que já existia (sem criar outro).", "ok");
       redesenhar();
     }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
