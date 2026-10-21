@@ -237,3 +237,11 @@ Quando o cliente aprovar, abra o serviço, volte a situação para **Aberto** e 
 Na caixa de chamados e na aba Serviços, os chamados da mesma loja ficam juntos. Ao escolher o funcionário de um chamado,
 os outros chamados abertos da mesma loja e da mesma área que estão **sem funcionário** vão para ele também
 (os que já têm outro funcionário não mudam), e a mensagem do WhatsApp lista todos.
+
+## Situação do chamado no portal (Detalhes)
+Cole na caixa as abas da tela **Detalhes** do chamado (Histórico, Ordens de serviço, Requisições de compra), uma de cada vez ou juntas.
+O app lê a **OS da AGE** e a situação dela (pendente, orçada, aprovada, executada, reprovada), o **valor negociado**, as
+**requisições de compra** e se a loja **reprovou** a execução (com nota e motivo). Ao atualizar, o serviço mostra a etapa
+(ex.: "🔧 aprovado: executar", "💲 R$ 800,00"); o reprovado volta para **Aberto** e aparece em vermelho no Hoje.
+Reclamação da loja no histórico ("não veio ninguém", "continua apagada"...) gera **alerta vermelho** ao colar, no serviço e no Hoje.
+Antes de finalizar no portal, o serviço avisa se falta **registro de chegada** ou **foto de depois**.

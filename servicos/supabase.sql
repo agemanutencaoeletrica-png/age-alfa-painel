@@ -141,6 +141,7 @@ alter table public.obras      add column if not exists autoriza_divulgar boolean
 -- nº do chamado do cliente (ex.: app de chamados do Supermercados BH)
 alter table public.obras      add column if not exists chamado text;
 alter table public.obras      add column if not exists chamado_aberto date;  -- data de abertura do chamado no portal do cliente
+alter table public.obras      add column if not exists portal jsonb;         -- situação no portal (OS da AGE, valor, requisições, reprovação), lida da tela Detalhes
 create index if not exists obras_chamado_idx on public.obras (chamado);
 
 -- ---------- Serviços para prefeituras (órgãos públicos) ----------
