@@ -254,3 +254,11 @@ Antes de finalizar no portal, o serviço avisa se falta **registro de chegada** 
   funcionário, executado no app e não finalizado no portal, cancelado no portal, não é da AGE. Somem sozinhas quando você
   cola os Detalhes novos ou muda o serviço no app.
 - **🔍 Revisão**: lista os chamados lançados que nunca foram conferidos no portal (cole os Detalhes de cada um).
+
+## Finalizados e atualização automática
+- Cole a lista **Ordens de serviço** do portal (cada página): o app lê nº da OS, nº do chamado, centro, valor negociado e
+  situação. Chamado **já no app** e **Finalizado** no portal: o serviço vira **concluído** sozinho e guarda o valor.
+  Finalizados que nunca entraram no app: botão **📥 Registrar finalizados no histórico** (entram concluídos).
+- Aba **✅ Executados**: filtro **Finalizados no portal / Falta finalizar no portal** e total do valor negociado.
+- O painel se **atualiza sozinho** a cada minuto e ao voltar para a aba (não atualiza com uma janela aberta ou
+  enquanto você digita). O app do funcionário, a cada 2 minutos.

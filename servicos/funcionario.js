@@ -50,6 +50,17 @@
       sb = A.cliente({ auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
     } catch (e) { telaMensagem("Sem conexão", esc(A.msgErro(e))); return; }
     carregar();
+    // atualiza sozinho a cada 2 minutos e ao voltar para o app (sem atrapalhar uma janela aberta ou quem está digitando)
+    function quieto() {
+      var a = document.activeElement;
+      return document.visibilityState === "visible" && D && !document.querySelector(".fundo-modal") && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+    }
+    function atualizar() {
+      if (!quieto()) return;
+      sb.rpc("func_dados", { p_token: TOKEN }).then(function (r) { if (!r.error && quieto()) { D = r.data; desenhar(); } }, function () { /* sem sinal: tenta depois */ });
+    }
+    setInterval(atualizar, 120000);
+    document.addEventListener("visibilitychange", atualizar);
   }
 
   function carregar() {

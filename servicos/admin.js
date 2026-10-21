@@ -320,6 +320,26 @@
     }).catch(function (e) { telaLogin(A.msgErro(e)); });
   }
 
+  // atualiza os dados sozinho: a cada minuto com a tela aberta e ao voltar para a aba do navegador.
+  // Não atualiza com uma janela aberta nem enquanto você digita, para não atrapalhar.
+  var autoAt = { timer: null, ultima: Date.now(), indo: false };
+  function podeAtualizar() {
+    var a = document.activeElement;
+    return document.visibilityState === "visible" && !document.querySelector(".fundo-modal") &&
+      !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+  }
+  function atualizarSozinho() {
+    if (autoAt.indo || !podeAtualizar()) return;
+    autoAt.indo = true;
+    carregarBase().then(function () { autoAt.ultima = Date.now(); if (podeAtualizar()) rota(); })
+      .catch(function () { /* sem internet: tenta de novo no próximo minuto */ })
+      .then(function () { autoAt.indo = false; });
+  }
+  function iniciarAtualizacaoAutomatica() {
+    if (autoAt.timer) return;
+    autoAt.timer = setInterval(atualizarSozinho, 60000);
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && Date.now() - autoAt.ultima > 20000) atualizarSozinho(); });
+  }
   function carregarBase() {
     return Promise.all([
       q(sb.from("funcionarios").select("*").order("nome")),
@@ -358,6 +378,7 @@
     $("#b-recarregar").onclick = function () {
       carregarBase().then(function () { rota(); A.avisar("Atualizado"); }).catch(falhou);
     };
+    iniciarAtualizacaoAutomatica();
     window.removeEventListener("hashchange", rota);
     window.addEventListener("hashchange", rota);
     rota();
@@ -825,7 +846,7 @@
   function pendenciaChamado(o) {
     if (!o || !o.chamado || ehPrefObra(o)) return null;
     var p = o.portal || {}, st = String(p.status || ""), os = String(p.osSit || "");
-    if (problemaPortal(p) || /finaliz/i.test(st)) return null;   // reprovado/reclamação já tem o alerta vermelho
+    if (problemaPortal(p) || /finaliz/i.test(st + " " + os)) return null;   // reprovado/reclamação já tem o alerta vermelho
     var sv = S.serv.filter(function (x) { return x.obra_id === o.id && x.status !== "cancelado"; });
     if (!sv.length) return null;
     var abertos = sv.filter(function (x) { return x.status === "aberto" || x.status === "em_andamento"; });
@@ -865,7 +886,7 @@
   function etapaPortal(p) {
     if (!p) return null;
     var st = String(p.status || ""), os = String(p.osSit || "");
-    if (/finaliz/i.test(st)) return { txt: "✅ finalizado no portal", cor: "bom" };
+    if (/finaliz/i.test(st) || /finaliz/i.test(os)) return { txt: "✅ finalizado no portal", cor: "bom" };
     if (/cancel/i.test(st)) return { txt: "✖ chamado cancelado", cor: "critico" };
     if (p.reprovado) return { txt: "⚠️ REPROVADO pela loja" + (p.reprovado.nota !== null && p.reprovado.nota !== undefined ? " · nota " + p.reprovado.nota : ""), cor: "critico" };
     if (p.reclamacao) return { txt: "🚨 RECLAMAÇÃO da loja", cor: "critico" };
@@ -949,8 +970,25 @@
     return null;
   }
   // lista copiada do portal (Meus chamados ou Ordens de serviço): uma linha por chamado
+  // lista "Ordens de serviço" do portal (só OS da AGE): nº da OS, nº do chamado, prioridade, emissão, centro,
+  // solicitante, tipo, coordenador, valor negociado e situação — cada OS ocupa várias linhas
+  function lerListaOS(t) {
+    var re = /(?:^|\n)\s*(\d{3,8})[\t ]*\n\s*(\d{3,8})[\t ]*\n\s*(Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)?[\t ]*\n?\s*(\d{2}\/\d{2}\/\d{4})\t+([LP]\s*\d{1,4})\t([^\n]*)\n\s*([A-Za-zÀ-ú][A-Za-zÀ-ú ]{2,30})/g, m, r = [], vistos = {};
+    while ((m = re.exec(t))) {
+      if (vistos[m[2]]) continue;
+      vistos[m[2]] = 1;
+      var cel = m[6].split("\t").map(function (x) { return x.trim(); }), valor = cel.filter(function (x) { return /^\d{1,3}(\.\d{3})*,\d{2}$/.test(x); }).pop();
+      var sit = m[7].trim(), portal = { os: m[1], osSit: sit, outros: [], lido_em: new Date().toISOString() };
+      if (valor) portal.valor = A.lerNumero(valor);
+      if (/finaliz/i.test(sit)) portal.status = "Finalizado";
+      r.push({ numero: m[2], data: m[4], centro: m[5].replace(/\s/g, ""), prioridade: m[3] || "", situacao: sit, portal: portal });
+    }
+    return r;
+  }
   function lerListaChamados(texto) {
     var vistos = {}, t = String(texto || "");
+    var listaOS = lerListaOS(t.replace(/\r/g, ""));
+    if (listaOS.length) return listaOS;
     var porLinha = lerLinhas(t.split(/\n+/));
     if (porLinha.length >= 2) return porLinha;
     // tabela copiada com uma célula por linha: junta cada chamado a partir da data de abertura
@@ -1079,7 +1117,7 @@
             ": “" + esc(String(pr.motivo || pr.txt || "").slice(0, 200)) + "”</div>";
         }).join("");
       // Detalhes de chamado que já está no app: atualiza na hora (descrição, etapa, reprovação, não é da AGE)
-      var jaNoApp = lerCaixa().filter(function (c) { return c.detalhes && itens.some(function (it) { return it.numero === c.numero && it.detalhes; }) && S.obras.some(function (o) { return o.chamado === c.numero; }); });
+      var jaNoApp = lerCaixa().filter(function (c) { return c.portal && itens.some(function (it) { return it.numero === c.numero && it.portal; }) && S.obras.some(function (o) { return o.chamado === c.numero; }); });
       if (jaNoApp.length) atualizarJaLancados(null, jaNoApp, desenhar);
       desenhar();
     };
@@ -1098,8 +1136,9 @@
       var ign = av.filter(function (a) { return a.ignorar; }).length, ja = av.filter(function (a) { return a.ja; }).length;
       var marcAt = function (c, a) { return a.atualizar && c.atualizar !== false; };
       var nAt = cx.filter(function (c, i) { return marcAt(c, av[i]); }).length;
+      var nFin = cx.filter(function (c, i) { return av[i].ignorar && /finaliz/i.test(c.situacao || "") && !c.outro; }).length;
       var botao = function (id) {
-        return (nSel ? '<button class="prim" id="' + id + '">Lançar ' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + "</button>" : "") +
+        return (nFin && id === "cx-lancar-topo" ? '<button class="peq" id="cx-hist">📥 Registrar ' + nFin + " finalizado" + (nFin > 1 ? "s" : "") + " no histórico</button>" : "") + (nSel ? '<button class="prim" id="' + id + '">Lançar ' + nSel + " selecionado" + (nSel > 1 ? "s" : "") + "</button>" : "") +
           (nAt ? '<button class="bom" id="' + id + '-at">✏️ Atualizar descrição de ' + nAt + " já lançado" + (nAt > 1 ? "s" : "") + "</button>" : "");
       };
       $("#cx", el).innerHTML = '<div class="cab-secao" style="margin-top:12px"><h2>Caixa: ' + cx.length + " chamado" + (cx.length > 1 ? "s" : "") + "</h2>" +
@@ -1134,6 +1173,10 @@
       var atualizar = function () { atualizarJaLancados(this, cx.filter(function (c, i) { return marcAt(c, av[i]); }), desenhar); };
       ["#cx-lancar-at", "#cx-lancar-topo-at"].forEach(function (id) { if ($(id, el)) $(id, el).onclick = atualizar; });
       var lancar = function () { lancarCaixa(this, cx.filter(function (c, i) { return marc(c, av[i]); }), $("#cx-cat", el).value, j); };
+      // finalizados no portal que nunca entraram no app: entram já concluídos (aparecem em Executados, com o valor)
+      if ($("#cx-hist", el)) $("#cx-hist", el).onclick = function () {
+        lancarCaixa(this, cx.filter(function (c, i) { return av[i].ignorar && /finaliz/i.test(c.situacao || "") && !c.outro; }), $("#cx-cat", el).value, j, true);
+      };
       if ($("#cx-lancar", el)) $("#cx-lancar", el).onclick = lancar;
       if ($("#cx-lancar-topo", el)) $("#cx-lancar-topo", el).onclick = lancar;
     }
@@ -1142,15 +1185,19 @@
   }
   // chamado que já virou serviço: troca o "o que fazer" pela descrição completa da tela Detalhes
   function atualizarJaLancados(b, sel, redesenhar) {
-    var tarefas = [], obrasAt = [], reabrir = 0, cancelados = 0;
+    var tarefas = [], obrasAt = [], reabrir = 0, cancelados = 0, finalizados = 0;
     sel.forEach(function (c) {
       S.obras.filter(function (o) { return o.chamado === c.numero; }).forEach(function (o) {
         var pv = juntarPortal(o.portal, c.portal);
         if (pv) obrasAt.push({ obra: o, portal: pv });
         S.serv.filter(function (x) { return x.obra_id === o.id; }).forEach(function (x) {
           var d = String(x.descricao || ""), l1 = /^Chamado nº/.test(d) ? d.split("\n")[0] : "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "");
-          var corpo = /Histórico:/.test(d) && !/Histórico:/.test(c.desc || "") ? d.split("\n").slice(/^Chamado nº/.test(d) ? 1 : 0).join("\n") : c.desc;
+          var corpo = !c.desc || (/Histórico:/.test(d) && !/Histórico:/.test(c.desc)) ? d.split("\n").slice(/^Chamado nº/.test(d) ? 1 : 0).join("\n") : c.desc;
           var dados = { descricao: l1 + "\n" + corpo };
+          // finalizado no portal: o serviço que ainda estava aberto no app passa a concluído
+          if (pv && (/finaliz/i.test(pv.status || "") || /finaliz/i.test(pv.osSit || "")) && !problemaPortal(pv) && x.status !== "concluido" && x.status !== "cancelado") {
+            dados.status = "concluido"; dados.concluido_em = new Date().toISOString(); finalizados++;
+          }
           // revisão: o chamado é de outro prestador — cancela o que ainda não foi feito
           if (c.outro && x.status !== "concluido" && x.status !== "cancelado") { dados.status = "cancelado"; dados.descricao = l1 + "\nNão pertence à AGE" + (pv && pv.outroPrest ? " (" + pv.outroPrest + ")" : "") + ".\n" + corpo; cancelados++; return tarefas.push({ serv: x, dados: dados }); }
           // reprovado pela loja: o serviço volta a ficar aberto para a equipe voltar lá
@@ -1168,7 +1215,8 @@
     }))).then(function () {
       var feitos = {}; sel.forEach(function (c) { feitos[c.numero] = 1; });
       gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
-      A.avisar(tarefas.length + " serviço" + (tarefas.length > 1 ? "s" : "") + " atualizado" + (tarefas.length > 1 ? "s" : ""), "ok");
+      if (tarefas.length) A.avisar(tarefas.length + " serviço" + (tarefas.length > 1 ? "s" : "") + " atualizado" + (tarefas.length > 1 ? "s" : ""), "ok");
+      if (finalizados) A.avisar("✅ " + finalizados + " serviço" + (finalizados > 1 ? "s finalizados" : " finalizado") + " no portal: marcado" + (finalizados > 1 ? "s" : "") + " como concluído no app.", "ok");
       if (cancelados) A.avisar("✖ " + cancelados + " serviço" + (cancelados > 1 ? "s cancelados" : " cancelado") + ": o chamado não pertence à AGE.", "erro");
       if (reabrir) A.avisar("⚠️ " + reabrir + " serviço" + (reabrir > 1 ? "s reprovados voltaram" : " reprovado voltou") + " para Aberto: a loja reprovou ou reclamou.", "erro");
       redesenhar();
@@ -1192,7 +1240,7 @@
       redesenhar();
     }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
-  function lancarCaixa(b, sel, catPadrao, janela) {
+  function lancarCaixa(b, sel, catPadrao, janela, historico) {
     if (!sel.length) return;
     A.ocupado(b, true, "Lançando...");
     q(sb.from("obras").insert(sel.map(function (c) {
@@ -1203,7 +1251,8 @@
       obras.forEach(function (o) { S.obras.unshift(o); });
       return q(sb.from("servicos").insert(obras.map(function (o) {
         var c = sel.filter(function (x) { return x.numero === o.chamado; })[0];
-        return { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao,
+        var fin = c.portal && /finaliz/i.test((c.portal.status || "") + " " + (c.portal.osSit || "")) || /finaliz/i.test(c.situacao || "");
+        return { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao, status: fin ? "concluido" : "aberto", concluido_em: fin ? (isoDeBR(c.data) || A.isoLocal(new Date())) + "T12:00:00" : null,
           descricao: "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "") + (c.prioridade ? " · prioridade " + c.prioridade : "") + "\n" +
             (c.desc || "Ver a descrição do problema no portal do cliente.") };
       })).select());
@@ -1211,6 +1260,11 @@
       serv.forEach(function (x) { S.serv.unshift(x); });
       var feitos = {}; sel.forEach(function (c) { feitos[c.numero] = 1; });
       gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
+      if (historico) {
+        janela.fechar(); filtroExec.dias = ""; filtroExec.portal = "fin"; location.hash = "#executados"; rota();
+        A.avisar("✅ " + serv.length + " finalizado" + (serv.length > 1 ? "s registrados" : " registrado") + " no histórico (aba Executados).", "ok");
+        return;
+      }
       janela.fechar(); filtroServ.func = "-";
       location.hash = "#servicos"; rota();
       var jr = A.janela("<p><b>" + serv.length + " chamado" + (serv.length > 1 ? "s" : "") + " lançado" + (serv.length > 1 ? "s" : "") + ".</b></p><p>Agora direcione cada um a um funcionário (lista filtrada em “Sem funcionário”) ou monte a rota do dia com as lojas mais próximas umas das outras.</p>" +
@@ -1718,7 +1772,7 @@
   // =================================================================
   // SERVIÇOS EXECUTADOS (por dia de execução, com loja e fotos)
   // =================================================================
-  var filtroExec = { dias: "30", cat: "", func: "", busca: "" };
+  var filtroExec = { dias: "30", cat: "", func: "", busca: "", portal: "" };
   // o que falta para provar a execução: registro de chegada e foto de depois (relatório)
   function provaFalta(s, pts) {
     var falta = [];
@@ -1737,11 +1791,12 @@
       '<div class="filtros"><select id="fx-dias" aria-label="Período"><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="365">Último ano</option><option value="">Tudo</option></select>' +
       '<select id="fx-cat" aria-label="Área"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
       '<select id="fx-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
+      '<select id="fx-portal" aria-label="Portal"><option value="">Finalizados ou não no portal</option><option value="fin">✅ Finalizados no portal</option><option value="falta">⏳ Falta finalizar no portal</option></select>' +
       '<input id="fx-busca" type="search" placeholder="Buscar loja, cliente ou nº do chamado"></div><div id="fx-res"></div>';
-    $("#fx-dias").value = F.dias; $("#fx-cat").value = F.cat; $("#fx-func").value = F.func; $("#fx-busca").value = F.busca;
-    ["#fx-dias", "#fx-cat", "#fx-func"].forEach(function (id) { $(id).onchange = function () { ler(); listar(); }; });
+    $("#fx-dias").value = F.dias; $("#fx-cat").value = F.cat; $("#fx-func").value = F.func; $("#fx-busca").value = F.busca; $("#fx-portal").value = F.portal || "";
+    ["#fx-dias", "#fx-cat", "#fx-func", "#fx-portal"].forEach(function (id) { $(id).onchange = function () { ler(); listar(); }; });
     $("#fx-busca").oninput = function () { ler(); listar(); };
-    function ler() { F.dias = $("#fx-dias").value; F.cat = $("#fx-cat").value; F.func = $("#fx-func").value; F.busca = semAcento($("#fx-busca").value.trim()); }
+    function ler() { F.portal = $("#fx-portal").value; F.dias = $("#fx-dias").value; F.cat = $("#fx-cat").value; F.func = $("#fx-func").value; F.busca = semAcento($("#fx-busca").value.trim()); }
     function listar() {
       var limite = F.dias ? Date.now() - Number(F.dias) * 864e5 : 0;
       var lista = S.serv.filter(function (s) {
@@ -1751,13 +1806,19 @@
         if (dataExecucao(s).getTime() < limite) return false;
         var o = porId(S.obras, s.obra_id);
         if (F.busca && semAcento([o && o.cliente, o && o.endereco, o && o.chamado, o && o.protocolo].join(" ")).indexOf(F.busca) < 0) return false;
+        var fin = !!(o && o.portal && /finaliz/i.test((o.portal.status || "") + " " + (o.portal.osSit || "")));
+        if (F.portal === "fin" && !fin) return false;
+        if (F.portal === "falta" && (fin || !(o && o.chamado))) return false;
         return true;
       }).sort(function (a, b) { return dataExecucao(b) - dataExecucao(a); });
       var r = $("#fx-res");
       if (!lista.length) { r.innerHTML = '<div class="cartao vazio">Nenhum serviço executado neste período.</div>'; return; }
       var dias = {}, ordem = [];
       lista.forEach(function (s) { var d = A.isoLocal(dataExecucao(s)); if (!dias[d]) { dias[d] = []; ordem.push(d); } dias[d].push(s); });
-      r.innerHTML = '<p class="mudo peq" style="margin:-4px 0 10px">' + lista.length + " serviço" + (lista.length > 1 ? "s" : "") + " executado" + (lista.length > 1 ? "s" : "") + " em " + ordem.length + " dia" + (ordem.length > 1 ? "s" : "") + ".</p>" +
+      var obrasL = {}; lista.forEach(function (s) { obrasL[s.obra_id] = porId(S.obras, s.obra_id); });
+      var total = Object.keys(obrasL).reduce(function (t, k) { var o = obrasL[k]; return t + (o && o.portal && o.portal.valor ? Number(o.portal.valor) : 0); }, 0);
+      r.innerHTML = '<p class="mudo peq" style="margin:-4px 0 10px">' + lista.length + " serviço" + (lista.length > 1 ? "s" : "") + " executado" + (lista.length > 1 ? "s" : "") + " em " + ordem.length + " dia" + (ordem.length > 1 ? "s" : "") +
+        (total ? " · <b>" + esc(A.dinheiro(total)) + "</b> em valor negociado no portal" : "") + ".</p>" +
         ordem.map(function (d) {
           var ss = dias[d], lojas = {};
           ss.forEach(function (s) { var o = porId(S.obras, s.obra_id); lojas[(o && (o.loja_id || o.id)) || s.id] = 1; });
@@ -1778,7 +1839,7 @@
       return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente || "Serviço") + "</h3>" + seloOS(o) + seloChamado(o) +
         '<span class="dir mudo peq">' + A.hora(dataExecucao(s)) + "</span></div>" +
         '<div class="linha">' + A.seloCategoria(s.categoria) + '<span class="peq">👷 ' + esc(nomeFunc(s.funcionario_id) || "—") + "</span>" +
-        (o.chamado ? (provaFalta(s, null).length ? '<span class="selo critico">⚠️ sem foto de depois: confira antes de finalizar o chamado ' + esc(o.chamado) + "</span>" :
+        (o.chamado && !(o.portal && /finaliz/i.test((o.portal.status || "") + " " + (o.portal.osSit || ""))) ? (provaFalta(s, null).length ? '<span class="selo critico">⚠️ sem foto de depois: confira antes de finalizar o chamado ' + esc(o.chamado) + "</span>" :
           '<span class="selo atencao">finalizar chamado ' + esc(o.chamado) + " no portal</span>") : "") + "</div>" +
         (o.endereco ? '<div class="peq mudo">📍 ' + esc(o.endereco) + "</div>" : "") +
         (s.descricao ? '<div class="peq" style="margin-top:4px">' + esc(resumoServ(s, 160)) + "</div>" : "") +
