@@ -401,15 +401,20 @@
       var novos = S.rel.filter(function (r) { return !r.lido; }).length;
       var aguard = S.orc.filter(function (o) { return o.status === "enviado"; });
       var visitasOrc = S.serv.filter(function (s) { return s.status === "aguardando"; }).length;
-      var reprov = S.obras.filter(function (o) { return o.portal && o.portal.reprovado; }).length;
-      var h = '<div class="grade">' +
+      var probl = S.obras.filter(function (o) { return problemaPortal(o.portal); }), reprov = probl.length;
+      var h = (probl.length ? '<div class="aviso erro" style="margin-bottom:12px">' + probl.map(function (o) {
+          var pr = o.portal.reprovado || o.portal.reclamacao, sv = S.serv.filter(function (x) { return x.obra_id === o.id; })[0];
+          return '<div style="margin:2px 0' + (sv ? ';cursor:pointer" data-h-prob="' + sv.id + '" role="button" tabindex="0"' : '"') + '>🚨 <b>' + esc(o.cliente) + "</b> · chamado " + esc(o.chamado || "") + " · " +
+            (o.portal.reprovado ? "REPROVADO" : "RECLAMAÇÃO") + " em " + esc(pr.data || "") + ": “" + esc(String(pr.motivo || pr.txt || "").slice(0, 160)) + "”</div>";
+        }).join("") + "</div>" : "") +
+        '<div class="grade">' +
         '<div class="ladrilho"><div class="r">⚡ Elétrica</div><div class="v">' + abE + '</div><div class="d">serviços ativos</div></div>' +
         '<div class="ladrilho"><div class="r">🖌️ Pintura</div><div class="v">' + abP + '</div><div class="d">serviços ativos</div></div>' +
         (S.pref.length || osPref ? '<a class="ladrilho" href="#prefeitura" style="text-decoration:none;color:inherit"><div class="r">🏛️ Prefeitura</div><div class="v">' + osPref + '</div><div class="d">OS em aberto</div></a>' : "") +
         '<div class="ladrilho"><div class="r">Relatórios</div><div class="v">' + novos + '</div><div class="d">novos para ler</div></div>' +
         '<div class="ladrilho"><div class="r">Orçamentos</div><div class="v">' + aguard.length + '</div><div class="d">' +
         A.dinheiro(aguard.reduce(function (t, o) { return t + Number(o.total); }, 0)) + " aguardando cliente</div></div>" +
-        (reprov ? '<a class="ladrilho" href="#servicos" id="h-reprov" style="text-decoration:none;color:inherit;border:2px solid var(--critico)"><div class="r">⚠️ Reprovados pela loja</div><div class="v">' + reprov + '</div><div class="d">voltar e refazer</div></a>' : "") +
+        (reprov ? '<a class="ladrilho" href="#servicos" id="h-reprov" style="text-decoration:none;color:inherit;border:2px solid var(--critico)"><div class="r">🚨 Reprovados / reclamações</div><div class="v">' + reprov + '</div><div class="d">voltar e refazer</div></a>' : "") +
         (visitasOrc ? '<a class="ladrilho" href="#servicos" id="h-visitas-orc" style="text-decoration:none;color:inherit"><div class="r">🧾 Visitas de orçamento</div><div class="v">' + visitasOrc + '</div><div class="d">aguardando aprovação</div></a>' : "") + "</div>";
       var daEquipe = S.serv.filter(function (s) { return s.criado_pelo_funcionario && new Date(s.criado_em) >= ini; });
       if (daEquipe.length) h += '<div class="aviso">🆕 A equipe cadastrou ' + (daEquipe.length === 1 ? "1 serviço" : daEquipe.length + " serviços") +
@@ -439,6 +444,7 @@
       c.innerHTML = h;
       if ($("#h-visitas-orc")) $("#h-visitas-orc").onclick = function () { filtroServ.st = "aguardando"; };
       if ($("#h-reprov")) $("#h-reprov").onclick = function () { filtroServ.st = "reprovados"; };
+      $$("[data-h-prob]", c).forEach(function (d) { d.onclick = function () { abrirServico(d.dataset.hProb); }; });
       hidratarFotos(c);
     }).catch(function (e) { c.innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
   }
@@ -459,7 +465,7 @@
     var h = '<div class="cab-secao"><h2>Serviços</h2><span><button id="b-chamado">📋 Chamados BH' + (lerCaixa().length ? " (" + lerCaixa().length + " na caixa)" : "") + '</button> <button class="prim" id="b-novo-serv">+ Novo serviço</button></span></div>' +
       '<div class="filtros"><select id="fs-cat" aria-label="Categoria"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
       '<select id="fs-st" aria-label="Situação"><option value="ativos">Abertos, em andamento e orçamentos</option><option value="aberto">Abertos</option><option value="em_andamento">Em andamento</option>' +
-      '<option value="aguardando">🧾 Orçamento feito (aguardando aprovação)</option><option value="reprovados">⚠️ Reprovados pela loja</option>' +
+      '<option value="aguardando">🧾 Orçamento feito (aguardando aprovação)</option><option value="reprovados">🚨 Reprovados / reclamações da loja</option>' +
       '<option value="concluido">Concluídos</option><option value="cancelado">Cancelados</option><option value="equipe">Criados pela equipe</option><option value="todos">Todos</option></select>' +
       '<select id="fs-func" aria-label="Funcionário"><option value="">Todos os funcionários</option><option value="-">Sem funcionário</option>' +
       S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
@@ -479,7 +485,7 @@
       if (F.cat && s.categoria !== F.cat) return false;
       if (F.st === "ativos" && !(s.status === "aberto" || s.status === "em_andamento" || s.status === "aguardando")) return false;
       if (F.st === "equipe" && !s.criado_pelo_funcionario) return false;
-      if (F.st === "reprovados") { var ob = porId(S.obras, s.obra_id); if (!(ob && ob.portal && ob.portal.reprovado)) return false; }
+      if (F.st === "reprovados") { var ob = porId(S.obras, s.obra_id); if (!(ob && problemaPortal(ob.portal))) return false; }
       if (F.st !== "ativos" && F.st !== "todos" && F.st !== "equipe" && F.st !== "reprovados" && s.status !== F.st) return false;
       if (F.func === "-" && s.funcionario_id) return false;
       if (F.func && F.func !== "-" && s.funcionario_id !== F.func) return false;
@@ -779,10 +785,22 @@
           rr.txt.replace(/chamado reprovado\.?/i, "").replace(/status alterado para\s*'[^']*'\.?/i, "").replace(/nota:\s*\d+\.?/i, "").trim()].filter(Boolean).join(" ");
         p.reprovado = { data: rr.data, por: rr.autor, nota: nota ? Number(nota) : null, motivo: motivo.slice(0, 400) };
       } else p.reprovado = false;
+      // reclamação da loja no histórico ("não veio ninguém", "continua com defeito"...) ainda sem novo "Serviço concluído"
+      var ic = -1;
+      regs.forEach(function (r, k) { if (r.txt && !auto.test(r.txt) && !EH_AGE.test(r.autor) && RECLAMA.test(semAcento(r.txt))) ic = k; });
+      var resolvida = ic >= 0 && regs.slice(ic + 1).some(function (r) { return /servi[cç]o conclu[ií]do/i.test(r.txt); });
+      p.reclamacao = ic >= 0 && !resolvida ? { data: regs[ic].data, por: regs[ic].autor, txt: regs[ic].txt.slice(0, 400) } : false;
     }
     p.lido_em = new Date().toISOString();
     return p;
   }
+  // frases de reclamação da loja (comparadas sem acento)
+  var RECLAMA = new RegExp(["nao veio ninguem", "ninguem (veio|apareceu|compareceu|esteve)", "nao (compareceu|apareceu|vieram|veio|esteve)",
+    "nao (foi|esta|estao|ficou) (feito|feita|realizad|executad|resolvid|funcionando|pronto|concluid)", "nao (resolveu|funciona|ficou bom)",
+    "continua (com|sem|dando|parad|queimad|o mesmo|a mesma|desligad|apagad)", "persiste", "mal feito", "malfeito", "reclama", "insatisf",
+    "pessimo", "nao estou ciente", "voltou a (dar|queimar|desarmar|parar|vazar|apagar)", "mesmo problema", "servico incompleto"].join("|"));
+  // chamado com problema na loja: reprovado ou com reclamação
+  function problemaPortal(p) { return !!(p && (p.reprovado || p.reclamacao)); }
   // etapa do chamado no portal, para o selo
   function etapaPortal(p) {
     if (!p) return null;
@@ -790,6 +808,7 @@
     if (/finaliz/i.test(st)) return { txt: "✅ finalizado no portal", cor: "bom" };
     if (/cancel/i.test(st)) return { txt: "✖ chamado cancelado", cor: "critico" };
     if (p.reprovado) return { txt: "⚠️ REPROVADO pela loja" + (p.reprovado.nota !== null && p.reprovado.nota !== undefined ? " · nota " + p.reprovado.nota : ""), cor: "critico" };
+    if (p.reclamacao) return { txt: "🚨 RECLAMAÇÃO da loja", cor: "critico" };
     if (/avalia/i.test(st)) return { txt: "⏳ em avaliação pela loja", cor: "atencao" };
     if (/execut/i.test(os)) return { txt: "✔ executado no portal", cor: "bom" };
     if (/aprov/i.test(os)) return { txt: "🔧 aprovado: executar", cor: "atencao" };
@@ -837,7 +856,7 @@
         campo("coordenador") ? "Coordenador: " + campo("coordenador") : "", p.os ? "OS da AGE: " + p.os : "", histTxt ? "Histórico: " + histTxt : ""].filter(Boolean).join(" · ");
       var sa = semAcento(dsc), stCh = campo("status chamado"), sitOS = p.osSit || "";
       if (/finaliz|cancel/i.test(stCh)) sitOS = stCh;
-      if (p.reprovado) sitOS = "";   // reprovado pela loja: tem que voltar lá, não é "já executado"
+      if (problemaPortal(p)) sitOS = "";   // reprovado ou reclamação: tem que voltar lá, não é "já executado"
       delete p.comentarios;
       return { numero: campo("numero").replace(/\D/g, ""), data: campo("abertura"), loja: campo("centro"), prioridade: campo("prioridade"), desc: desc,
         situacao: sitOS, outro: p.outros.length > 0 && !p.os, detalhes: true, portal: p,
@@ -913,7 +932,7 @@
         if (limpo.desc && /Histórico:/.test(ex.desc || "") && !/Histórico:/.test(limpo.desc)) delete limpo.desc;
         Object.assign(ex, limpo);
         if (pv) ex.portal = pv;
-        if (pv && pv.reprovado) ex.situacao = "";
+        if (problemaPortal(pv)) ex.situacao = "";
         if (it.outro === false && it.detalhes) ex.outro = false;
         atual++;
       }
@@ -946,8 +965,14 @@
       if (!itens.length) { $("#ch-msg", el).innerHTML = '<span class="selo critico">não reconheci chamados neste texto</span>'; return; }
       var r = juntarNaCaixa(itens);
       this.value = "";
+      var alertas = lerCaixa().filter(function (c) { return itens.some(function (it) { return it.numero === c.numero; }) && problemaPortal(c.portal); });
       $("#ch-msg", el).innerHTML = '<span class="selo bom">✔ ' + (r.novos ? r.novos + " adicionado" + (r.novos > 1 ? "s" : "") : "") + (r.novos && r.atual ? ", " : "") +
-        (r.atual ? r.atual + " já estava" + (r.atual > 1 ? "m" : "") + " na caixa (completado" + (r.atual > 1 ? "s" : "") + ")" : "") + "</span> Pode colar a próxima página.";
+        (r.atual ? r.atual + " já estava" + (r.atual > 1 ? "m" : "") + " na caixa (completado" + (r.atual > 1 ? "s" : "") + ")" : "") + "</span> Pode colar a próxima página." +
+        alertas.map(function (c) {
+          var pr = c.portal.reprovado || c.portal.reclamacao;
+          return '<div class="aviso erro" style="margin-top:6px">🚨 <b>Chamado ' + esc(c.numero) + ": " + (c.portal.reprovado ? "REPROVADO pela loja" : "RECLAMAÇÃO da loja") + "</b> em " + esc(pr.data || "") +
+            ": “" + esc(String(pr.motivo || pr.txt || "").slice(0, 200)) + "”</div>";
+        }).join("");
       desenhar();
     };
     function desenhar() {
@@ -1012,7 +1037,7 @@
           var corpo = /Histórico:/.test(d) && !/Histórico:/.test(c.desc || "") ? d.split("\n").slice(/^Chamado nº/.test(d) ? 1 : 0).join("\n") : c.desc;
           var dados = { descricao: l1 + "\n" + corpo };
           // reprovado pela loja: o serviço volta a ficar aberto para a equipe voltar lá
-          if (pv && pv.reprovado && (x.status === "concluido" || x.status === "aguardando")) { dados.status = "aberto"; dados.concluido_em = null; reabrir++; }
+          if (problemaPortal(pv) && (x.status === "concluido" || x.status === "aguardando")) { dados.status = "aberto"; dados.concluido_em = null; reabrir++; }
           tarefas.push({ serv: x, dados: dados });
         });
       });
@@ -1027,7 +1052,7 @@
       var feitos = {}; sel.forEach(function (c) { feitos[c.numero] = 1; });
       gravarCaixa(lerCaixa().filter(function (c) { return !feitos[c.numero]; }));
       A.avisar(tarefas.length + " serviço" + (tarefas.length > 1 ? "s" : "") + " atualizado" + (tarefas.length > 1 ? "s" : ""), "ok");
-      if (reabrir) A.avisar("⚠️ " + reabrir + " serviço" + (reabrir > 1 ? "s reprovados voltaram" : " reprovado voltou") + " para Aberto: a loja reprovou a execução.", "erro");
+      if (reabrir) A.avisar("⚠️ " + reabrir + " serviço" + (reabrir > 1 ? "s reprovados voltaram" : " reprovado voltou") + " para Aberto: a loja reprovou ou reclamou.", "erro");
       redesenhar();
     }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
@@ -1099,6 +1124,8 @@
       (o.portal && o.portal.reprovado ? '<div class="aviso erro" style="margin:6px 0">⚠️ <b>A loja reprovou a execução</b> em ' + esc(o.portal.reprovado.data || "") +
         (o.portal.reprovado.nota !== null && o.portal.reprovado.nota !== undefined ? " (nota " + esc(o.portal.reprovado.nota) + ")" : "") + (o.portal.reprovado.motivo ? ": “" + esc(o.portal.reprovado.motivo) + "”" : "") +
         ". Volte à loja, faça o serviço com registro de chegada e fotos de depois.</div>" : "") +
+      (o.portal && o.portal.reclamacao && !o.portal.reprovado ? '<div class="aviso erro" style="margin:6px 0">🚨 <b>Reclamação da loja</b> em ' + esc(o.portal.reclamacao.data || "") +
+        (o.portal.reclamacao.por ? " (" + esc(o.portal.reclamacao.por) + ")" : "") + ": “" + esc(o.portal.reclamacao.txt) + "”. Resolva e responda no portal.</div>" : "") +
       (o.chamado && s.status === "concluido" ? '<div id="es-prova" class="aviso" style="margin:6px 0">Serviço concluído: lembre de <b>finalizar o chamado ' + esc(o.chamado) + "</b> no app do cliente.</div>" : "") +
       (s.status === "aguardando" ? '<div class="aviso" style="margin:6px 0">🧾 Visita de orçamento feita: o serviço <b>ainda não foi executado</b>. ' + (o.chamado ? "Lance o orçamento do chamado " + esc(o.chamado) + " no portal. " : "") +
         "Quando for aprovado, volte a situação para <b>Aberto</b> e escolha o funcionário.</div>" : "") +

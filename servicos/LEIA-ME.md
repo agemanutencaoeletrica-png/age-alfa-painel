@@ -243,4 +243,5 @@ Cole na caixa as abas da tela **Detalhes** do chamado (Histórico, Ordens de ser
 O app lê a **OS da AGE** e a situação dela (pendente, orçada, aprovada, executada, reprovada), o **valor negociado**, as
 **requisições de compra** e se a loja **reprovou** a execução (com nota e motivo). Ao atualizar, o serviço mostra a etapa
 (ex.: "🔧 aprovado: executar", "💲 R$ 800,00"); o reprovado volta para **Aberto** e aparece em vermelho no Hoje.
+Reclamação da loja no histórico ("não veio ninguém", "continua apagada"...) gera **alerta vermelho** ao colar, no serviço e no Hoje.
 Antes de finalizar no portal, o serviço avisa se falta **registro de chegada** ou **foto de depois**.
