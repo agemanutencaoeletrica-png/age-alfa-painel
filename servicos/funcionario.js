@@ -49,7 +49,9 @@
     try {
       sb = A.cliente({ auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
     } catch (e) { telaMensagem("Sem conexão", esc(A.msgErro(e))); return; }
-    carregar();
+    carregar().then(function () {
+      if (/[?&]recebido=1/.test(location.search)) { history.replaceState(null, "", location.pathname + location.hash); abrirRecebido(); }
+    });
     // atualiza sozinho a cada 2 minutos e ao voltar para o app (sem atrapalhar uma janela aberta ou quem está digitando)
     function quieto() {
       var a = document.activeElement;
@@ -146,6 +148,13 @@
     if ($("#b-km")) $("#b-km").onclick = fluxoKm;
     $$("[data-ponto]").forEach(function (b) { b.onclick = function () { fluxoPonto(b.dataset.ponto, b.dataset.serv || null); }; });
     $$("[data-relatorio]").forEach(function (b) { b.onclick = function () { fluxoRelatorio(b.dataset.relatorio || null); }; });
+    $$("[data-comp]").forEach(function (b) {
+      b.onclick = function () {
+        var s = servicoPorId(b.dataset.comp); if (!s) return;
+        A.compartilhar({ titulo: s.cliente, texto: "*AGE Elétrica e Pintura*\n" + s.cliente + "\n" + (s.endereco ? "📍 " + s.endereco + "\n" + A.linkEndereco(s.endereco) + "\n" : "") +
+          (s.descricao ? "\n" + s.descricao : "") });
+      };
+    });
   }
 
   function cartaoServico(s) {
@@ -164,7 +173,7 @@
       (s.observacoes && !/^Criado por .* pelo app$/.test(s.observacoes) ? '<p class="mudo peq" style="white-space:pre-wrap;margin:6px 0 0">Obs.: ' + esc(s.observacoes) + "</p>" : "") +
       '<div class="acoes"><button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui</button>' +
       '<button class="peq" data-ponto="servico" data-serv="' + s.id + '">📷 Foto</button>' +
-      '<button class="peq" data-relatorio="' + s.id + '">📝 Relatório</button></div></div>';
+      '<button class="peq" data-relatorio="' + s.id + '">📝 Relatório</button><button class="peq" data-comp="' + s.id + '">📤 Compartilhar</button></div></div>';
     return h;
   }
 
@@ -530,7 +539,20 @@
   }
 
   // ---------- Relatório do serviço e lista de materiais ----------
-  function fluxoRelatorio(servicoId) {
+  // o que chegou pelo "Compartilhar → AGE Ponto" (fotos/texto do WhatsApp): escolhe o serviço e abre o relatório com elas
+  function abrirRecebido() {
+    A.lerRecebido().then(function (rc) {
+      if (!rc || (!rc.texto && !rc.arquivos.length)) return;
+      if (!D.servicos.length) { A.avisar("Você não tem serviço aberto para anexar o que recebeu.", "erro"); return; }
+      var j = A.janela('<p style="margin-top:0">📥 Recebido: ' + (rc.arquivos.length ? "<b>" + rc.arquivos.length + " foto" + (rc.arquivos.length > 1 ? "s" : "") + "</b>" : "") +
+        (rc.arquivos.length && rc.texto ? " e " : "") + (rc.texto ? "<b>texto</b>" : "") + ".</p>" +
+        '<label for="rc-serv">Anexar ao relatório de qual serviço?</label><select id="rc-serv">' + opcoesServico(D.servicos[0].id, false) + "</select>" +
+        '<p class="mudo peq">As fotos recebidas ficam marcadas como “recebida por compartilhamento” (não valem como foto tirada no local).</p>' +
+        '<div class="acoes"><button class="bom grande" id="rc-ir">📝 Abrir relatório com o que chegou</button></div>', { titulo: "Recebido" });
+      $("#rc-ir", j.el).onclick = function () { var sid = $("#rc-serv", j.el).value; j.fechar(); fluxoRelatorio(sid, rc); };
+    });
+  }
+  function fluxoRelatorio(servicoId, recebido) {
     if (!D.servicos.length) {
       novoServico(function (id) { fluxoRelatorio(id); }, "Para enviar o relatório, primeiro diga qual é o serviço.");
       return;
@@ -630,12 +652,14 @@
       }
       var arq = $(idArq, el);
       $(idBotao, el).onclick = function () { arq.value = ""; arq.click(); };
-      arq.onchange = function () {
-        var novas = Array.prototype.slice.call(arq.files || [], 0, 6 - lista.length);
+      arq.onchange = function () { adicionar(arq.files, false); };
+      // recebida = veio pelo "Compartilhar" (WhatsApp...): o carimbo avisa que não foi tirada pelo app no local
+      function adicionar(arquivos, recebida) {
+        var novas = Array.prototype.slice.call(arquivos || [], 0, 6 - lista.length);
         var b = $(idBotao, el), txt = b.textContent, s = servicoPorId($("#fr-serv", el).value), pref = !!(s && s.prefeitura);
         A.ocupado(b, true, "Preparando...");
-        var linhas = ["AGE ELÉTRICA E PINTURA · " + (pref ? "PREFEITURA · FOTO " + rotulo() : "RELATÓRIO"),
-          D.funcionario.nome + " · " + new Date().toLocaleString("pt-BR")];
+        var linhas = ["AGE ELÉTRICA E PINTURA · " + (pref ? "PREFEITURA · FOTO " + rotulo() : "RELATÓRIO") + (recebida ? " · FOTO RECEBIDA POR COMPARTILHAMENTO" : ""),
+          D.funcionario.nome + " · " + (recebida ? "anexada em " : "") + new Date().toLocaleString("pt-BR")];
         if (pref) {
           linhas.push((s.protocolo ? "OS " + s.protocolo + " · " : "") + s.cliente);
           linhas.push(posRel ? "GPS " + posRel.coords.latitude.toFixed(6) + ", " + posRel.coords.longitude.toFixed(6) + " (±" + Math.round(posRel.coords.accuracy) + " m)" : "SEM GPS");
@@ -647,9 +671,14 @@
             });
           });
         }, Promise.resolve()).catch(function (e) { A.avisar(A.msgErro(e), "erro"); }).then(function () { A.ocupado(b, false); b.textContent = txt; desenhar(); });
-      };
+      }
+      return { adicionar: adicionar };
     }
-    seletorFotos(fotos, "#fr-fotos", "#fr-arq", "#fr-add-foto", function () { return "DEPOIS"; });
+    var selDepois = seletorFotos(fotos, "#fr-fotos", "#fr-arq", "#fr-add-foto", function () { return "DEPOIS"; });
+    if (recebido) {
+      if (recebido.texto && !$("#fr-desc", el).value) $("#fr-desc", el).value = recebido.texto.slice(0, 5000);
+      if (recebido.arquivos && recebido.arquivos.length) selDepois.adicionar(recebido.arquivos, true);
+    }
     seletorFotos(fotosAntes, "#fr-fotos-antes", "#fr-arq-antes", "#fr-add-antes", function () { return "ANTES"; });
 
     var quadro = quadroAssinatura($("#fr-canvas", el), function (vazio) {

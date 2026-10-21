@@ -237,6 +237,43 @@
       else window.prompt("Copie a mensagem:", texto);
     };
   }
+  // 📤 Compartilhar: abre a lista do celular (WhatsApp, Telegram, e-mail...) com texto e fotos.
+  // No computador sem essa lista, abre o WhatsApp com o texto. Devolve true se abriu.
+  function compartilhar(d) {
+    var dados = { title: d.titulo || "", text: d.texto || "" }, arqs = d.arquivos || [];
+    var comArq = false;
+    try { comArq = !!(arqs.length && navigator.canShare && navigator.canShare({ files: arqs })); } catch (e) { comArq = false; }
+    if (comArq) dados.files = arqs;
+    if (!navigator.share) { abrirZap("https://wa.me/?text=" + encodeURIComponent(dados.text)); return Promise.resolve(true); }
+    return navigator.share(dados).then(function () { return true; }, function (e) {
+      if (e && e.name === "AbortError") return false;     // a pessoa fechou a lista
+      // o celular pede um toque novo quando as fotos demoram a baixar
+      return new Promise(function (ok) {
+        var j = janela('<p>Pronto' + (dados.files ? " (" + dados.files.length + " foto" + (dados.files.length > 1 ? "s" : "") + ")" : "") + '. Toque para escolher o WhatsApp ou outro app.</p>' +
+          '<div class="acoes"><button class="prim" id="cp-ir">📤 Compartilhar</button><button id="cp-zap">WhatsApp (só o texto)</button></div>', { titulo: "Compartilhar" });
+        $("#cp-ir", j.el).onclick = function () { navigator.share(dados).then(function () { j.fechar(); ok(true); }, function () { j.fechar(); ok(false); }); };
+        $("#cp-zap", j.el).onclick = function () { j.fechar(); abrirZap("https://wa.me/?text=" + encodeURIComponent(dados.text)); ok(true); };
+      });
+    });
+  }
+  // o que chegou pelo "Compartilhar" do Android (o sw.js guarda): { texto, arquivos: [File] } ou null. Apaga depois de ler.
+  function lerRecebido() {
+    if (!window.caches) return Promise.resolve(null);
+    return caches.open("age-recebido").then(function (c) {
+      return c.match("recebido/meta").then(function (m) {
+        if (!m) return null;
+        return m.json().then(function (meta) {
+          return Promise.all((meta.arquivos || []).map(function (a, i) {
+            return c.match("recebido/f" + i).then(function (r) { return r ? r.blob().then(function (b) { return new File([b], a.nome || "foto" + i + ".jpg", { type: a.tipo || b.type }); }) : null; });
+          })).then(function (fs) {
+            return caches.delete("age-recebido").then(function () {
+              return { texto: [meta.title, meta.text, meta.url].filter(Boolean).join("\n"), arquivos: fs.filter(Boolean), quando: meta.quando };
+            });
+          });
+        });
+      });
+    }).catch(function () { return null; });
+  }
   // abre um link wa.me (usado quando o link não é um botão <a>)
   function abrirZap(url) {
     if (CELULAR) { var w = window.open(url, "_blank"); if (!w) location.href = url; }
@@ -254,7 +291,7 @@
     CFG: CFG, CATEG: CATEG, AREA: AREA, STATUS: STATUS, TIPO_PONTO: TIPO_PONTO,
     esc: esc, $: $, $$: $$, data: data, hora: hora, dataHora: dataHora, dataSimples: dataSimples, isoLocal: isoLocal,
     inicioDia: inicioDia, duracao: duracao, dinheiro: dinheiro, numero: numero, lerNumero: lerNumero, soDigitos: soDigitos,
-    linkZap: linkZap, abrirZap: abrirZap, linkMapa: linkMapa, linkEndereco: linkEndereco, seloCategoria: seloCategoria, seloStatus: seloStatus,
+    linkZap: linkZap, abrirZap: abrirZap, compartilhar: compartilhar, lerRecebido: lerRecebido, linkMapa: linkMapa, linkEndereco: linkEndereco, seloCategoria: seloCategoria, seloStatus: seloStatus,
     avisar: avisar, msgErro: msgErro, janela: janela, confirmar: confirmar, ocupado: ocupado, uuid: uuid,
     configurado: configurado, cliente: cliente, telaSemConfig: telaSemConfig, prepararFoto: prepararFoto
   };

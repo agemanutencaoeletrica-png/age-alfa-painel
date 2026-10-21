@@ -379,6 +379,7 @@
       carregarBase().then(function () { rota(); A.avisar("Atualizado"); }).catch(falhou);
     };
     iniciarAtualizacaoAutomatica();
+    if (/[?&]recebido=1/.test(location.search)) { history.replaceState(null, "", location.pathname + location.hash); abrirRecebido(); }
     window.removeEventListener("hashchange", rota);
     window.addEventListener("hashchange", rota);
     rota();
@@ -606,7 +607,8 @@
     return '<span class="selo">🏛️ ' + esc(p ? p.nome : "Prefeitura") + (o.protocolo ? " · OS " + esc(o.protocolo) : "") + "</span>";
   }
 
-  function msgServico(s, juntos) {
+  // semLink: para compartilhar com outras pessoas (o link pessoal do funcionário não vai junto)
+  function msgServico(s, juntos, semLink) {
     var o = porId(S.obras, s.obra_id), f = porId(S.func, s.funcionario_id);
     var t = "*AGE Elétrica e Pintura*\nServiço de " + (A.CATEG[s.categoria].icone + " *" + A.CATEG[s.categoria].nome.toUpperCase()) + "*\n\n" +
       (o.prefeitura_id ? "🏛️ " + ((porId(S.pref, o.prefeitura_id) || {}).nome || "Prefeitura") + (o.protocolo ? " · OS/Protocolo " + o.protocolo : "") + "\n" +
@@ -619,7 +621,8 @@
       var ox = porId(S.obras, x.obra_id) || {};
       return "• " + (ox.chamado ? "Chamado nº " + ox.chamado + ": " : "") + resumoServ(x, 140);
     }).join("\n") + "\n";
-    if (f) t += "\nRegistre a chegada, as fotos do serviço e a saída pelo seu link:\n" + linkFunc(f);
+    if (f && !semLink) t += "\nRegistre a chegada, as fotos do serviço e a saída pelo seu link:\n" + linkFunc(f);
+    if (semLink && o.endereco) t += "\n📍 " + A.linkEndereco(o.endereco);
     return t;
   }
   function botaoZap(s, juntos) {
@@ -1328,7 +1331,7 @@
       }).join("") + "</select>" +
       '<label for="es-desc">O que fazer</label><textarea id="es-desc" rows="4">' + esc(s.descricao || "") + "</textarea>" +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="es-assin"' + (s.pede_assinatura ? " checked" : "") + '> ✍️ Liberar assinatura do responsável neste serviço <span class="mudo peq">(desligado: o funcionário não vê o quadro de assinatura)</span></label>' +
-      '<div class="acoes"><button class="prim" id="es-salvar">Salvar</button><span id="es-zap">' + botaoZap(s) + '</span><button class="perigo" id="es-apagar">Apagar parte</button></div>' +
+      '<div class="acoes"><button class="prim" id="es-salvar">Salvar</button><span id="es-zap">' + botaoZap(s) + '</span><button id="es-comp">📤 Compartilhar</button><button class="perigo" id="es-apagar">Apagar parte</button></div>' +
       '<hr class="sep"><h3>Registros de ponto neste serviço</h3><div id="es-pontos">' + carregando() + "</div>" +
       '<hr class="sep"><h3>Relatórios</h3><div id="es-rels"></div>',
       { titulo: "Serviço de " + A.CATEG[s.categoria].nome, larga: true });
@@ -1353,6 +1356,7 @@
       hidratarFotos($("#es-pontos", el));
     }).catch(function (e) { $("#es-pontos", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
 
+    $("#es-comp", el).onclick = function () { A.compartilhar({ titulo: "Serviço · " + (o.cliente || ""), texto: msgServico(s, null, true) }); };
     $("#es-salvar", el).onclick = function () {
       var b = this, st = $("#es-st", el).value;
       var dados = { funcionario_id: nulo($("#es-func", el).value), data_prevista: nulo($("#es-data", el).value), status: st, descricao: nulo(val(el, "#es-desc")),
@@ -1886,7 +1890,7 @@
         '" style="width:220px;height:110px;background:#fff" aria-label="Ver assinatura"><img alt="Assinatura" style="object-fit:contain"></button>' +
         '<div class="peq"><b>' + esc(r.assinado_por || "") + "</b><br>" + (r.assinado_em ? A.dataHora(r.assinado_em) : "") + "</div></div>"
         : (r.concluido && s && s.pede_assinatura ? '<div class="aviso" style="margin-top:12px">Este serviço pedia assinatura, mas foi concluído <b>sem assinatura</b> (responsável não estava no local).</div>' : "")) +
-      '<div class="acoes"><button class="prim" id="er-orc">💲 Gerar orçamento</button>' + (s ? '<button id="er-serv">Abrir serviço</button>' : "") +
+      '<div class="acoes"><button class="prim" id="er-orc">💲 Gerar orçamento</button>' + (s ? '<button id="er-serv">Abrir serviço</button>' : "") + '<button id="er-comp">📤 Compartilhar' + ((r.fotos || []).length + (r.fotos_antes || []).length ? " com fotos" : "") + "</button>" +
       ((r.fotos || []).length || (r.fotos_antes || []).length ? '<button id="er-div">📣 Divulgar</button>' : "") +
       (o && (A.CFG.EMPRESA || {}).avaliacao ? '<button id="er-aval">⭐ Pedir avaliação</button>' : "") +
       '<button id="er-lido">' + (r.lido ? "Marcar como novo" : "Marcar como lido") + "</button></div>",
@@ -1904,6 +1908,7 @@
     $("#er-lido", el).onclick = function () { marcar(!r.lido).then(function () { j.fechar(); rota(); }).catch(falhou); };
     if ($("#er-serv", el)) $("#er-serv", el).onclick = function () { j.fechar(); abrirServico(s.id); };
     if ($("#er-div", el)) $("#er-div", el).onclick = function () { divulgar(r); };
+    $("#er-comp", el).onclick = function () { compartilharRelatorio(this, r); };
     if ($("#er-aval", el)) $("#er-aval", el).onclick = function () { pedirAvaliacao(o); };
     $("#er-orc", el).onclick = function () {
       j.fechar();
@@ -1914,6 +1919,50 @@
         categoria: s ? s.categoria : "", itens: itens, observacoes: r.descricao || ""
       });
     };
+  }
+
+  // relatório para o WhatsApp do gerente/coordenador: resumo + fotos de antes e depois (até 10)
+  function textoRelatorio(r) {
+    var s = porId(S.serv, r.servico_id), o = s ? porId(S.obras, s.obra_id) : null, mats = r.materiais || [];
+    return "*" + ((A.CFG.EMPRESA || {}).nome || "AGE") + " — Relatório*\n" + (o ? o.cliente + "\n" : "") + (o && o.chamado ? "Chamado nº " + o.chamado + "\n" : "") +
+      "Data: " + A.dataHora(r.criado_em) + " · " + nomeFunc(r.funcionario_id) + "\n" + (r.tipo_servico ? "Serviço: " + r.tipo_servico + "\n" : "") +
+      (r.concluido ? "✅ Serviço concluído\n" : r.orcamento ? "🧾 Visita de orçamento\n" : "") + (r.descricao ? "\n" + r.descricao + "\n" : "") +
+      (mats.length ? "\nMateriais:\n" + mats.map(function (m) { return "• " + m.item + (m.qtd ? " — " + A.numero(m.qtd) + " " + (m.un || "") : ""); }).join("\n") + "\n" : "");
+  }
+  function compartilharRelatorio(b, r) {
+    var cam = (r.fotos_antes || []).concat(r.fotos || []).slice(0, 10), txt = b.textContent;
+    A.ocupado(b, true, cam.length ? "Preparando as fotos..." : "Abrindo...");
+    var pFotos = !cam.length ? Promise.resolve([]) : q(sb.storage.from("fotos").createSignedUrls(cam, 600)).then(function (us) {
+      return Promise.all(cam.map(function (c, i) {
+        var u = (us || []).filter(function (x) { return x.path === c; })[0];
+        if (!u || !u.signedUrl) return null;
+        return fetch(u.signedUrl).then(function (res) { return res.blob(); }).then(function (bl) {
+          return new File([bl], "AGE-" + ((r.fotos_antes || []).indexOf(c) >= 0 ? "antes" : "foto") + "-" + (i + 1) + ".jpg", { type: bl.type || "image/jpeg" });
+        }).catch(function () { return null; });
+      }));
+    }).then(function (fs) { return fs.filter(Boolean); });
+    pFotos.catch(function () { return []; }).then(function (fs) {
+      A.ocupado(b, false); b.textContent = txt;
+      return A.compartilhar({ titulo: "Relatório AGE", texto: textoRelatorio(r), arquivos: fs });
+    });
+  }
+
+  // o que chegou pelo "Compartilhar → AGE Painel" do Android
+  function abrirRecebido() {
+    A.lerRecebido().then(function (rc) {
+      if (!rc || (!rc.texto && !rc.arquivos.length)) return;
+      var j = A.janela((rc.texto ? '<div class="cartao peq" style="white-space:pre-wrap;max-height:220px;overflow:auto">' + esc(rc.texto.slice(0, 3000)) + "</div>" : "") +
+        (rc.arquivos.length ? '<p class="peq">📷 ' + rc.arquivos.length + " foto" + (rc.arquivos.length > 1 ? "s" : "") + " recebida" + (rc.arquivos.length > 1 ? "s" : "") +
+          ". Para anexar a um relatório, compartilhe pelo app do funcionário (<b>AGE Ponto</b>).</p>" : "") +
+        '<div class="acoes">' + (rc.texto ? '<button class="prim" id="rc-cx">📋 Colocar na caixa de chamados</button><button id="rc-novo">➕ Novo serviço com este texto</button>' : "") +
+        '<button id="rc-copiar">Copiar o texto</button></div>', { titulo: "📥 Recebido pelo compartilhamento" });
+      if ($("#rc-cx", j.el)) $("#rc-cx", j.el).onclick = function () {
+        j.fechar(); location.hash = "#servicos"; importarChamado();
+        var t = $("#ch-txt"); if (t) { t.value = rc.texto; t.dispatchEvent(new Event("input")); }
+      };
+      if ($("#rc-novo", j.el)) $("#rc-novo", j.el).onclick = function () { j.fechar(); novoServico(null, { obs: rc.texto.slice(0, 2000), desc: rc.texto.slice(0, 2000) }); };
+      $("#rc-copiar", j.el).onclick = function () { copiar(rc.texto || ""); A.avisar("Texto copiado", "ok"); };
+    });
   }
 
   // mensagem pronta pedindo ao cliente uma avaliação da AGE no Google
@@ -2938,7 +2987,7 @@
     return { loja_id: p.id, codigo: p.codigo, tipo: p.tipo, nome: p.nome, endereco: p.endereco, numero: p.numero, complemento: p.complemento,
       bairro: p.bairro, cidade: p.cidade, uf: p.uf, lat: p.lat, lng: p.lng, geo_precisao: p.geo_precisao };
   }
-  function msgRota(r) {
+  function msgRota(r, semLink) {
     var f = porId(S.func, r.funcionario_id);
     r = Object.assign({}, r, { paradas: r.id ? (r.paradas || []).filter(function (p) { return !paradaFeita(p, r); }) : r.paradas });
     var t = "*AGE Elétrica e Pintura — " + r.nome + "*\n" + (r.data ? "Data: " + A.dataSimples(r.data) + "\n" : "") + r.paradas.length + " paradas, na ordem:\n\n";
@@ -2951,7 +3000,7 @@
     });
     var links = G.linksGoogle(r.partida && G.temLocal(r.partida) ? r.partida : null, r.paradas, false);
     t += "\nRota completa no Google Maps" + (links.length > 1 ? " (em partes)" : "") + ":\n" + links.join("\n");
-    if (f) t += "\n\nA rota também aparece no seu app:\n" + linkFunc(f);
+    if (f && !semLink) t += "\n\nA rota também aparece no seu app:\n" + linkFunc(f);
     return t;
   }
   function salvarRota(i) {
@@ -3001,8 +3050,12 @@
         (feitas ? ' <span class="mudo">(as feitas saíram do app do funcionário e estão em <a href="#executados">✅ Executados</a>)</span>' : "") + "</div>" +
         '<div class="acoes">' + links.map(function (u, k) { return '<a class="botao peq" target="_blank" rel="noopener" href="' + esc(u) + '">🗺 Google Maps' + (links.length > 1 ? " " + (k + 1) : "") + "</a>"; }).join("") +
         (f && f.telefone ? '<a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgRota(r))) + '">📲 WhatsApp</a>' : "") +
+        '<button class="peq" data-rota-comp="' + r.id + '">📤 Compartilhar</button>' +
         '<button class="peq perigo" data-apagar-rota="' + r.id + '">Apagar</button></div></div>';
     }).join("");
+    $$("[data-rota-comp]", c).forEach(function (b) {
+      b.onclick = function () { var r = porId(S.rotas, b.dataset.rotaComp); if (r) A.compartilhar({ titulo: r.nome, texto: msgRota(r, true) }); };
+    });
     $$("[data-apagar-rota]", c).forEach(function (b) {
       b.onclick = function () {
         if (!A.confirmar("Apagar esta rota?")) return;

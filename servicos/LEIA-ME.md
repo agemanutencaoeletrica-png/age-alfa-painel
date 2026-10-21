@@ -262,3 +262,10 @@ Antes de finalizar no portal, o serviço avisa se falta **registro de chegada** 
 - Aba **✅ Executados**: filtro **Finalizados no portal / Falta finalizar no portal** e total do valor negociado.
 - O painel se **atualiza sozinho** a cada minuto e ao voltar para a aba (não atualiza com uma janela aberta ou
   enquanto você digita). O app do funcionário, a cada 2 minutos.
+
+## 📤 Compartilhar e 📥 receber (WhatsApp e outros apps)
+- **Enviar:** botão **📤 Compartilhar** no serviço, no relatório (com as fotos) e nas rotas salvas do painel, e em cada serviço
+  no app do funcionário. Abre a lista do celular (WhatsApp, Telegram, e-mail...). O link pessoal do funcionário não vai junto.
+- **Receber (Android, app instalado na tela inicial):** no WhatsApp, toque em Compartilhar → **AGE Ponto** (funcionário) para
+  anexar fotos/texto ao relatório de um serviço (marcadas "recebida por compartilhamento"), ou → **AGE Painel** para colocar
+  o texto na caixa de chamados ou criar um serviço. Depois de atualizar o app, reinstale o ícone se ele não aparecer na lista.
