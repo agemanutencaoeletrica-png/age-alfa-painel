@@ -662,7 +662,8 @@
       for (var i = 0; i < ls.length - 1; i++) if (semAcento(ls[i]) === rot) return ls[i + 1];
       return "";
     }
-    if (campo("numero") && campo("centro")) {
+    // a página da lista traz o filtro "Número / 0 ... Centro / Selecione uma opção": isso não é a tela Detalhes
+    if (/^\d*[1-9]\d*$/.test(campo("numero")) && /^[a-z]?\s*\d/i.test(campo("centro"))) {
       // OS criadas: "Ordem de serviço de número '11652' criada.Para o prestador 'AGE SOLUCOES ...'" (o nome da AGE varia no portal)
       var reOS = /n[uú]mero\s*'(\d+)'\s*criada\.?\s*para o prestador\s*'([^']*)'/gi, mo, mos = null, temOS = false;
       while ((mo = reOS.exec(t))) { temOS = true; if (EH_AGE.test(mo[2])) mos = mo; }
