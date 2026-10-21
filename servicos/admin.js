@@ -2658,14 +2658,19 @@
     return Object.keys(mapa).map(function (k) { return mapa[k]; });
   }
 
+  // base da AGE: a do config.js ou a salva neste aparelho (botão "Salvar como base")
+  function baseRotas() {
+    if (A.CFG.BASE && G.temLocal(A.CFG.BASE)) return A.CFG.BASE;
+    try { var b = JSON.parse(localStorage.getItem("age_base_rota") || "null"); return b && G.temLocal(b) ? b : null; } catch (e) { return null; }
+  }
   function verRotas(c) {
-    var base = A.CFG.BASE && G.temLocal(A.CFG.BASE) ? A.CFG.BASE : null;
+    var base = baseRotas();
     c.innerHTML = '<div class="cab-secao"><h2>Rotas</h2></div>' +
       (S.lojas.length ? "" : '<div class="aviso">Cadastre ou importe as lojas na aba <a href="#lojas">Lojas</a> para montar rotas.</div>') +
       '<div class="cartao"><div class="duas"><div><label for="rt-partida">Saindo de</label><select id="rt-partida"><option value="gps">📍 Minha localização agora</option>' +
       (base ? '<option value="base">🏠 ' + esc(base.nome || "Base da AGE") + "</option>" : "") + '<option value="loja">🏪 Uma loja...</option>' +
       '<option value="nenhuma">— sem ponto de partida (começa na 1ª loja)</option></select>' +
-      '<input id="rt-partida-loja" list="rt-dl-lojas" class="oculto" style="margin-top:6px" placeholder="Digite a loja de partida"></div>' +
+      '<input id="rt-partida-loja" list="rt-dl-lojas" class="oculto" style="margin-top:6px" placeholder="Digite a loja de partida"><div id="rt-gps" class="peq" style="margin-top:4px"></div></div>' +
       '<div><label for="rt-modo">Quais lojas</label><select id="rt-modo"><option value="servicos">Lojas com serviço aberto</option>' +
       '<option value="escolher">Escolher as lojas</option><option value="raio">Todas as lojas perto da partida</option></select>' +
       '<div id="rt-modo-extra" style="margin-top:6px"></div></div></div>' +
@@ -2679,8 +2684,30 @@
     $("#rt-partida").value = R.partida === "base" && !base ? "gps" : R.partida;
     $("#rt-partida-loja").value = R.partidaLoja;
     $("#rt-modo").value = R.modo; $("#rt-voltar").checked = R.voltar;
+    // localização atual: pega já ao abrir a aba, para a rota sair daqui
+    function pegarGps(forcar) {
+      var x = $("#rt-gps");
+      if (!x || $("#rt-partida").value !== "gps") { if (x) x.innerHTML = ""; return; }
+      if (R.gps && !forcar && Date.now() - R.gps.quando < 10 * 60000) { mostrarGps(); return; }
+      x.innerHTML = '<span class="mudo">📍 Pegando sua localização...</span>';
+      posicaoAtual(true).then(function (p) { R.gps = { lat: p.lat, lng: p.lng, precisao: p.precisao, quando: Date.now() }; mostrarGps(); })
+        .catch(function (e) { x.innerHTML = '<span class="selo critico">' + esc(e.message) + '</span> <button class="peq" id="rt-gps-de-novo">↻ Tentar de novo</button>'; $("#rt-gps-de-novo").onclick = function () { pegarGps(true); }; });
+    }
+    function mostrarGps() {
+      var x = $("#rt-gps"), g = R.gps;
+      x.innerHTML = '<span class="selo bom">📍 Localização incluída' + (g.precisao ? " (±" + Math.round(g.precisao) + " m)" : "") + "</span> " +
+        '<a href="https://www.google.com/maps?q=' + g.lat + "," + g.lng + '" target="_blank" rel="noopener">ver no mapa</a> · <button class="peq" id="rt-gps-at">↻ Atualizar</button> <button class="peq" id="rt-gps-base">🏠 Salvar como base</button>' +
+        (g.precisao > 1000 ? '<div class="mudo">No computador a localização é aproximada (pela internet). Para mais precisão, salve a base ou use o celular.</div>' : "");
+      $("#rt-gps-at").onclick = function () { pegarGps(true); };
+      $("#rt-gps-base").onclick = function () {
+        if (!A.confirmar("Salvar este ponto como a base da AGE neste aparelho? Ele aparece como opção “🏠 Base da AGE” em Saindo de.")) return;
+        try { localStorage.setItem("age_base_rota", JSON.stringify({ nome: "Base da AGE", lat: g.lat, lng: g.lng })); } catch (e) { /* sem armazenamento */ }
+        A.avisar("Base salva", "ok"); rota();
+      };
+    }
     function extras() {
       $("#rt-partida-loja").classList.toggle("oculto", $("#rt-partida").value !== "loja");
+      pegarGps(false);
       var m = $("#rt-modo").value, x = $("#rt-modo-extra");
       if (m === "servicos") {
         x.innerHTML = '<select id="rt-cat" aria-label="Área"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
@@ -2733,13 +2760,14 @@
   function obterPartida() {
     var tipo = R.partida;
     if (tipo === "nenhuma") return Promise.resolve(null);
-    if (tipo === "base") { var b = A.CFG.BASE; return Promise.resolve({ nome: b.nome || "Base da AGE", lat: Number(b.lat), lng: Number(b.lng) }); }
+    if (tipo === "base") { var b = baseRotas(); return Promise.resolve({ nome: b.nome || "Base da AGE", lat: Number(b.lat), lng: Number(b.lng) }); }
     if (tipo === "loja") {
       var l = lojaPorRotulo(R.partidaLoja);
       if (!l || !G.temLocal(l)) return Promise.reject(new Error("Escolha a loja de partida (precisa estar localizada no mapa)."));
       return Promise.resolve({ nome: nomeLoja(l), lat: l.lat, lng: l.lng, lojaId: l.id });
     }
-    return posicaoAtual(false).then(function (p) { return { nome: "Minha localização", lat: p.lat, lng: p.lng, gps: true }; });
+    if (R.gps && Date.now() - R.gps.quando < 10 * 60000) return Promise.resolve({ nome: "Minha localização", lat: R.gps.lat, lng: R.gps.lng, gps: true });
+    return posicaoAtual(false).then(function (p) { R.gps = { lat: p.lat, lng: p.lng, precisao: p.precisao, quando: Date.now() }; return { nome: "Minha localização", lat: p.lat, lng: p.lng, gps: true }; });
   }
 
   function montarRota(b) {
