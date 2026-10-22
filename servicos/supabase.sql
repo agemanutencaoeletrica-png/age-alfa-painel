@@ -345,6 +345,26 @@ create table if not exists public.fornecedores (
 );
 create unique index if not exists fornecedores_cnpj_idx on public.fornecedores (cnpj) where cnpj is not null;
 
+-- Notas de serviço: notas fiscais emitidas aos clientes (o que entra), por obra/cliente; e a obra de cada pagamento da equipe
+-- (Resultado por obra = notas − materiais − mão de obra − despesas avulsas)
+create table if not exists public.receitas (
+  id            uuid primary key default gen_random_uuid(),
+  emitida_em    date not null,
+  valor         numeric(12,2) not null check (valor > 0),
+  cliente       text,                         -- tomador da nota
+  obra_id       uuid references public.obras (id) on delete set null,
+  destino       text,                         -- obra/cliente escrito (ex.: DEVA), quando não é uma obra do app
+  numero_nota   text,
+  descricao     text,
+  recebido      boolean not null default false,
+  recebido_em   date,
+  arquivo       text,                         -- foto/PDF/XML da nota (pasta admin/ das fotos)
+  criado_em     timestamptz not null default now()
+);
+create index if not exists receitas_data_idx on public.receitas (emitida_em);
+alter table public.pagamentos add column if not exists obra_id uuid references public.obras (id) on delete set null;
+alter table public.pagamentos add column if not exists destino text;
+
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
   id             uuid primary key default gen_random_uuid(),
@@ -409,7 +429,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
