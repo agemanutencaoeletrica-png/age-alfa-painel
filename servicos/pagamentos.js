@@ -137,7 +137,7 @@
     return scripts[url];
   }
   var leitor = null, progresso = null;
-  // op: { psm: "6" (bloco, padrão do tesseract.js) ou "3"/"4" (página/colunas), cinza: true (sem preto e branco), giro: 0/90/270 já conhecido }
+  // op: { psm: "6" (bloco, padrão do tesseract.js) ou "3"/"4" (página/colunas), endireitar: true (corrige foto torta), cinza: true (sem preto e branco), giro: 0/90/270 já conhecido }
   // devolve { texto, giro }
   function ocr(f, op) {
     op = op || {};
@@ -151,7 +151,7 @@
     }).then(function (w) {
       // foto deitada (comum em nota grande): se a leitura sai ruim, tenta girada para os dois lados e fica com a melhor
       var ler = function (giro) {
-        return w.setParameters({ tessedit_pageseg_mode: op.psm || "6" }).then(function () { return realcar(f, giro, op.cinza); })
+        return w.setParameters({ tessedit_pageseg_mode: op.psm || "6" }).then(function () { return realcar(f, giro, op.cinza, op.endireitar); })
           .then(function (img) { return w.recognize(img); }).then(function (r) { return { texto: r.data.text || "", giro: giro }; });
       };
       if (op.giro !== undefined) return ler(op.giro);
@@ -173,7 +173,35 @@
     return (String(t).match(/\d,\d{2}\b/g) || []).length * 2 + pal * 3;
   }
   // foto de papel (sombra, inclinação): amplia, passa para preto e branco pela claridade de cada região. Melhora muito a leitura de notas.
-  function realcar(f, giro, cinza) {
+  // foto um pouco torta (papel inclinado): mede o ângulo das linhas de texto (-6° a 6°) pela projeção dos pontos escuros
+  // em cada ângulo; o melhor é o que deixa as linhas mais "cheias" e as entrelinhas mais vazias
+  function inclinacao(cv) {
+    var k = Math.min(1, 900 / Math.max(cv.width, cv.height)), w = Math.round(cv.width * k), h = Math.round(cv.height * k);
+    var c2 = document.createElement("canvas"); c2.width = w; c2.height = h;
+    var x2 = c2.getContext("2d"); x2.drawImage(cv, 0, 0, w, h);
+    var px = x2.getImageData(0, 0, w, h).data, g = new Float32Array(w * h), i;
+    for (i = 0; i < w * h; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
+    // só o texto: ponto bem mais escuro que a vizinhança, em fundo claro (o papel), sem a mesa escura em volta
+    var I = new Float64Array((w + 1) * (h + 1)), xs = [], ys = [], r = Math.max(6, Math.round(Math.max(w, h) / 40)), x, y;
+    for (y = 0; y < h; y++) { var sl = 0; for (x = 0; x < w; x++) { sl += g[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + sl; } }
+    for (y = 0; y < h; y++) {
+      var y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+      for (x = 0; x < w; x++) {
+        var x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1), m = (I[y1 * (w + 1) + x1] - I[y0 * (w + 1) + x1] - I[y1 * (w + 1) + x0] + I[y0 * (w + 1) + x0]) / ((x1 - x0) * (y1 - y0));
+        if (m > 110 && g[y * w + x] < m - 30) { xs.push(x - w / 2); ys.push(y); }
+      }
+    }
+    if (xs.length < 500) return 0;
+    var melhor = 0, nota = -1;
+    for (var a = -6; a <= 6.001; a += 0.25) {
+      var t = a * Math.PI / 180, sn = Math.sin(t), cs = Math.cos(t), hist = new Float64Array(h * 2 + 2), n = 0;
+      for (i = 0; i < xs.length; i++) { var yy = Math.round(ys[i] * cs - xs[i] * sn) + h; if (yy >= 0 && yy < hist.length) hist[yy]++; }
+      for (i = 0; i < hist.length; i++) n += hist[i] * hist[i];
+      if (n > nota * 1.0005) { nota = n; melhor = a; }   // empate: fica com o menor giro
+    }
+    return Math.abs(melhor) >= 0.5 ? melhor : 0;
+  }
+  function realcar(f, giro, cinza, endireitar) {
     if (!window.createImageBitmap) return Promise.resolve(f);
     return createImageBitmap(f).then(function (bmp) {
       var k = Math.min(2, 3200 / Math.max(bmp.width, bmp.height)), w0 = Math.round(bmp.width * k), h0 = Math.round(bmp.height * k);
@@ -183,6 +211,14 @@
       if (giro) { cx.translate(W / 2, H / 2); cx.rotate(giro * Math.PI / 180); cx.drawImage(bmp, -w0 / 2, -h0 / 2, w0, h0); cx.setTransform(1, 0, 0, 1, 0, 0); }
       else cx.drawImage(bmp, 0, 0, W, H);
       if (bmp.close) bmp.close();
+      // endireita a foto torta (leitura extra da nota): as colunas de preço não "sobem" para a linha do material de cima
+      var ang = endireitar ? inclinacao(cv) : 0;
+      if (ang) {
+        var cr = document.createElement("canvas"); cr.width = W; cr.height = H;
+        var xr = cr.getContext("2d"); xr.fillStyle = "#fff"; xr.fillRect(0, 0, W, H);
+        xr.translate(W / 2, H / 2); xr.rotate(-ang * Math.PI / 180); xr.drawImage(cv, -W / 2, -H / 2);
+        cv = cr; cx = xr; cx.setTransform(1, 0, 0, 1, 0, 0);
+      }
       var d = cx.getImageData(0, 0, W, H), px = d.data, g = new Float32Array(W * H), I = new Float64Array((W + 1) * (H + 1)), x, y;
       for (var i = 0; i < W * H; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
       if (cinza) {   // só tons de cinza (a 2ª leitura de nota usa assim)
