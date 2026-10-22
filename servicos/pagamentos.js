@@ -331,7 +331,8 @@
     P = ctx;
     if (P.S.semPag) {
       c.innerHTML = '<div class="cab-secao"><h2>💰 Pagamentos</h2></div><div class="aviso">Para usar esta área, rode de novo o arquivo <b>supabase.sql</b> no Supabase ' +
-        "(SQL Editor → colar tudo → Run). Ele cria a tabela de pagamentos sem apagar nada. Depois toque em ↻.</div>";
+        "(SQL Editor → colar tudo → Run) e depois rode também: <code>notify pgrst, 'reload schema';</code> Ele cria a tabela de pagamentos sem apagar nada. Depois toque em ↻." +
+        (P.S.erroPag ? '<div class="peq mudo" style="margin-top:6px">Erro do banco: ' + esc(P.S.erroPag) + "</div>" : "") + "</div>";
       return;
     }
     var din = filtro.forma === "especie";

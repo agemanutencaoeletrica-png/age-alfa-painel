@@ -209,7 +209,26 @@
   }
   var seguro = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
   if ("serviceWorker" in navigator && seguro) {
-    window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(function () { /* segue sem modo app */ }); });
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(function (reg) {
+        // procura versão nova ao voltar para o app e a cada 15 minutos (o app instalado fica aberto por dias)
+        var procurar = function () { reg.update().catch(function () { /* sem internet */ }); };
+        setInterval(procurar, 15 * 60000);
+        document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") procurar(); });
+      }).catch(function () { /* segue sem modo app */ });
+      // versão nova assumiu: recarrega sozinho (sem atrapalhar uma janela aberta ou quem está digitando)
+      var tinha = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener("controllerchange", function () {
+        if (!tinha) { tinha = true; return; }   // primeira vez que o app é aberto: nada a recarregar
+        avisar("Nova versão do app: atualizando...");
+        var tentar = function () {
+          var a = document.activeElement;
+          if (!document.querySelector(".fundo-modal") && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) location.reload();
+          else setTimeout(tentar, 5000);
+        };
+        setTimeout(tentar, 1500);
+      });
+    });
   }
 
   // ---------- WhatsApp ----------
