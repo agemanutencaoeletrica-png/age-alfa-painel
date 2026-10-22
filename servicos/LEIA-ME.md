@@ -286,3 +286,11 @@ O app lê o valor total, a data, a loja e os itens (cupom NFC-e, DANFE, pré-ven
 materiais), **para onde foi** (obra/loja/chamado ou estoque), **tipo de serviço** e os materiais. Os totais de elétrica e pintura,
 o total geral e o resumo **por destino** são somados na hora; ⬇ planilha e 📤 compartilhar. A loja é lembrada pelo CNPJ.
 Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
+- Partes da aba Compras: **Tudo · 🧱 Material de obra · ⛽ Despesas avulsas** (combustível, manutenção de veículo, lanche,
+  pedágio, ferramentas; com o veículo) **· 💳 A pagar** (boleto/a prazo, com vencimento e botão ✔ Pago).
+  Resumo **por loja**: tudo somado, com o que falta pagar em cada uma.
+
+## 📊 Fechamento mensal dos chamados (Supermercados BH)
+Aba **✅ Executados → 📊 Fechamento mensal**: cada chamado concluído no mês com data, chamado, loja, serviço realizado, OS,
+situação no portal e **valor**; total do mês, o que falta finalizar e o que está sem valor. **📋 Colar do portal**: cole as
+páginas de **Ordens de serviço** (valores) e **Finalizados** (data de encerramento) e o app atualiza tudo. 💲 corrige um valor à mão.

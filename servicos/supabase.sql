@@ -299,7 +299,7 @@ create table if not exists public.compras (
   comprado_em   date not null,
   valor         numeric(12,2) not null check (valor > 0),
   fornecedor    text,                         -- onde comprou
-  area          text not null default 'eletrica' check (area in ('eletrica', 'pintura', 'dividir')),
+  area          text not null default 'eletrica' check (area in ('eletrica', 'pintura', 'dividir', 'geral')),
   obra_id       uuid references public.obras (id) on delete set null,   -- para onde foi o material
   destino       text,                         -- destino escrito (quando não é uma obra do app)
   tipo_servico  text,
@@ -310,6 +310,15 @@ create table if not exists public.compras (
 );
 create index if not exists compras_data_idx on public.compras (comprado_em);
 alter table public.compras add column if not exists cnpj text;   -- CNPJ da loja na nota: o app lembra o nome da loja
+-- despesas avulsas (combustível, oficina, lanche...) e contas a pagar
+alter table public.compras add column if not exists tipo text not null default 'material';   -- material ou despesa
+alter table public.compras add column if not exists categoria text;                           -- combustivel, veiculo, alimentacao...
+alter table public.compras add column if not exists veiculo_id uuid references public.veiculos (id) on delete set null;
+alter table public.compras add column if not exists forma_pagamento text;
+alter table public.compras add column if not exists pago boolean not null default true;
+alter table public.compras add column if not exists vencimento date;
+alter table public.compras drop constraint if exists compras_area_check;
+alter table public.compras add constraint compras_area_check check (area in ('eletrica', 'pintura', 'dividir', 'geral'));
 
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
