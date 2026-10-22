@@ -139,12 +139,12 @@
       ls[i] = "";
     });
     // "002637 1,00 UN ESMALTE CORALIT 3,6L AMARELO 49,90 49,90" (código, quantidade, unidade, descrição, unitário, total)
-    ls.forEach(function (x) {
+    ls.forEach(function (x, i) {
       var m3 = x.match(/^\W*\d{3,8}\s+(\d+(?:[.,]\d+)?)\s*(UN|UND|PC|PÇ|PCT|M|MT|KG|CX|RL|LT|L|GL|LATA|BD|PAR)\s+([A-Za-zÀ-ú].*?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/i);
       if (m3) { r.itens.push({ item: m3[3].replace(/\s+/g, " ").slice(0, 120), qtd: A.lerNumero(m3[1]), un: m3[2].toLowerCase().replace("und", "un"), valor: A.lerNumero(m3[5]) }); x = ""; return; }
       // o mesmo formato com a foto ruim (pré-venda): "003462 400 UN ROLOANTIGOTASCM oo 21,90 Bro" — a vírgula da quantidade sumiu (400 = 4,00),
       // sujeira depois do nome e o total ilegível ("21 80", "Bro"): o total vale se bater com qtd × unitário, senão é calculado
-      var m4 = x.match(/^\W*[\dDOIl]{4,8}\s+(?:[—–-]+\s+)?(\d{1,4}(?:[.,]\d{1,3})?)\s*(UN|UND|PC|PÇ|PCT|M|MT|KG|CX|RL|LT|GL|LATA|BD|PAR)\b\.?\s+([A-ZÀ-Ú0-9].*)$/);
+      var m4 = x.match(/^\W*(?=[0-9A-Za-z]*\d[0-9A-Za-z]*\d)[0-9A-Za-z]{4,8}\s+(?:[—–-]+\s+)?(\d{1,4}(?:[.,]\d{1,3})?)\s*(UN|UND|PC|PÇ|PCT|M|MT|KG|CX|RL|LT|GL|LATA|BD|PAR)\b\.?\s+([A-ZÀ-Ú0-9].*)$/);
       if (!m4) return;
       var q4 = /[.,]/.test(m4[1]) ? A.lerNumero(m4[1]) : m4[1].length >= 3 && /00$/.test(m4[1]) ? Number(m4[1]) / 100 : Number(m4[1]);
       // preço unitário: o 1º valor depois do nome (a foto troca a vírgula por ponto: "12.90"); pode faltar (fica para você completar)
@@ -156,6 +156,14 @@
       if (u4 > 0 && !(t4 && Math.abs(t4 - q4 * u4) < 0.05)) t4 = Math.round(q4 * u4 * 100) / 100;
       if (!(u4 > 0)) { u4 = null; t4 = null; }
       while (d4.length > 1 && /^\d{1,2}[º°.]*$/.test(d4[d4.length - 1])) d4.pop();   // número solto no fim ("TRINCHA396-2 1º.")
+      // total do item na linha vizinha (foto torta): confirma qtd × unitário ou corrige a quantidade lida errado ("700" no lugar de "100")
+      if (u4 > 0 && !(mt4 && Math.abs(A.lerNumero(mt4[1] + "," + mt4[2]) - q4 * u4) < 0.05)) {
+        var viz = [ls[i - 1], ls[i + 1]].filter(function (z) { return z && !/^\W*(?=[0-9A-Za-z]*\d[0-9A-Za-z]*\d)[0-9A-Za-z]{4,8}\s+\d/.test(z) && !/[A-Za-zÀ-ú]{4,}/.test(z); })
+          .map(function (z) { return (z.match(/\d{1,4}[ ,.]\d{2}(?!\d)/g) || []).map(function (n) { return A.lerNumero(n.replace(/[ .](\d{2})$/, ",$1")); }); });
+        var tv = [].concat.apply([], viz), ok4 = tv.some(function (n) { return Math.abs(n - q4 * u4) < 0.05; });
+        if (!ok4) { var q5 = tv.map(function (n) { return n / u4; }).filter(function (qq) { return qq >= 1 && qq <= 999 && Math.abs(qq - Math.round(qq)) < 0.01 && String(Math.round(qq)).length === String(Math.round(q4)).length; })[0];
+          if (q5) { q4 = Math.round(q5); t4 = Math.round(q4 * u4 * 100) / 100; } }
+      }
       if (d4.length && q4 > 0 && q4 <= 999) r.itens.push({ item: d4.join(" ").slice(0, 120), qtd: q4, un: m4[2].toLowerCase().replace("und", "un"), unit: u4, valor: t4 });
     });
     ls.forEach(function (x) {
@@ -313,7 +321,7 @@
       d = lerNota(r.texto);
       if (!/^image\//.test(f.type) || fecha(d)) { if (!fecha(d)) corrigeTotal(d); return { dados: d, imagem: r.imagem || f, bruto: r.texto }; }
       // a soma dos materiais não fecha com o total: lê a tabela de novo de outros jeitos e fica com a leitura que fecha
-      var melhor = d, bruto = r.texto, tentativas = [{ psm: "6", cinza: true }, { psm: "4" }, { psm: "3" }];
+      var melhor = d, bruto = r.texto, tentativas = [{ psm: "6", endireitar: true }, { psm: "6", cinza: true }, { psm: "4" }, { psm: "3" }];
       return tentativas.reduce(function (pr, op, n) {
         return pr.then(function () {
           if (fecha(melhor)) return;
@@ -412,6 +420,16 @@
     var F = window.AGE_FORN;
     // sem CNPJ lido (foto ruim), mas o nome é de uma loja já guardada: usa o nome e os dados dela
     var fNome = !c0 && F && !d.cnpj && d.fornecedor ? F.achar(P.S, null, d.fornecedor) : null;
+    // loja não reconhecida, mas o nome de uma loja já usada aparece no texto da foto (cabeçalho impresso, mesmo quebrado: "DO BRAGA")
+    if (!c0 && !d.fornecedor && !d.cnpj && op.bruto) {
+      var txtN = " " + semAcento(op.bruto).replace(/[^a-z0-9]+/g, " ") + " ", GEN = /^(comercial|comercio|deposito|materiais|material|construcao|ltda|casa|loja|tintas|ferragens|distribuidora|eletrica|eletricos|center|home)$/;
+      var nomes = {}; P.S.compras.forEach(function (x) { if (x.fornecedor) nomes[x.fornecedor] = 1; }); (P.S.forn || []).forEach(function (x) { nomes[x.nome] = 1; });
+      var achadoN = Object.keys(nomes).filter(function (n) {
+        var w = semAcento(n).replace(/[^a-z0-9]+/g, " ").split(" ").filter(function (p) { return p.length >= 4 && !GEN.test(p); });
+        return w.length && w.every(function (p) { return txtN.indexOf(" " + p + " ") >= 0; });
+      })[0];
+      if (achadoN) { d.fornecedor = achadoN; fNome = F ? F.achar(P.S, null, achadoN) : null; }
+    }
     if (fNome) { d.fornecedor = fNome.nome; d.loja = Object.assign({}, fNome, d.loja || {}); if (fNome.cnpj) d.cnpj = F.fmtCnpj(fNome.cnpj); }
     var loja0 = c0 ? Object.assign({}, F ? F.achar(P.S, c0.cnpj, c0.fornecedor) : null, c0.cnpj ? { cnpj: c0.cnpj } : {}) : Object.assign({}, d.loja || {}, d.cnpj ? { cnpj: d.cnpj } : {});
     var lojasCompra = {}; P.S.compras.forEach(function (x) { if (x.fornecedor) lojasCompra[x.fornecedor] = 1; }); (P.S.forn || []).forEach(function (x) { lojasCompra[x.nome] = 1; });
@@ -427,6 +445,7 @@
     var j = A.janela(
       (op.imagem ? '<img alt="Nota" src="' + URL.createObjectURL(op.imagem) + '" style="max-height:160px;max-width:100%;display:block;margin-bottom:6px;border-radius:6px">' : "") +
       (op.erro ? '<div class="aviso erro">Não consegui ler a nota. Preencha à mão.</div>' : "") +
+      (!c0 && op.imagem && !op.erro && !d.valor && !(d.itens || []).length ? '<div class="aviso">✍️ Parece nota <b>escrita à mão</b> (ou foto ilegível): o app só lê texto impresso. Preencha a data, o valor e os materiais à mão — a foto fica guardada junto.</div>' : "") +
       (!op.erro && op.imagem && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ ' + (d.valorSoma ? "O “TOTAL” da foto não bateu com os materiais: usei a <b>soma dos materiais</b>. <b>Confira o valor total</b> antes de salvar." : "Não achei o “TOTAL” com clareza na foto: <b>confira o valor total</b> antes de salvar.") + '</div>' : "") +
       (function () {
         var rp0 = !c0 && repetida({ chave: d.chave, numero_nota: d.numero, cnpj: d.cnpj, fornecedor: d.fornecedor, comprado_em: d.data, valor: d.valor }, null);
