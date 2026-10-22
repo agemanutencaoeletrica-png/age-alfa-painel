@@ -34,7 +34,7 @@
     // total: rótulo forte ("TOTAL DA NOTA", "TOTAL A PAGAR") aceita o número na linha vizinha (DANFE: rótulos numa linha,
     // números na de baixo); rótulo fraco ("VALOR TOTAL", "TOTAL") só com o número na mesma linha; depois a fatura/parcela
     var forteT = /total\s*da\s*nota|total\s+a\s+pagar|valor\s+a\s+pagar|valor\s+pago/i;
-    var fracoT = /valor\s+total(?!\s+dos?\s+(?:produtos|servi))|total\s+(?:geral|r\$)|^\W*total\b(?!\s+(?:bruto|de\s+itens|dos))/i;
+    var fracoT = /valor\s+total(?!\s+dos?\s+(?:produtos|servi))|total\s+(?:geral|r\$)|^\W*total\b(?!\s+(?:bruto|de\s+itens|dos))|\btotal\s*:?\s*(?:r\$\s*)?\d{1,3}(?:\.\d{3})*,\d{2}(?![\d,.])\D{0,4}$/i;
     var achou = null, pos = function (v) { return v.filter(function (n) { return n > 0; }); };
     // junto do rótulo do total a foto costuma trocar 5 por S e a vírgula por ponto ("s4.00" = 54,00)
     var valoresT = function (x) {
@@ -131,7 +131,17 @@
     // "002637 1,00 UN ESMALTE CORALIT 3,6L AMARELO 49,90 49,90" (código, quantidade, unidade, descrição, unitário, total)
     ls.forEach(function (x) {
       var m3 = x.match(/^\W*\d{3,8}\s+(\d+(?:[.,]\d+)?)\s*(UN|UND|PC|PÇ|PCT|M|MT|KG|CX|RL|LT|L|GL|LATA|BD|PAR)\s+([A-Za-zÀ-ú].*?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/i);
-      if (m3) { r.itens.push({ item: m3[3].replace(/\s+/g, " ").slice(0, 120), qtd: A.lerNumero(m3[1]), un: m3[2].toLowerCase().replace("und", "un"), valor: A.lerNumero(m3[5]) }); x = ""; }
+      if (m3) { r.itens.push({ item: m3[3].replace(/\s+/g, " ").slice(0, 120), qtd: A.lerNumero(m3[1]), un: m3[2].toLowerCase().replace("und", "un"), valor: A.lerNumero(m3[5]) }); x = ""; return; }
+      // o mesmo formato com a foto ruim (pré-venda): "003462 400 UN ROLOANTIGOTASCM oo 21,90 Bro" — a vírgula da quantidade sumiu (400 = 4,00),
+      // sujeira depois do nome e o total ilegível ("21 80", "Bro"): o total vale se bater com qtd × unitário, senão é calculado
+      var m4 = x.match(/^\W*[\dDOIl]{4,8}\s+(?:[—–-]+\s+)?(\d{1,4}(?:[.,]\d{1,3})?)\s*(UN|UND|PC|PÇ|PCT|M|MT|KG|CX|RL|LT|GL|LATA|BD|PAR)\b\.?\s+([A-ZÀ-Ú0-9].*?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})\b(.*)$/);
+      if (!m4) return;
+      var q4 = /[.,]/.test(m4[1]) ? A.lerNumero(m4[1]) : m4[1].length >= 3 && /00$/.test(m4[1]) ? Number(m4[1]) / 100 : Number(m4[1]);
+      var u4 = A.lerNumero(m4[4]), w4 = m4[3].replace(/[|"'“”]/g, " ").split(/\s+/), d4 = [];
+      for (var k4 = 0; k4 < w4.length; k4++) { if (!w4[k4]) continue; if (/[a-zà-ú]/.test(w4[k4]) || /[—–_]/.test(w4[k4]) || !/[A-ZÀ-Ú0-9]/.test(w4[k4])) break; d4.push(w4[k4]); }
+      var mt4 = m4[5].match(/(\d{1,3}(?:\.\d{3})*)[ ,.](\d{2})(?!\d)/), t4 = mt4 ? A.lerNumero(mt4[1] + "," + mt4[2]) : null;
+      if (!(t4 && Math.abs(t4 - q4 * u4) < 0.05)) t4 = Math.round(q4 * u4 * 100) / 100;
+      if (d4.length && q4 > 0 && u4 > 0) r.itens.push({ item: d4.join(" ").slice(0, 120), qtd: q4, un: m4[2].toLowerCase().replace("und", "un"), unit: u4, valor: t4 });
     });
     ls.forEach(function (x) {
       // a quantidade é a última "N UN" antes do preço ("100M" no nome do cabo não é a quantidade)
@@ -295,6 +305,8 @@
               if (!melhor.valor) melhor.valor = d2.valor;
               bruto = r.texto + "\n\n----- 2ª leitura -----\n" + r2.texto;
             }
+            // total incerto na leitura escolhida, mas achado com rótulo nesta: fica com o desta
+            if ((melhor.valorIncerto || !melhor.valor) && d2.valor && !d2.valorIncerto && d2.valor >= Math.max(somaItens(melhor), somaItens(d2)) - 0.05) { melhor = Object.assign({}, melhor, { valor: d2.valor }); delete melhor.valorIncerto; delete melhor.valorSoma; }
           }).catch(function () { /* fica com a 1ª leitura */ });
         });
       }, Promise.resolve()).then(function () {
@@ -489,8 +501,11 @@
     }
     function somar() {
       var s = it.reduce(function (t, x) { return t + (Number(x.valor) || 0); }, 0);
-      $("#cn-soma", el).textContent = s ? "Soma dos materiais: " + dinheiro(s) : "";
+      // a soma não bate com o total da nota: algum material foi lido errado (ou faltou) — avisa em vermelho
+      var tv = A.lerNumero($("#cn-valor", el).value), dif = s && tv > 0 && Math.abs(s - tv) >= 0.05;
+      $("#cn-soma", el).innerHTML = s ? "Soma dos materiais: " + dinheiro(s) + (dif ? ' <span class="selo critico">≠ total ' + dinheiro(tv) + ": confira quantidades e valores</span>" : tv > 0 ? ' <span class="selo bom">✔ bate com o total</span>' : "") : "";
     }
+    $("#cn-valor", el).addEventListener("input", somar);
     $("#cn-mais", el).onclick = function () { it.push({ un: "un", area: area === "pintura" ? "pintura" : "eletrica" }); desenharItens(); };
     if (!it.length) it.push({ un: "un" });
     marcarTipo();
