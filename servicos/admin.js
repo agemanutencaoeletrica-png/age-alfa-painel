@@ -391,9 +391,11 @@
 
   function desenharAbas(atual) {
     var novos = S.rel.filter(function (r) { return !r.lido; }).length;
+    var aPagar = window.AGE_COMPRAS && S.compras ? window.AGE_COMPRAS.naoQuitadas(S).length : 0;
     $("#abas").innerHTML = ABAS.map(function (a) {
       return '<a href="#' + a[0] + '" class="' + (a[0] === atual ? "ativa" : "") + '">' + a[1] +
-        (a[0] === "relatorios" && novos ? '<span class="cont">' + novos + "</span>" : "") + "</a>";
+        (a[0] === "relatorios" && novos ? '<span class="cont">' + novos + "</span>" : "") +
+        (a[0] === "compras" && aPagar ? '<span class="cont" title="Notas não quitadas">' + aPagar + "</span>" : "") + "</a>";
     }).join("");
   }
 
@@ -437,6 +439,7 @@
           return '<div class="peq" style="margin:4px 0;cursor:pointer" data-h-prob="' + x.serv.id + '" role="button" tabindex="0"><span class="selo ' + x.cor + '">' + esc(x.txt) + "</span> <b>" + esc(x.obra.cliente) + "</b> · chamado " + esc(x.obra.chamado) + "</div>";
         }).join("") + '<div class="mudo peq" style="margin-top:6px">Some sozinha quando você atualiza o chamado (colando os Detalhes) ou muda o serviço no app.</div></div>' : "") +
         htmlRevisao(semConferir()) +
+        (window.AGE_COMPRAS && S.compras ? window.AGE_COMPRAS.htmlAlerta(S) : "") +
         '<div class="grade">' +
         '<div class="ladrilho"><div class="r">⚡ Elétrica</div><div class="v">' + abE + '</div><div class="d">serviços ativos</div></div>' +
         '<div class="ladrilho"><div class="r">🖌️ Pintura</div><div class="v">' + abP + '</div><div class="d">serviços ativos</div></div>' +
@@ -475,6 +478,7 @@
       if ($("#h-visitas-orc")) $("#h-visitas-orc").onclick = function () { filtroServ.st = "aguardando"; };
       if ($("#h-reprov")) $("#h-reprov").onclick = function () { filtroServ.st = "reprovados"; };
       $$("[data-h-prob]", c).forEach(function (d) { d.onclick = function () { abrirServico(d.dataset.hProb); }; });
+      if (window.AGE_COMPRAS) window.AGE_COMPRAS.ligarAlerta(c, P, rota);
       hidratarFotos(c);
     }).catch(function (e) { c.innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
   }
@@ -3169,7 +3173,7 @@
     get sb() { return sb; }, S: S, q: q, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
     val: val, nulo: nulo, htmlFoto: htmlFoto, hidratarFotos: hidratarFotos, infoFoto: infoFoto, registrarInfoPonto: registrarInfoPonto,
     opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,
-    rota: rota, resumoServ: resumoServ, importarChamado: importarChamado, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES
+    rota: rota, atualizarAbas: function () { desenharAbas(location.hash.slice(1) || "hoje"); }, resumoServ: resumoServ, importarChamado: importarChamado, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES
   };
 
   iniciar();

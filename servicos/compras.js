@@ -462,6 +462,9 @@
         if (cam) dados.nota = cam;
         return P.q(c0 ? P.sb.from("compras").update(dados).eq("id", c0.id).select().single() : P.sb.from("compras").insert(dados).select().single());
       }).then(function (n) {
+        // marcou "Já pago" numa nota que estava a pagar: registra a data da quitação
+        return c0 && c0.pago === false && n.pago ? quitar(n.id, P).catch(function () { return n; }) : n;
+      }).then(function (n) {
         P.trocar(P.S.compras, n); j.fechar();
         // nota de outro mês: o filtro passa a mostrar desde a data dela (senão parece que não salvou)
         var pr = periodo();
@@ -562,16 +565,18 @@
     $("#cp-arq").onchange = function () { if (this.files.length) receber({ arquivos: Array.prototype.slice.call(this.files), tipo: desp ? "despesa" : "" }, P); };
     $("#cp-mao").onclick = function () { formulario({ tipo: desp ? "despesa" : "" }); };
     listar();
+    // depois de quitar: a nota passa para paga, o alerta e o contador da aba se atualizam
+    function depoisDeQuitar() { if (P.atualizarAbas) P.atualizarAbas(); listar(); }
     function listar() {
       if (filtro.tipo === "precos") { precos($("#cp-res")); return; }
       var cs = lista(), t = totais(cs), r = $("#cp-res");
       var lad = function (rot, v, cor, id) { return '<div class="ladrilho"' + (id ? ' id="' + id + '" role="button" style="cursor:pointer;' : ' style="') + 'border-left:4px solid var(--' + cor + ')"><div class="r">' + rot + '</div><div class="v" style="font-size:1.3em">' + dinheiro(v) + "</div></div>"; };
-      var h = '<div class="grade">' +
+      var h = htmlAlerta(P.S) + '<div class="grade">' +
         (filtro.tipo !== "despesa" && filtro.area !== "pintura" && filtro.area !== "geral" ? lad("⚡ Material elétrica", t.eletrica, "eletrica") : "") +
         (filtro.tipo !== "despesa" && filtro.area !== "eletrica" && filtro.area !== "geral" ? lad("🖌️ Material pintura", t.pintura, "pintura") : "") +
         (filtro.tipo !== "material" ? lad("⛽ Despesas avulsas", t.despesas, "atencao") : "") +
         lad("Total", t.total, "prim") + (t.aPagar ? lad("💳 A pagar", t.aPagar, "critico", "cp-lad-pagar") : "") + "</div>";
-      if (!cs.length) { r.innerHTML = h + '<div class="cartao vazio">Nada lançado ' + (filtro.tipo === "apagar" ? "a pagar." : "neste período.") + "</div>"; return; }
+      if (!cs.length) { r.innerHTML = h + '<div class="cartao vazio">' + (filtro.tipo === "apagar" ? "✅ Nenhuma nota a pagar: tudo quitado." : "Nada lançado neste período.") + "</div>"; ligarAlerta(r, P, depoisDeQuitar); return; }
       // por loja: tudo somado, com o que falta pagar
       var lojas = agrupar(cs, lojaDe);
       h += '<div class="cartao"><h3 style="margin:0 0 6px">🏪 Por loja</h3><div class="tabela-caixa"><table><thead><tr><th>Loja</th><th class="num">Notas</th><th class="num">Total</th><th class="num">A pagar</th></tr></thead><tbody>' +
@@ -605,7 +610,8 @@
             "</td><td>" + esc(destinoDe(x)) + (x.tipo_servico ? '<div class="peq mudo">' + esc(x.tipo_servico) + "</div>" : "") + '</td><td class="peq">' +
             esc((x.itens || []).map(function (y) { return (y.qtd ? A.numero(y.qtd) + " " + (y.un || "") + " " : "") + y.item + (y.unit ? " (" + dinheiro(y.unit) + ")" : ""); }).join("; ").slice(0, 180)) +
             (x.descricao ? '<div class="mudo">' + esc(x.descricao) + "</div>" : "") + "</td><td>" + esc(FORMAS[x.forma_pagamento] || "") +
-            (x.pago === false ? '<div><span class="selo critico">a pagar' + (x.vencimento ? " · " + esc(A.dataSimples(x.vencimento)) : "") + '</span> <button class="peq" data-cp-pago="' + x.id + '">✔ Pago</button></div>' : "") +
+            (x.pago === false ? '<div><span class="selo ' + situacao(x).cor + '">⏳ ' + esc(situacao(x).txt) + '</span> <button class="peq" data-quitar="' + x.id + '">✔ Quitei</button></div>' :
+              '<div><span class="selo bom">✅ pago' + (x.pago_em ? " " + esc(A.dataSimples(String(x.pago_em).slice(0, 10))) : "") + "</span></div>") +
             '</td><td class="num"><b>' + dinheiro(x.valor) + "</b></td><td>" +
             (x.nota ? '<button class="peq" data-cp-nota="' + x.id + '">🧾</button> ' : "") + '<button class="peq" data-cp-ed="' + x.id + '">Editar</button></td></tr>';
         }).join("") + "</tbody></table></div>";
@@ -614,12 +620,7 @@
       $("#cp-csv").onclick = function () { baixarCsv(cs); };
       $("#cp-comp").onclick = function () { A.compartilhar({ titulo: "Compras e despesas", texto: textoResumo(cs, t, lojas) }); };
       $$("[data-cp-ed]", r).forEach(function (b) { b.onclick = function () { formulario({ compra: P.porId(P.S.compras, b.dataset.cpEd) }); }; });
-      $$("[data-cp-pago]", r).forEach(function (b) {
-        b.onclick = function () {
-          P.q(P.sb.from("compras").update({ pago: true, vencimento: null }).eq("id", b.dataset.cpPago).select().single())
-            .then(function (n) { P.trocar(P.S.compras, n); A.avisar("✔ Marcado como pago", "ok"); listar(); }).catch(P.falhou);
-        };
-      });
+      ligarAlerta(r, P, depoisDeQuitar);
       $$("[data-cp-nota]", r).forEach(function (b) {
         b.onclick = function () {
           var x = P.porId(P.S.compras, b.dataset.cpNota);
@@ -681,5 +682,70 @@
     P.baixar(new Blob([csv], { type: "text/csv;charset=utf-8" }), "compras-" + A.isoLocal(new Date()) + ".csv");
   }
 
-  window.AGE_COMPRAS = { ver: ver, receber: receber, lerNota: lerNota, porArea: porArea };
+
+  // ---------------- notas não quitadas: alerta até marcar como paga ----------------
+  function diasPara(iso) { return Math.round((new Date(iso + "T12:00:00") - new Date(A.isoLocal(new Date()) + "T12:00:00")) / 864e5); }
+  function situacao(c) {
+    if (!c.vencimento) return { txt: "não quitada · sem vencimento", cor: "atencao", ordem: 2 };
+    var d = diasPara(c.vencimento);
+    if (d < 0) return { txt: "VENCIDA há " + (-d) + (d === -1 ? " dia" : " dias"), cor: "critico", ordem: 0, urgente: true };
+    if (d === 0) return { txt: "vence HOJE", cor: "critico", ordem: 0, urgente: true };
+    if (d <= 3) return { txt: "vence em " + d + (d === 1 ? " dia" : " dias"), cor: "atencao", ordem: 1, urgente: true };
+    return { txt: "vence " + A.dataSimples(c.vencimento), cor: "atencao", ordem: 3 };
+  }
+  function naoQuitadas(S) {
+    return (S.compras || []).filter(function (c) { return c.pago === false; }).sort(function (a, b) {
+      return situacao(a).ordem - situacao(b).ordem || String(a.vencimento || "9").localeCompare(String(b.vencimento || "9")) || String(a.comprado_em).localeCompare(String(b.comprado_em));
+    });
+  }
+  // quadro vermelho com cada nota não quitada e o botão para quitar (some sozinho quando não sobra nenhuma)
+  function htmlAlerta(S) {
+    var ns = naoQuitadas(S);
+    if (!ns.length) return "";
+    var total = ns.reduce(function (t, c) { return t + (Number(c.valor) || 0); }, 0), urg = ns.filter(function (c) { return situacao(c).urgente; }).length;
+    return '<div class="cartao" data-alerta-pagar style="margin-bottom:12px;border-left:4px solid var(--critico)"><h3 style="margin:0 0 6px">💳 ' + ns.length +
+      (ns.length === 1 ? " nota não quitada" : " notas não quitadas") + " · " + dinheiro(total) + (urg ? ' <span class="selo critico">' + urg + (urg === 1 ? " vencida / vencendo" : " vencidas / vencendo") + "</span>" : "") + "</h3>" +
+      ns.slice(0, 12).map(function (c) {
+        var st = situacao(c);
+        return '<div class="peq" style="margin:4px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="selo ' + st.cor + '">' + esc(st.txt) + "</span> <b>" + esc(c.fornecedor || "Loja não informada") + "</b> · " +
+          dinheiro(c.valor) + ' <span class="mudo">(compra ' + esc(A.dataSimples(c.comprado_em)) + (FORMAS[c.forma_pagamento] ? " · " + esc(FORMAS[c.forma_pagamento]) : "") + ')</span> <button class="peq" data-quitar="' + c.id + '">✔ Quitei</button></div>';
+      }).join("") + (ns.length > 12 ? '<div class="peq mudo">… e mais ' + (ns.length - 12) + ' em <a href="#compras" data-ver-apagar>💳 A pagar</a>.</div>' : "") +
+      '<div class="mudo peq" style="margin-top:6px">Toque em ✔ Quitei quando pagar (ou mande o comprovante: o app reconhece a nota e marca como paga).</div></div>';
+  }
+  // marca como paga; a data do pagamento vai em pago_em (se o banco ainda não tem a coluna, salva só o "pago")
+  function quitar(id, ctx, quando) {
+    P = ctx || P;
+    var em = quando ? new Date(quando).toISOString() : new Date().toISOString();
+    return P.q(P.sb.from("compras").update({ pago: true, pago_em: em }).eq("id", id).select().single())
+      .catch(function () { return P.q(P.sb.from("compras").update({ pago: true }).eq("id", id).select().single()); })
+      .then(function (n) { P.trocar(P.S.compras, n); return n; });
+  }
+  function ligarAlerta(el, ctx, depois) {
+    P = ctx;
+    $$("[data-quitar]", el).forEach(function (b) {
+      b.onclick = function () {
+        A.ocupado(b, true, "...");
+        quitar(b.dataset.quitar, P).then(function (n) {
+          A.avisar("✔ Nota quitada: " + (n.fornecedor || "") + " · " + dinheiro(n.valor) + " — agora está como paga", "ok");
+          if (depois) depois(); else P.rota();
+        }).catch(function (e) { A.ocupado(b, false); P.falhou(e); });
+      };
+    });
+    $$("[data-ver-apagar]", el).forEach(function (a) { a.onclick = function () { filtro.tipo = "apagar"; }; });
+  }
+  // comprovante de pagamento (Pix/boleto) que bate com uma nota não quitada: mesmo valor e a loja parecida (ou a única com esse valor)
+  function notaDoComprovante(it, S) {
+    if (!(it.valor > 0)) return null;
+    var ns = naoQuitadas(S).filter(function (c) { return Math.abs((Number(c.valor) || 0) - it.valor) < 0.01; });
+    if (!ns.length) return null;
+    var nome = semAcento(it.favorecido || "").replace(/[^a-z0-9]+/g, " "), dig = String((it.chave || "") + " " + (it.texto || "")).replace(/\D/g, "");
+    var porLoja = ns.filter(function (c) {
+      if (c.cnpj && dig.indexOf(String(c.cnpj).replace(/\D/g, "")) >= 0) return true;
+      var pal = semAcento(c.fornecedor || "").replace(/[^a-z0-9]+/g, " ").split(" ").filter(function (w) { return w.length >= 4 && !/^(ltda|comercio|comercial|materiais|material|construcao|eireli)$/.test(w); });
+      return pal.some(function (w) { return nome.indexOf(w) >= 0; });
+    });
+    return porLoja[0] || (ns.length === 1 ? ns[0] : null);
+  }
+
+  window.AGE_COMPRAS = { ver: ver, receber: receber, lerNota: lerNota, porArea: porArea, naoQuitadas: naoQuitadas, htmlAlerta: htmlAlerta, ligarAlerta: ligarAlerta, quitar: quitar, notaDoComprovante: notaDoComprovante, situacao: situacao };
 })();

@@ -264,14 +264,23 @@
       $("#pg-itens", el).innerHTML = itens.map(function (it, i) {
         if (it.funcionario_id === undefined) { var ac = it.forma === "especie" ? null : acharFunc(it.favorecido, it.chave, it.cpf); it.funcionario_id = ac ? ac.f.id : ""; it.achadoPor = ac ? ac.por : ""; }
         var f = P.porId(P.S.func, it.funcionario_id);
-        var dup = duplicado(it);
+        // pagamento de uma nota de compra (loja/fornecedor): reconhece a nota não quitada e já deixa marcado para quitar
+        if (it.nota === undefined) {
+          var nt = it.forma !== "especie" && window.AGE_COMPRAS && P.S.compras ? window.AGE_COMPRAS.notaDoComprovante(it, P.S) : null;
+          it.nota = nt ? nt.id : ""; it.quita = !!nt && !it.achadoPor;
+        }
+        var nota = it.nota ? P.porId(P.S.compras, it.nota) : null;
+        var dup = it.quita ? null : duplicado(it);
         return '<div class="cartao" data-it="' + i + '">' +
           (it.imagem ? '<img alt="Comprovante" src="' + URL.createObjectURL(it.imagem) + '" style="max-height:140px;max-width:100%;display:block;margin-bottom:6px;border-radius:6px">' : "") +
           (it.erro ? '<div class="aviso erro">Não consegui ler “' + esc(it.nome || "") + "”: " + esc(it.erro) + ". Preencha à mão.</div>" : "") +
           (dup ? '<div class="aviso erro">⚠️ Parece já registrado: ' + esc(P.nomeFunc(dup.funcionario_id) || dup.favorecido || "") + " · " + dinheiro(dup.valor) + " · " + esc(A.dataHora(dup.pago_em)) + ". Desmarque se for repetido.</div>" : "") +
+          (nota ? '<div class="aviso" style="border-left:4px solid var(--critico)">🧾 Bate com a nota não quitada de <b>' + esc(nota.fornecedor || "loja") + "</b> · " + dinheiro(nota.valor) +
+            " · compra " + esc(A.dataSimples(nota.comprado_em)) + (nota.vencimento ? " · vence " + esc(A.dataSimples(nota.vencimento)) : "") +
+            '<label class="marca-linha" style="margin-top:4px"><input type="checkbox" data-k="quita"' + (it.quita ? " checked" : "") + "> ✔ Quitar esta nota (marca como paga; não lança como pagamento de funcionário)</label></div>" : "") +
           '<label class="marca-linha"><input type="checkbox" data-k="ok"' + (it.ok === false || (it.ok === undefined && dup) ? "" : " checked") + "> Salvar este</label>" +
           (it.forma !== "especie" && (it.favorecido || it.chave) ? '<div class="peq mudo">Para: <b>' + esc(it.favorecido || "") + "</b>" + (it.chave ? " · chave " + esc(it.chave) : "") +
-            (f && it.achadoPor ? ' · <span class="selo bom">reconhecido pelo ' + esc(it.achadoPor) + "</span>" : f ? "" : ' · <span class="selo atencao">não achei na equipe: escolha abaixo e cadastre a chave Pix dele</span>') + "</div>" : "") +
+            (f && it.achadoPor ? ' · <span class="selo bom">reconhecido pelo ' + esc(it.achadoPor) + "</span>" : f || it.quita ? "" : ' · <span class="selo atencao">não achei na equipe: escolha abaixo e cadastre a chave Pix dele</span>') + "</div>" : "") +
           '<div class="duas"><div><label>Funcionário</label><select data-k="funcionario_id"><option value="">— escolha —</option>' +
           P.S.func.map(function (x) { return '<option value="' + x.id + '"' + (x.id === it.funcionario_id ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join("") + "</select></div>" +
           '<div><label>Valor (R$)</label><input data-k="valor" inputmode="decimal" value="' + (it.valor ? Number(it.valor).toFixed(2).replace(".", ",") : "") + '"></div></div>' +
@@ -287,6 +296,7 @@
           inp.onchange = inp.oninput = function () {
             var k = inp.dataset.k;
             if (k === "ok") it.ok = inp.checked;
+            else if (k === "quita") { it.quita = inp.checked; desenhar(); return; }
             else if (k === "valor") it.valor = A.lerNumero(inp.value);
             else it[k] = inp.value;
             resumo();
@@ -307,12 +317,14 @@
     }
     $("#pg-salvar", el).onclick = function () {
       var b = this, sel = itens.filter(function (it) { return it.ok !== false && !(it.ok === undefined && duplicado(it)); });
-      var falta = sel.filter(function (it) { return !it.funcionario_id || !(it.valor > 0) || !it.data; });
+      var falta = sel.filter(function (it) { return !(it.quita && it.nota) && (!it.funcionario_id || !(it.valor > 0) || !it.data); });
+      var quitadas = 0;
       if (!sel.length) { $("#pg-erro", el).innerHTML = '<div class="aviso erro">Marque pelo menos um pagamento.</div>'; return; }
       if (falta.length) { $("#pg-erro", el).innerHTML = '<div class="aviso erro">Preencha funcionário, valor e data em todos os marcados.</div>'; return; }
       $("#pg-erro", el).innerHTML = ""; A.ocupado(b, true, "Salvando...");
       sel.reduce(function (pr, it) {
         return pr.then(function () {
+          if (it.quita && it.nota) return window.AGE_COMPRAS.quitar(it.nota, P, new Date((it.data || A.isoLocal(new Date())) + "T" + (it.hora || "12:00") + ":00")).then(function () { quitadas++; });
           var pComp = !it.imagem ? Promise.resolve(null) : A.prepararFoto(it.imagem, [], 1600).then(function (bl) {
             var cam = "admin/pagamentos/" + it.data + "-" + A.uuid() + ".jpg";
             return P.q(P.sb.storage.from("fotos").upload(cam, bl, { contentType: "image/jpeg" })).then(function () { return cam; });
@@ -326,8 +338,10 @@
         });
       }, Promise.resolve()).then(function () {
         j.fechar();
-        A.avisar("💰 " + sel.length + " pagamento" + (sel.length > 1 ? "s registrados" : " registrado"), "ok");
-        location.hash = "#pagamentos"; P.rota();
+        var np = sel.length - quitadas;
+        A.avisar((np ? "💰 " + np + " pagamento" + (np > 1 ? "s registrados" : " registrado") : "") + (np && quitadas ? " · " : "") +
+          (quitadas ? "🧾 " + quitadas + (quitadas > 1 ? " notas quitadas (agora estão como pagas)" : " nota quitada (agora está como paga)") : ""), "ok");
+        location.hash = np ? "#pagamentos" : "#compras"; P.rota();
       }).catch(function (e) { A.ocupado(b, false); $("#pg-erro", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
     };
   }
