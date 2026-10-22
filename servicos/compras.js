@@ -633,7 +633,7 @@
       return;
     }
     var desp = filtro.tipo === "despesa";
-    c.innerHTML = '<div class="cab-secao"><h2>🧾 Compras e despesas</h2><span><button class="prim" id="cp-nota">📷 Nota / cupom</button> <button id="cp-mao">➕ ' + (desp ? "Despesa avulsa" : "Lançar à mão") + "</button></span></div>" +
+    c.innerHTML = '<div class="cab-secao"><h2>🧾 Compras e despesas</h2><span><button class="prim" id="cp-nota">📷 Nota / cupom</button> <button id="cp-mao">➕ ' + (desp ? "Despesa avulsa" : "Lançar à mão") + '</button> <button id="cp-reler" title="Ler de novo as fotos das notas já lançadas com a leitura nova">🔄 Atualizar antigas</button></span></div>' +
       '<input type="file" id="cp-arq" accept="image/*,application/pdf,.xml,text/xml,application/xml" multiple class="oculto">' +
       '<div class="filtros" id="cp-tipos">' + [["", "Tudo"], ["material", "🧱 Material de obra"], ["despesa", "⛽ Despesas avulsas"], ["apagar", "💳 A pagar"], ["precos", "📊 Comparar preços"], ["fornec", "🏪 Fornecedores"]].map(function (x) {
         return '<button class="' + (filtro.tipo === x[0] ? "prim" : "") + '" data-ctipo="' + x[0] + '">' + x[1] + "</button>";
@@ -653,6 +653,7 @@
     $("#cp-nota").onclick = function () { $("#cp-arq").value = ""; $("#cp-arq").click(); };
     $("#cp-arq").onchange = function () { if (this.files.length) receber({ arquivos: Array.prototype.slice.call(this.files), tipo: desp ? "despesa" : "" }, P); };
     $("#cp-mao").onclick = function () { formulario({ tipo: desp ? "despesa" : "" }); };
+    $("#cp-reler").onclick = function () { atualizarAntigas(function () { if (P.atualizarAbas) P.atualizarAbas(); ver(c, P); }); };
     listar();
     // depois de quitar: a nota passa para paga, o alerta e o contador da aba se atualizam
     function depoisDeQuitar() { if (P.atualizarAbas) P.atualizarAbas(); listar(); }
@@ -772,6 +773,98 @@
     P.baixar(new Blob([csv], { type: "text/csv;charset=utf-8" }), "compras-" + A.isoLocal(new Date()) + ".csv");
   }
 
+
+
+  // ---------------- 🔄 atualizar notas antigas: lê de novo a foto (e o CNPJ) e mostra o que mudaria; só grava o que você marcar ----------------
+  function fotoDaNota(cam) {
+    return P.q(P.sb.storage.from("fotos").createSignedUrls([cam], 600)).then(function (l) {
+      var u = l && l[0] && l[0].signedUrl;
+      if (!u) throw new Error("foto não encontrada");
+      return fetch(u);
+    }).then(function (r) { return r.blob(); }).then(function (b) { return new File([b], "nota.jpg", { type: /^image\//.test(b.type) ? b.type : "image/jpeg" }); });
+  }
+  function nomeIgual(a, b) { var k = function (x) { return semAcento(x).replace(/[^a-z0-9]+/g, " ").replace(/\b(ltda|me|epp|eireli|sa|s a)\b/g, " ").replace(/\s+/g, " ").trim(); }; return k(a) === k(b); }
+  // o que a leitura nova muda na nota salva: [{k, rot, de, para, marcado}]
+  function mudancas(c, d) {
+    var m = [], F = window.AGE_FORN, viaCnpj = !!(d.cnpj && d.loja && (d.loja.razao_social || d.loja.id));
+    if (d.fornecedor && !nomeIgual(d.fornecedor, c.fornecedor)) m.push({ k: "fornecedor", rot: "Loja", de: c.fornecedor || "—", para: d.fornecedor, marcado: viaCnpj || !c.fornecedor });
+    if (d.cnpj && (!c.cnpj || c.cnpj.replace(/\D/g, "") !== d.cnpj.replace(/\D/g, ""))) m.push({ k: "cnpj", rot: "CNPJ", de: c.cnpj || "—", para: F ? F.fmtCnpj(d.cnpj) : d.cnpj, marcado: !c.cnpj });
+    if (d.valor && Math.abs(d.valor - Number(c.valor)) >= 0.01) m.push({ k: "valor", rot: "Valor", de: dinheiro(c.valor), para: d.valor, txt: dinheiro(d.valor) + (d.valorIncerto ? " (confira)" : ""),
+      marcado: !d.valorIncerto || Number(c.valor) < somaItens(d) - 0.05 });   // o antigo menor que os próprios materiais estava errado
+    if (d.data && !d.semData && d.data !== c.comprado_em) m.push({ k: "comprado_em", rot: "Data", de: A.dataSimples(c.comprado_em), para: d.data, txt: A.dataSimples(d.data), marcado: true });
+    if (!(c.itens || []).length && (d.itens || []).length) m.push({ k: "itens", rot: "Materiais", de: "—", para: d.itens, txt: d.itens.map(function (x) { return (x.qtd ? A.numero(x.qtd) + " " + (x.un || "") + " " : "") + x.item + (x.valor ? " " + dinheiro(x.valor) : ""); }).join("; "), marcado: true });
+    if (d.chave && !c.chave) m.push({ k: "chave", rot: "Chave da NF-e", de: "—", para: d.chave, marcado: true });
+    if (d.numero && !c.numero_nota) m.push({ k: "numero_nota", rot: "Nº da nota", de: "—", para: d.numero, marcado: true });
+    if (d.loja && F && !P.S.semForn) {
+      var f = F.achar(P.S, d.cnpj, d.fornecedor || c.fornecedor), novos = ["telefone", "whatsapp", "email", "endereco", "cidade"].filter(function (k) { return d.loja[k] && (!f || !f[k]); });
+      if (novos.length) m.push({ k: "_loja", rot: "Dados da loja", de: "—", para: d.loja, txt: [d.loja.telefone, d.loja.email, [d.loja.endereco, d.loja.cidade].filter(Boolean).join(" - ")].filter(Boolean).join(" · "), marcado: true });
+    }
+    return m;
+  }
+  function atualizarAntigas(depois) {
+    var fila = P.S.compras.filter(function (c) { return c.nota || c.cnpj; }).slice();
+    var j = A.janela('<p class="peq">O app lê de novo a <b>foto</b> de cada nota já lançada (e busca a loja pelo <b>CNPJ</b>) com a leitura nova, e mostra o que mudaria. ' +
+      "Nada é gravado sem você marcar. Cada foto leva uns 30 segundos; pode parar quando quiser e aplicar o que já apareceu.</p>" +
+      '<div class="peq"><b>' + fila.length + "</b> nota" + (fila.length === 1 ? "" : "s") + " com foto ou CNPJ.</div>" +
+      '<div class="acoes"><button class="prim" id="ra-ir"' + (fila.length ? "" : " disabled") + '>🔄 Começar</button><button id="ra-parar" class="oculto">⏸ Parar</button></div>' +
+      '<div id="ra-st" class="peq"></div><div id="ra-lista"></div><div id="ra-erro"></div>' +
+      '<div class="acoes oculto" id="ra-fim"><button class="prim" id="ra-aplicar">✔ Aplicar o que está marcado</button></div>', { titulo: "🔄 Atualizar notas antigas", larga: true, fixa: true });
+    var el = j.el, parar = false, achados = [];
+    function desenhar() {
+      $("#ra-lista", el).innerHTML = achados.map(function (a, i) {
+        return '<div class="cartao"><div class="peq"><b>' + esc(a.c.fornecedor || "Loja não informada") + "</b> · " + esc(A.dataSimples(a.c.comprado_em)) + " · " + dinheiro(a.c.valor) + "</div>" +
+          a.m.map(function (x, k) {
+            return '<label class="marca-linha peq"><input type="checkbox" data-ra="' + i + ":" + k + '"' + (x.marcado ? " checked" : "") + "> " + esc(x.rot) + ": " +
+              (x.de !== "—" ? '<s class="mudo">' + esc(x.de) + "</s> → " : "") + "<b>" + esc(x.txt || x.para) + "</b></label>";
+          }).join("") + "</div>";
+      }).join("") || "";
+      $$("[data-ra]", el).forEach(function (cb) { cb.onchange = function () { var p = cb.dataset.ra.split(":"); achados[p[0]].m[p[1]].marcado = cb.checked; }; });
+      $("#ra-fim", el).classList.toggle("oculto", !achados.length);
+    }
+    $("#ra-parar", el).onclick = function () { parar = true; this.disabled = true; this.textContent = "Parando depois desta..."; };
+    $("#ra-ir", el).onclick = function () {
+      this.classList.add("oculto"); $("#ra-parar", el).classList.remove("oculto");
+      var feitas = 0, iguais = 0, falhas = 0;
+      fila.reduce(function (pr, c, i) {
+        return pr.then(function () {
+          if (parar) return;
+          $("#ra-st", el).textContent = "📖 Lendo a nota " + (i + 1) + " de " + fila.length + " (" + (c.fornecedor || A.dataSimples(c.comprado_em)) + ")...";
+          var pd = c.nota ? fotoDaNota(c.nota).then(function (f) { return lerUmaNota(f, function (t) { $("#ra-st", el).textContent = t + " — nota " + (i + 1) + " de " + fila.length; }); }).then(function (x) { return x.dados || {}; })
+            : Promise.resolve({ cnpj: c.cnpj });
+          return pd.then(function (d) {
+            if (!d.cnpj && c.cnpj) d.cnpj = c.cnpj;
+            return completarLoja(d);
+          }).then(function (d) {
+            feitas++;
+            var m = mudancas(c, d);
+            if (m.length) { achados.push({ c: c, m: m }); desenhar(); } else iguais++;
+          }).catch(function () { falhas++; });
+        });
+      }, Promise.resolve()).then(function () {
+        $("#ra-parar", el).classList.add("oculto");
+        $("#ra-st", el).innerHTML = "✔ " + feitas + " lida" + (feitas === 1 ? "" : "s") + (parar ? " (parou)" : "") + ": <b>" + achados.length + "</b> com mudança, " + iguais + " sem mudança" + (falhas ? ", " + falhas + " sem foto legível" : "") + ".";
+      });
+    };
+    $("#ra-aplicar", el).onclick = function () {
+      var b = this, F = window.AGE_FORN, n = 0;
+      A.ocupado(b, true, "Gravando...");
+      achados.reduce(function (pr, a) {
+        return pr.then(function () {
+          var up = {}, loja = null;
+          a.m.forEach(function (x) { if (!x.marcado) return; if (x.k === "_loja") loja = x.para; else up[x.k] = x.para; });
+          var nome = up.fornecedor || a.c.fornecedor;
+          var grava = !Object.keys(up).length ? Promise.resolve(a.c) : P.q(P.sb.from("compras").update(up).eq("id", a.c.id).select().single())
+            .catch(function () { delete up.chave; return Object.keys(up).length ? P.q(P.sb.from("compras").update(up).eq("id", a.c.id).select().single()) : a.c; });   // chave já usada em outra nota (repetida)
+          return grava.then(function (x) {
+            if (x !== a.c) { P.trocar(P.S.compras, x); n++; }
+            var cn = up.cnpj || a.c.cnpj;
+            if (F && nome && (loja || cn)) return F.salvar(P, Object.assign({}, loja || {}, { cnpj: cn }), nome);
+          });
+        });
+      }, Promise.resolve()).then(function () { j.fechar(); A.avisar("🔄 " + n + " nota" + (n === 1 ? " atualizada" : "s atualizadas"), "ok"); if (depois) depois(); })
+        .catch(function (e) { A.ocupado(b, false); $("#ra-erro", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
+    };
+  }
 
   // ---------------- notas não quitadas: alerta até marcar como paga ----------------
   function diasPara(iso) { return Math.round((new Date(iso + "T12:00:00") - new Date(A.isoLocal(new Date()) + "T12:00:00")) / 864e5); }
