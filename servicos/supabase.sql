@@ -317,6 +317,7 @@ alter table public.compras add column if not exists veiculo_id uuid references p
 alter table public.compras add column if not exists forma_pagamento text;
 alter table public.compras add column if not exists pago boolean not null default true;
 alter table public.compras add column if not exists vencimento date;
+alter table public.compras add column if not exists pago_em timestamptz;   -- quando a nota foi quitada
 alter table public.compras drop constraint if exists compras_area_check;
 alter table public.compras add constraint compras_area_check check (area in ('eletrica', 'pintura', 'dividir', 'geral'));
 -- não lançar a mesma nota duas vezes: chave de acesso (NF-e/NFC-e) e número da nota
