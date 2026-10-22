@@ -291,7 +291,8 @@
           '<div><label>Horário</label><input type="time" data-k="hora" value="' + esc(it.hora || "") + '"></div></div>' +
           '<div class="duas"><div><label>Forma</label><select data-k="forma"><option value="pix"' + (it.forma !== "especie" ? " selected" : "") + '>Pix</option><option value="especie"' + (it.forma === "especie" ? " selected" : "") + ">💵 Dinheiro (espécie)</option></select></div><div></div></div>" +
           '<div class="duas"><div><label>Tipo</label><select data-k="tipo">' + Object.keys(TIPOS).map(function (k) { return '<option value="' + k + '"' + ((it.tipo || "diaria") === k ? " selected" : "") + ">" + TIPOS[k] + "</option>"; }).join("") + "</select></div>" +
-          '<div><label>Observação</label><input data-k="descricao" maxlength="300" value="' + esc(it.descricao || "") + '"></div></div></div>';
+          '<div><label>Observação</label><input data-k="descricao" maxlength="300" value="' + esc(it.descricao || "") + '"></div></div>' +
+          (window.AGE_FAT && !P.S.semReceitas ? '<label>Obra / cliente (entra no resultado da obra)</label><input data-k="obra" list="pg-dl-obras" maxlength="200" placeholder="Ex.: DEVA IVECO (contagem) — deixe vazio se for de várias" value="' + esc(it.obra || "") + '">' : "") + "</div>";
       }).join("");
       $$("[data-it]", el).forEach(function (card) {
         var it = itens[Number(card.dataset.it)];
@@ -306,6 +307,7 @@
           };
         });
       });
+      if (window.AGE_FAT && !P.S.semReceitas && !$("#pg-dl-obras", el)) $("#pg-itens", el).insertAdjacentHTML("afterend", window.AGE_FAT.datalist(P, "pg-dl-obras"));
       $("#pg-salvar", el).disabled = !itens.length;
       resumo();
     }
@@ -333,10 +335,12 @@
             return P.q(P.sb.storage.from("fotos").upload(cam, bl, { contentType: "image/jpeg" })).then(function () { return cam; });
           }).catch(function () { return null; });   // sem o comprovante, o pagamento ainda é salvo
           return pComp.then(function (cam) {
-            return P.q(P.sb.from("pagamentos").insert({
+            var novo = {
               funcionario_id: it.funcionario_id, valor: it.valor, pago_em: new Date(it.data + "T" + (it.hora || "12:00") + ":00").toISOString(),
               tipo: it.tipo || "diaria", forma: it.forma === "especie" ? "especie" : "pix", favorecido: it.favorecido || null, id_transacao: it.id || null, descricao: it.descricao || null, comprovante: cam
-            }).select().single()).then(function (n) { P.S.pag.unshift(n); });
+            };
+            if (it.obra && window.AGE_FAT) Object.assign(novo, window.AGE_FAT.resolver(P, it.obra));   // obra/cliente do pagamento (resultado da obra)
+            return P.q(P.sb.from("pagamentos").insert(novo).select().single()).then(function (n) { P.S.pag.unshift(n); });
           });
         });
       }, Promise.resolve()).then(function () {
@@ -449,7 +453,7 @@
           s.pags.map(function (p) {
             var d = new Date(p.pago_em);
             return "<tr><td>" + esc(A.data(d)) + "</td><td>" + esc(A.hora(d)) + "</td><td>" + esc(P.nomeFunc(p.funcionario_id) || p.favorecido || "—") + "</td><td>" + (ehPix(p) ? "Pix" : "💵 Dinheiro") + "</td><td>" + esc(TIPOS[p.tipo] || p.tipo || "") +
-              (p.descricao ? '<div class="mudo peq">' + esc(p.descricao) + "</div>" : "") + '</td><td class="num"><b>' + dinheiro(p.valor) + "</b></td><td>" +
+              (p.descricao ? '<div class="mudo peq">' + esc(p.descricao) + "</div>" : "") + (window.AGE_FAT && (p.obra_id || p.destino) ? '<div class="peq">📍 ' + esc(window.AGE_FAT.rotuloDe(P, p)) + "</div>" : "") + '</td><td class="num"><b>' + dinheiro(p.valor) + "</b></td><td>" +
               (p.comprovante ? '<button class="peq" data-pg-comp="' + p.id + '">🧾</button> ' : "") + '<button class="peq" data-pg-ed="' + p.id + '">Editar</button></td></tr>';
           }).join("") + "</tbody></table></div>";
       }).join("");
@@ -473,14 +477,17 @@
       '<div class="duas"><div><label for="pe-data">Data</label><input type="date" id="pe-data" value="' + A.isoLocal(d) + '"></div><div><label for="pe-hora">Horário</label><input type="time" id="pe-hora" value="' + dois(d.getHours()) + ":" + dois(d.getMinutes()) + '"></div></div>' +
       '<label for="pe-forma">Forma</label><select id="pe-forma"><option value="pix">Pix</option><option value="especie">💵 Dinheiro (espécie)</option></select>' +
       '<label for="pe-desc">Observação</label><input id="pe-desc" maxlength="300" value="' + esc(p.descricao || "") + '">' +
+      (window.AGE_FAT && !P.S.semReceitas ? '<label for="pe-obra">Obra / cliente (entra no resultado da obra)</label><input id="pe-obra" list="pe-dl-obras" maxlength="200" value="' + esc(window.AGE_FAT.rotuloDe(P, p)) + '">' + window.AGE_FAT.datalist(P, "pe-dl-obras") : "") +
       '<div class="acoes"><button class="prim" id="pe-salvar">Salvar</button><button class="perigo" id="pe-apagar">Apagar</button></div>', { titulo: "Pagamento" });
     var el = j.el;
     $("#pe-func", el).value = p.funcionario_id || ""; $("#pe-tipo", el).value = p.tipo || "outro"; $("#pe-forma", el).value = p.forma === "especie" ? "especie" : "pix";
     $("#pe-salvar", el).onclick = function () {
       var v = A.lerNumero($("#pe-valor", el).value);
       if (!(v > 0)) { A.avisar("Valor inválido.", "erro"); return; }
-      P.q(P.sb.from("pagamentos").update({ funcionario_id: $("#pe-func", el).value || null, valor: v, tipo: $("#pe-tipo", el).value, forma: $("#pe-forma", el).value, descricao: $("#pe-desc", el).value.trim() || null,
-        pago_em: new Date($("#pe-data", el).value + "T" + ($("#pe-hora", el).value || "12:00") + ":00").toISOString() }).eq("id", p.id).select().single())
+      var up = { funcionario_id: $("#pe-func", el).value || null, valor: v, tipo: $("#pe-tipo", el).value, forma: $("#pe-forma", el).value, descricao: $("#pe-desc", el).value.trim() || null,
+        pago_em: new Date($("#pe-data", el).value + "T" + ($("#pe-hora", el).value || "12:00") + ":00").toISOString() };
+      if ($("#pe-obra", el) && ($("#pe-obra", el).value.trim() || p.obra_id || p.destino)) Object.assign(up, window.AGE_FAT.resolver(P, $("#pe-obra", el).value));
+      P.q(P.sb.from("pagamentos").update(up).eq("id", p.id).select().single())
         .then(function (n) { P.trocar(P.S.pag, n); j.fechar(); ver(c, P); }).catch(P.falhou);
     };
     $("#pe-apagar", el).onclick = function () {
