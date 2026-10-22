@@ -358,7 +358,7 @@
         q(sb.from("documentos").select("*").order("nome"))
       ]).catch(function () { return null; }),
       q(sb.from("veiculos").select("*").order("placa")).catch(function () { return null; }),
-      q(sb.from("pagamentos").select("*").order("pago_em", { ascending: false })).catch(function () { return null; })
+      q(sb.from("pagamentos").select("*").order("pago_em", { ascending: false })).catch(function (e) { S.erroPag = A.msgErro(e); return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -1031,7 +1031,7 @@
   function juntarNaCaixa(itens) {
     var cx = lerCaixa().slice(), novos = 0, atual = 0;
     itens.forEach(function (it) {
-      if (!it.numero) return;
+      if (!/^\d*[1-9]\d*$/.test(String(it.numero || ""))) return;
       var ex = cx.filter(function (c) { return c.numero === it.numero; })[0];
       var limpo = {}; Object.keys(it).forEach(function (k) { if (it[k] !== "" && it[k] !== null && it[k] !== undefined && it[k] !== false) limpo[k] = it[k]; });
       if (ex) {
@@ -1246,6 +1246,7 @@
     }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
   function lancarCaixa(b, sel, catPadrao, janela, historico) {
+    sel = sel.filter(function (c) { return /^\d*[1-9]\d*$/.test(String(c.numero || "")); });   // nunca lança "chamado nº 0"
     if (!sel.length) return;
     A.ocupado(b, true, "Lançando...");
     q(sb.from("obras").insert(sel.map(function (c) {
