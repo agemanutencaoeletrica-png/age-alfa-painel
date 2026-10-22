@@ -299,7 +299,10 @@
         return P.q(c0 ? P.sb.from("compras").update(dados).eq("id", c0.id).select().single() : P.sb.from("compras").insert(dados).select().single());
       }).then(function (n) {
         P.trocar(P.S.compras, n); j.fechar();
-        A.avisar("🧾 Salvo: " + (n.fornecedor ? n.fornecedor + " · " : "") + dinheiro(n.valor), "ok");
+        // nota de outro mês: o filtro passa a mostrar desde a data dela (senão parece que não salvou)
+        var pr = periodo();
+        if (filtro.tipo !== "apagar" && (n.comprado_em < pr.de || n.comprado_em >= pr.ate)) { filtro.periodo = "datas"; filtro.de = n.comprado_em.slice(0, 8) + "01"; filtro.ate = ""; }
+        A.avisar("🧾 Salvo: " + (n.fornecedor ? n.fornecedor + " · " : "") + dinheiro(n.valor) + " (" + A.dataSimples(n.comprado_em) + ")", "ok");
         if (location.hash !== "#compras") location.hash = "#compras"; else P.rota();
         if (op.depois) op.depois();
       }).catch(function (e) { A.ocupado(b, false); $("#cn-erro", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
