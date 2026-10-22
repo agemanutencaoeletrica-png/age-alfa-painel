@@ -65,9 +65,9 @@
         datas.push({ iso: ano + "-" + md2[2] + "-" + md2[1], emissao: /emiss/i.test(t.slice(Math.max(0, md2.index - 40), md2.index)) });
     }
     var dEm = datas.filter(function (x) { return x.emissao; })[0] || datas[0];
-    if (dEm) r.data = dEm.iso;
+    if (dEm) r.data = dEm.iso; else r.semData = true;
     // loja: a linha com o nome antes do CNPJ (ou a primeira linha com letras)
-    var iC = -1;
+    var iC = -1, proprio = String((A.CFG.EMPRESA || {}).documento || "").replace(/\D/g, "");
     for (var i = 0; i < ls.length; i++) if (/cnpj/i.test(ls[i])) { iC = i; break; }
     // tira da linha o que não é nome (título da nota, CEP, telefone, endereço) e o pedaço solto no fim ("LIDER TINTAS L")
     var limparNome = function (x) {
@@ -76,7 +76,8 @@
         .replace(/\s+\S$/, "").replace(/\s+/g, " ").trim();
     };
     var cand = ls.slice(0, iC > 0 ? iC + 1 : Math.min(10, ls.length)).map(limparNome).filter(function (x) {
-      return /[A-Za-zÀ-ú]{3,}\s+[A-Za-zÀ-ú]{2,}/.test(x) && !/age solu|destinat|remetente|protocolo|emitente|identifica|natureza/i.test(x);
+      return /[A-Za-zÀ-ú]{3,}\s+[A-Za-zÀ-ú]{2,}/.test(x) && !/age solu|destinat|remetente|protocolo|emitente|identifica|natureza|^\W*endere[cç]o|manuten[a-zà-ú]*\s+e?\s*eletric|eletricas e civil/i.test(x) &&
+        !(proprio && x.replace(/\D/g, "").indexOf(proprio) >= 0);   // a linha da AGE (destinatário) não é a loja
     });
     // de preferência a linha com cara de razão social (LTDA, EIRELI...; depois COMÉRCIO, TINTAS, MATERIAIS...)
     var forte = /\b(ltda|eireli|epp)\b|\bs\.a\.|\bs\/a\b|\bme\s*$/i;
@@ -144,7 +145,7 @@
     if (mp || /cart[a-z]*\s+(de\s+)?(credito|debito)|\(pos\)|cartao/.test(sa)) { r.forma = "cartao"; if (mp) r.parcelas = Number(mp[1] || mp[2]); }
     else if (/boleto|a prazo|faturad[ao] para/.test(sa) && !/\bpix\b/.test(sa)) { r.forma = "boleto"; r.pago = false; }
     else if (/\bpix\b/.test(sa)) r.forma = "pix";
-    else if (/dinheiro|especie/.test(sa)) r.forma = "dinheiro";
+    else if (/dinheiro|\bem especie\b|especie\s*[:-]?\s*r?\$?\s*\d/.test(sa.replace(/especie\s+volumes?/g, ""))) r.forma = "dinheiro";   // "ESPÉCIE VOLUMES" da DANFE é do transporte
     // despesa avulsa (posto, oficina, lanchonete...): categoria sugerida
     r.categoria = categoriaPeloTexto(sa);
     // nenhum formato reconhecido: qualquer linha com unidade (UN, PC, GL...) seguida de pelo menos 2 valores é um material;
@@ -186,13 +187,22 @@
     if (!r.valor && somaIt) { r.valor = Math.round(somaIt * 100) / 100; r.valorIncerto = true; }
     // total menor que os materiais não existe (a foto pegou outro número, ex.: o ICMS): fica com o valor que mais aparece
     // entre a soma dos materiais e 50% acima (impostos/frete), de preferência o da fatura; e pede para conferir
-    if (somaIt && r.valor && r.valor < somaIt - 0.05) {
-      var cont = {}, mx = somaIt * 1.5 + 0.05;
-      valoresT(t).forEach(function (v) { if (v >= somaIt - 0.05 && v <= mx) cont[v] = (cont[v] || 0) + 1; });
-      var mf2 = t.match(/(?:fatura|parcela|vencimento|duplicata)[^\n]*?valor[^\d\n]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d\/])/i);
-      if (mf2 && A.lerNumero(mf2[1]) >= somaIt - 0.05 && A.lerNumero(mf2[1]) <= mx) cont[A.lerNumero(mf2[1])] = (cont[A.lerNumero(mf2[1])] || 0) + 10;
+    // DANFE: o "VALOR TOTAL DOS PRODUTOS" também é piso (o total pode ter desconto, mas não é 1,70 numa nota de 52,30)
+    var vProd = 0;
+    ls.forEach(function (x, i) {
+      if (vProd || !/total\s*dos\s*produtos/i.test(x)) return;
+      var v1 = pos(valoresT(x.slice(x.search(/total\s*dos\s*produtos/i))));
+      if (!v1.length && ls[i + 1]) v1 = pos(valoresT(ls[i + 1]));
+      if (v1.length) vProd = v1[v1.length - 1];
+    });
+    var piso = Math.max(somaIt, vProd * 0.9);
+    if (piso && r.valor && r.valor < piso - 0.05) {
+      var base = Math.max(somaIt, vProd), cont = {}, mx = base * 1.5 + 0.05;
+      valoresT(t).forEach(function (v) { if (v >= piso - 0.05 && v <= mx) cont[v] = (cont[v] || 0) + 1; });
+      var reF = /(?:fatura|parcela|vencimento|duplicata)[^\n]*?valor[^\d\n]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d\/])/gi, mf2;
+      while ((mf2 = reF.exec(t))) { var vf = A.lerNumero(mf2[1]); if (vf >= piso - 0.05 && vf <= mx) cont[vf] = (cont[vf] || 0) + 10; }
       var melhorV = Object.keys(cont).map(Number).sort(function (a2, b2) { return cont[b2] - cont[a2] || a2 - b2; })[0];
-      r.valor = melhorV || Math.round(somaIt * 100) / 100; r.valorIncerto = true;
+      r.valor = melhorV || Math.round(base * 100) / 100; r.valorIncerto = true;
     }
     // chave de acesso da NF-e/NFC-e (44 números, pode vir quebrada em grupos ou linhas): só vale se o dígito verificador conferir
     var junto = t.replace(/(\d)[ \t]*\n[ \t]*(\d)/g, "$1 $2"), mc2, reC = /\d[\d .]{42,80}\d/g;
@@ -389,6 +399,7 @@
         var rp0 = !c0 && repetida({ chave: d.chave, numero_nota: d.numero, cnpj: d.cnpj, fornecedor: d.fornecedor, comprado_em: d.data, valor: d.valor }, null);
         return rp0 ? '<div class="aviso erro" id="cn-rep0">' + textoRepetida(rp0) + "</div>" : "";
       })() +
+      (!c0 && op.imagem && !op.erro && d.semData ? '<div class="aviso">⚠️ Não achei a <b>data da compra</b> na foto: confira a data antes de salvar.</div>' : "") +
       (op.falta ? '<div class="peq mudo">Depois desta: mais ' + op.falta + " nota" + (op.falta > 1 ? "s" : "") + ".</div>" : "") +
       (op.bruto ? '<details class="peq" style="margin:4px 0"><summary>🔍 ver o texto que o app leu da foto</summary><pre style="white-space:pre-wrap;max-height:220px;overflow:auto;font-size:11px">' + esc(String(op.bruto).slice(0, 6000)) + "</pre></details>" : "") +
       '<div class="filtros" id="cn-tipos"><button type="button" data-tipo="material">🧱 Material de obra</button><button type="button" data-tipo="despesa">⛽ Despesa avulsa</button></div>' +
@@ -622,7 +633,7 @@
       return;
     }
     var desp = filtro.tipo === "despesa";
-    c.innerHTML = '<div class="cab-secao"><h2>🧾 Compras e despesas</h2><span><button class="prim" id="cp-nota">📷 Nota / cupom</button> <button id="cp-mao">➕ ' + (desp ? "Despesa avulsa" : "Lançar à mão") + "</button></span></div>" +
+    c.innerHTML = '<div class="cab-secao"><h2>🧾 Compras e despesas</h2><span><button class="prim" id="cp-nota">📷 Nota / cupom</button> <button id="cp-mao">➕ ' + (desp ? "Despesa avulsa" : "Lançar à mão") + '</button> <button id="cp-reler" title="Ler de novo as fotos das notas já lançadas com a leitura nova">🔄 Atualizar antigas</button></span></div>' +
       '<input type="file" id="cp-arq" accept="image/*,application/pdf,.xml,text/xml,application/xml" multiple class="oculto">' +
       '<div class="filtros" id="cp-tipos">' + [["", "Tudo"], ["material", "🧱 Material de obra"], ["despesa", "⛽ Despesas avulsas"], ["apagar", "💳 A pagar"], ["precos", "📊 Comparar preços"], ["fornec", "🏪 Fornecedores"]].map(function (x) {
         return '<button class="' + (filtro.tipo === x[0] ? "prim" : "") + '" data-ctipo="' + x[0] + '">' + x[1] + "</button>";
@@ -642,6 +653,7 @@
     $("#cp-nota").onclick = function () { $("#cp-arq").value = ""; $("#cp-arq").click(); };
     $("#cp-arq").onchange = function () { if (this.files.length) receber({ arquivos: Array.prototype.slice.call(this.files), tipo: desp ? "despesa" : "" }, P); };
     $("#cp-mao").onclick = function () { formulario({ tipo: desp ? "despesa" : "" }); };
+    $("#cp-reler").onclick = function () { atualizarAntigas(function () { if (P.atualizarAbas) P.atualizarAbas(); ver(c, P); }); };
     listar();
     // depois de quitar: a nota passa para paga, o alerta e o contador da aba se atualizam
     function depoisDeQuitar() { if (P.atualizarAbas) P.atualizarAbas(); listar(); }
@@ -761,6 +773,98 @@
     P.baixar(new Blob([csv], { type: "text/csv;charset=utf-8" }), "compras-" + A.isoLocal(new Date()) + ".csv");
   }
 
+
+
+  // ---------------- 🔄 atualizar notas antigas: lê de novo a foto (e o CNPJ) e mostra o que mudaria; só grava o que você marcar ----------------
+  function fotoDaNota(cam) {
+    return P.q(P.sb.storage.from("fotos").createSignedUrls([cam], 600)).then(function (l) {
+      var u = l && l[0] && l[0].signedUrl;
+      if (!u) throw new Error("foto não encontrada");
+      return fetch(u);
+    }).then(function (r) { return r.blob(); }).then(function (b) { return new File([b], "nota.jpg", { type: /^image\//.test(b.type) ? b.type : "image/jpeg" }); });
+  }
+  function nomeIgual(a, b) { var k = function (x) { return semAcento(x).replace(/[^a-z0-9]+/g, " ").replace(/\b(ltda|me|epp|eireli|sa|s a)\b/g, " ").replace(/\s+/g, " ").trim(); }; return k(a) === k(b); }
+  // o que a leitura nova muda na nota salva: [{k, rot, de, para, marcado}]
+  function mudancas(c, d) {
+    var m = [], F = window.AGE_FORN, viaCnpj = !!(d.cnpj && d.loja && (d.loja.razao_social || d.loja.id));
+    if (d.fornecedor && !nomeIgual(d.fornecedor, c.fornecedor)) m.push({ k: "fornecedor", rot: "Loja", de: c.fornecedor || "—", para: d.fornecedor, marcado: viaCnpj || !c.fornecedor });
+    if (d.cnpj && (!c.cnpj || c.cnpj.replace(/\D/g, "") !== d.cnpj.replace(/\D/g, ""))) m.push({ k: "cnpj", rot: "CNPJ", de: c.cnpj || "—", para: F ? F.fmtCnpj(d.cnpj) : d.cnpj, marcado: !c.cnpj });
+    if (d.valor && Math.abs(d.valor - Number(c.valor)) >= 0.01) m.push({ k: "valor", rot: "Valor", de: dinheiro(c.valor), para: d.valor, txt: dinheiro(d.valor) + (d.valorIncerto ? " (confira)" : ""),
+      marcado: !d.valorIncerto || Number(c.valor) < somaItens(d) - 0.05 });   // o antigo menor que os próprios materiais estava errado
+    if (d.data && !d.semData && d.data !== c.comprado_em) m.push({ k: "comprado_em", rot: "Data", de: A.dataSimples(c.comprado_em), para: d.data, txt: A.dataSimples(d.data), marcado: true });
+    if (!(c.itens || []).length && (d.itens || []).length) m.push({ k: "itens", rot: "Materiais", de: "—", para: d.itens, txt: d.itens.map(function (x) { return (x.qtd ? A.numero(x.qtd) + " " + (x.un || "") + " " : "") + x.item + (x.valor ? " " + dinheiro(x.valor) : ""); }).join("; "), marcado: true });
+    if (d.chave && !c.chave) m.push({ k: "chave", rot: "Chave da NF-e", de: "—", para: d.chave, marcado: true });
+    if (d.numero && !c.numero_nota) m.push({ k: "numero_nota", rot: "Nº da nota", de: "—", para: d.numero, marcado: true });
+    if (d.loja && F && !P.S.semForn) {
+      var f = F.achar(P.S, d.cnpj, d.fornecedor || c.fornecedor), novos = ["telefone", "whatsapp", "email", "endereco", "cidade"].filter(function (k) { return d.loja[k] && (!f || !f[k]); });
+      if (novos.length) m.push({ k: "_loja", rot: "Dados da loja", de: "—", para: d.loja, txt: [d.loja.telefone, d.loja.email, [d.loja.endereco, d.loja.cidade].filter(Boolean).join(" - ")].filter(Boolean).join(" · "), marcado: true });
+    }
+    return m;
+  }
+  function atualizarAntigas(depois) {
+    var fila = P.S.compras.filter(function (c) { return c.nota || c.cnpj; }).slice();
+    var j = A.janela('<p class="peq">O app lê de novo a <b>foto</b> de cada nota já lançada (e busca a loja pelo <b>CNPJ</b>) com a leitura nova, e mostra o que mudaria. ' +
+      "Nada é gravado sem você marcar. Cada foto leva uns 30 segundos; pode parar quando quiser e aplicar o que já apareceu.</p>" +
+      '<div class="peq"><b>' + fila.length + "</b> nota" + (fila.length === 1 ? "" : "s") + " com foto ou CNPJ.</div>" +
+      '<div class="acoes"><button class="prim" id="ra-ir"' + (fila.length ? "" : " disabled") + '>🔄 Começar</button><button id="ra-parar" class="oculto">⏸ Parar</button></div>' +
+      '<div id="ra-st" class="peq"></div><div id="ra-lista"></div><div id="ra-erro"></div>' +
+      '<div class="acoes oculto" id="ra-fim"><button class="prim" id="ra-aplicar">✔ Aplicar o que está marcado</button></div>', { titulo: "🔄 Atualizar notas antigas", larga: true, fixa: true });
+    var el = j.el, parar = false, achados = [];
+    function desenhar() {
+      $("#ra-lista", el).innerHTML = achados.map(function (a, i) {
+        return '<div class="cartao"><div class="peq"><b>' + esc(a.c.fornecedor || "Loja não informada") + "</b> · " + esc(A.dataSimples(a.c.comprado_em)) + " · " + dinheiro(a.c.valor) + "</div>" +
+          a.m.map(function (x, k) {
+            return '<label class="marca-linha peq"><input type="checkbox" data-ra="' + i + ":" + k + '"' + (x.marcado ? " checked" : "") + "> " + esc(x.rot) + ": " +
+              (x.de !== "—" ? '<s class="mudo">' + esc(x.de) + "</s> → " : "") + "<b>" + esc(x.txt || x.para) + "</b></label>";
+          }).join("") + "</div>";
+      }).join("") || "";
+      $$("[data-ra]", el).forEach(function (cb) { cb.onchange = function () { var p = cb.dataset.ra.split(":"); achados[p[0]].m[p[1]].marcado = cb.checked; }; });
+      $("#ra-fim", el).classList.toggle("oculto", !achados.length);
+    }
+    $("#ra-parar", el).onclick = function () { parar = true; this.disabled = true; this.textContent = "Parando depois desta..."; };
+    $("#ra-ir", el).onclick = function () {
+      this.classList.add("oculto"); $("#ra-parar", el).classList.remove("oculto");
+      var feitas = 0, iguais = 0, falhas = 0;
+      fila.reduce(function (pr, c, i) {
+        return pr.then(function () {
+          if (parar) return;
+          $("#ra-st", el).textContent = "📖 Lendo a nota " + (i + 1) + " de " + fila.length + " (" + (c.fornecedor || A.dataSimples(c.comprado_em)) + ")...";
+          var pd = c.nota ? fotoDaNota(c.nota).then(function (f) { return lerUmaNota(f, function (t) { $("#ra-st", el).textContent = t + " — nota " + (i + 1) + " de " + fila.length; }); }).then(function (x) { return x.dados || {}; })
+            : Promise.resolve({ cnpj: c.cnpj });
+          return pd.then(function (d) {
+            if (!d.cnpj && c.cnpj) d.cnpj = c.cnpj;
+            return completarLoja(d);
+          }).then(function (d) {
+            feitas++;
+            var m = mudancas(c, d);
+            if (m.length) { achados.push({ c: c, m: m }); desenhar(); } else iguais++;
+          }).catch(function () { falhas++; });
+        });
+      }, Promise.resolve()).then(function () {
+        $("#ra-parar", el).classList.add("oculto");
+        $("#ra-st", el).innerHTML = "✔ " + feitas + " lida" + (feitas === 1 ? "" : "s") + (parar ? " (parou)" : "") + ": <b>" + achados.length + "</b> com mudança, " + iguais + " sem mudança" + (falhas ? ", " + falhas + " sem foto legível" : "") + ".";
+      });
+    };
+    $("#ra-aplicar", el).onclick = function () {
+      var b = this, F = window.AGE_FORN, n = 0;
+      A.ocupado(b, true, "Gravando...");
+      achados.reduce(function (pr, a) {
+        return pr.then(function () {
+          var up = {}, loja = null;
+          a.m.forEach(function (x) { if (!x.marcado) return; if (x.k === "_loja") loja = x.para; else up[x.k] = x.para; });
+          var nome = up.fornecedor || a.c.fornecedor;
+          var grava = !Object.keys(up).length ? Promise.resolve(a.c) : P.q(P.sb.from("compras").update(up).eq("id", a.c.id).select().single())
+            .catch(function () { delete up.chave; return Object.keys(up).length ? P.q(P.sb.from("compras").update(up).eq("id", a.c.id).select().single()) : a.c; });   // chave já usada em outra nota (repetida)
+          return grava.then(function (x) {
+            if (x !== a.c) { P.trocar(P.S.compras, x); n++; }
+            var cn = up.cnpj || a.c.cnpj;
+            if (F && nome && (loja || cn)) return F.salvar(P, Object.assign({}, loja || {}, { cnpj: cn }), nome);
+          });
+        });
+      }, Promise.resolve()).then(function () { j.fechar(); A.avisar("🔄 " + n + " nota" + (n === 1 ? " atualizada" : "s atualizadas"), "ok"); if (depois) depois(); })
+        .catch(function (e) { A.ocupado(b, false); $("#ra-erro", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
+    };
+  }
 
   // ---------------- notas não quitadas: alerta até marcar como paga ----------------
   function diasPara(iso) { return Math.round((new Date(iso + "T12:00:00") - new Date(A.isoLocal(new Date()) + "T12:00:00")) / 864e5); }
