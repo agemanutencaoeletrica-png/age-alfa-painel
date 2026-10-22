@@ -34,7 +34,7 @@
     // total: rótulo forte ("TOTAL DA NOTA", "TOTAL A PAGAR") aceita o número na linha vizinha (DANFE: rótulos numa linha,
     // números na de baixo); rótulo fraco ("VALOR TOTAL", "TOTAL") só com o número na mesma linha; depois a fatura/parcela
     var forteT = /total\s*da\s*nota|total\s+a\s+pagar|valor\s+a\s+pagar|valor\s+pago/i;
-    var fracoT = /valor\s+total(?!\s+dos?\s+(?:produtos|servi))|total\s+(?:geral|r\$)|^\W*total\b(?!\s+(?:bruto|de\s+itens|dos))|\btotal\s*:?\s*(?:r\$\s*)?\d{1,3}(?:\.\d{3})*,\d{2}(?![\d,.])\D{0,4}$/i;
+    var fracoT = /valor\s+total(?!\s+dos?\s+(?:produtos|servi))|total\s+(?:geral|r\$)|^\W*total\b(?!\s+(?:bruto|de\s+itens|dos))|\btotal\s*:?\s*(?:r\$\s*)?(?:\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,4}\.\d{2})(?![\d,.])\D{0,4}$/i;
     var achou = null, pos = function (v) { return v.filter(function (n) { return n > 0; }); };
     // junto do rótulo do total a foto costuma trocar 5 por S e a vírgula por ponto ("s4.00" = 54,00)
     var valoresT = function (x) {
@@ -57,7 +57,7 @@
     delete r.valorFraco;
     if (achou === null) { var mf = t.match(/(?:fatura|parcela|vencimento|duplicata)[^\n]*?valor[^\d\n]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d\/])/i); if (mf) achou = A.lerNumero(mf[1]); }
     if (achou !== null) r.valor = achou;
-    else { var todos = valores(t); if (todos.length) { r.valor = Math.max.apply(null, todos); r.valorIncerto = true; } }
+    else { var todos = valoresT(t); if (todos.length) { r.valor = Math.max.apply(null, todos); r.valorIncerto = true; } }   // aceita "219.68" (ponto no lugar da vírgula)
     // data: só datas possíveis (o "12.741/2012" da lei vira "12/41/2012" na foto); a de "Emissão" tem preferência
     var datas = [], reD = /(\d{2})\/(\d{2})\/(\d{4}|\d{2})\b/g, md2;
     while ((md2 = reD.exec(t))) {
@@ -68,6 +68,12 @@
     // a foto às vezes lê "2026" como "2020": havendo datas recentes (último ano), as antigas não contam
     var lim = A.isoLocal(new Date(Date.now() - 400 * 864e5)), recentes = datas.filter(function (x) { return x.iso >= lim; });
     if (recentes.length) datas = recentes;
+    else {
+      // só datas antigas: "2020" pode ser "2026" com o 6 lido como 0 — troca o último número do ano pelo do ano atual se a data ficar recente
+      var hoje = A.isoLocal(new Date()), anoH = String(new Date().getFullYear());
+      var corrigidas = datas.map(function (x) { var c = anoH.slice(0, 3) + anoH[3] + x.iso.slice(4); return c <= hoje && c >= lim && x.iso.slice(0, 3) === anoH.slice(0, 3) ? { iso: c, emissao: x.emissao } : null; }).filter(Boolean);
+      if (corrigidas.length) { datas = corrigidas; r.dataCorrigida = true; }
+    }
     var dEm = datas.filter(function (x) { return x.emissao; })[0] || datas[0];
     if (dEm) r.data = dEm.iso; else r.semData = true;
     // loja: a linha com o nome antes do CNPJ (ou a primeira linha com letras)
@@ -202,8 +208,9 @@
     // unitário que faltou e conferência: se a soma dos materiais bate com o total, o valor está certo
     r.itens.forEach(function (x) { if (!x.unit && x.qtd > 0 && x.valor) x.unit = Math.round(x.valor / x.qtd * 100) / 100; });
     var somaIt = r.itens.reduce(function (s2, x) { return s2 + (Number(x.valor) || 0); }, 0);
-    if (r.valorIncerto && r.itens.length >= 2 && Math.abs(somaIt - r.valor) < 0.05) delete r.valorIncerto;   // 1 item só pode ser o próprio “maior valor”
-    if (!r.valor && somaIt) { r.valor = Math.round(somaIt * 100) / 100; r.valorIncerto = true; }
+    if (r.valorIncerto && r.itens.length >= 2 && !r.itens.some(function (x) { return !(Number(x.valor) > 0); }) && Math.abs(somaIt - r.valor) < 0.05) delete r.valorIncerto;   // 1 item só pode ser o próprio “maior valor”
+    var semPreco = r.itens.filter(function (x) { return !(Number(x.valor) > 0); }).length;
+    if (!r.valor && somaIt && !semPreco) { r.valor = Math.round(somaIt * 100) / 100; r.valorIncerto = true; }
     // total menor que os materiais não existe (a foto pegou outro número, ex.: o ICMS): fica com o valor que mais aparece
     // entre a soma dos materiais e 50% acima (impostos/frete), de preferência o da fatura; e pede para conferir
     // DANFE: o "VALOR TOTAL DOS PRODUTOS" também é piso (o total pode ter desconto, mas não é 1,70 numa nota de 52,30)
@@ -290,11 +297,12 @@
 
   // ---------------- uma nota: XML (exato), PDF digital (exato) ou foto (OCR, com 2ª leitura da tabela) ----------------
   function somaItens(d) { return (d.itens || []).reduce(function (t, x) { return t + (Number(x.valor) || 0); }, 0); }
-  function fecha(d) { return !!(d && d.itens && d.itens.length && d.valor && (!d.valorIncerto || d.itens.length >= 2) && Math.abs(somaItens(d) - d.valor) < 0.05); }
+  function incompletos(d) { return (d.itens || []).filter(function (x) { return !(Number(x.valor) > 0); }).length; }   // materiais sem preço
+  function fecha(d) { return !!(d && d.itens && d.itens.length && !incompletos(d) && d.valor && (!d.valorIncerto || d.itens.length >= 2) && Math.abs(somaItens(d) - d.valor) < 0.05); }
   // total lido da foto menor que a soma dos materiais (ou igual a um item só): fica com a soma e pede conferência
   function corrigeTotal(d) {
     var soma = Math.round(somaItens(d) * 100) / 100;
-    if (!soma || (d.itens || []).length < 2 || d.totalFirme) return;
+    if (!soma || (d.itens || []).length < 2 || d.totalFirme || incompletos(d)) return;   // soma sem todos os preços não é o total
     var umItem = d.itens.some(function (x) { return Math.abs((Number(x.valor) || 0) - d.valor) < 0.05; });
     if (!d.valor || d.valorIncerto || umItem || d.valor < soma * 0.95) { d.valor = soma; d.valorIncerto = true; d.valorSoma = true; }
   }
@@ -425,6 +433,7 @@
         return rp0 ? '<div class="aviso erro" id="cn-rep0">' + textoRepetida(rp0) + "</div>" : "";
       })() +
       (!c0 && op.imagem && !op.erro && d.semData ? '<div class="aviso">⚠️ Não achei a <b>data da compra</b> na foto: confira a data antes de salvar.</div>' : "") +
+      (!c0 && d.dataCorrigida ? '<div class="aviso">⚠️ O ano da data saiu errado na foto (ex.: 2020): usei o ano atual. <b>Confira a data</b>.</div>' : "") +
       (op.falta ? '<div class="peq mudo">Depois desta: mais ' + op.falta + " nota" + (op.falta > 1 ? "s" : "") + ".</div>" : "") +
       (op.bruto ? '<details class="peq" style="margin:4px 0"><summary>🔍 ver o texto que o app leu da foto</summary><pre style="white-space:pre-wrap;max-height:220px;overflow:auto;font-size:11px">' + esc(String(op.bruto).slice(0, 6000)) + "</pre></details>" : "") +
       '<div class="filtros" id="cn-tipos"><button type="button" data-tipo="material">🧱 Material de obra</button><button type="button" data-tipo="despesa">⛽ Despesa avulsa</button></div>' +
@@ -516,7 +525,10 @@
       var s = it.reduce(function (t, x) { return t + (Number(x.valor) || 0); }, 0);
       // a soma não bate com o total da nota: algum material foi lido errado (ou faltou) — avisa em vermelho
       var tv = A.lerNumero($("#cn-valor", el).value), dif = s && tv > 0 && Math.abs(s - tv) >= 0.05;
-      $("#cn-soma", el).innerHTML = s ? "Soma dos materiais: " + dinheiro(s) + (dif ? ' <span class="selo critico">≠ total ' + dinheiro(tv) + ": confira quantidades e valores</span>" : tv > 0 ? ' <span class="selo bom">✔ bate com o total</span>' : "") : "";
+      var falta = it.filter(function (x) { return String(x.item || "").trim() && !(Number(x.valor) > 0); }).length;
+      $("#cn-soma", el).innerHTML = s ? "Soma dos materiais: " + dinheiro(s) +
+        (falta ? ' <span class="selo atencao">falta o preço de ' + falta + (falta === 1 ? " material" : " materiais") + "</span>" : "") +
+        (dif ? ' <span class="selo critico">≠ total ' + dinheiro(tv) + ": confira quantidades e valores</span>" : tv > 0 && !falta ? ' <span class="selo bom">✔ bate com o total</span>' : "") : "";
     }
     $("#cn-valor", el).addEventListener("input", somar);
     $("#cn-mais", el).onclick = function () { it.push({ un: "un", area: area === "pintura" ? "pintura" : "eletrica" }); desenharItens(); };
