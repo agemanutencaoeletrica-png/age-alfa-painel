@@ -137,7 +137,10 @@
     return scripts[url];
   }
   var leitor = null, progresso = null;
-  function ocr(f) {
+  // op: { psm: "6" (bloco, padrão do tesseract.js) ou "3"/"4" (página/colunas), cinza: true (sem preto e branco), giro: 0/90/270 já conhecido }
+  // devolve { texto, giro }
+  function ocr(f, op) {
+    op = op || {};
     return carregarScript(TESS + "tesseract.min.js", function () { return !!window.Tesseract; }).then(function () {
       if (!leitor) leitor = window.Tesseract.createWorker("por", 1, {
         workerPath: TESS + "worker.min.js", corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1",
@@ -147,12 +150,16 @@
       return leitor;
     }).then(function (w) {
       // foto deitada (comum em nota grande): se a leitura sai ruim, tenta girada para os dois lados e fica com a melhor
-      var ler = function (giro) { return realcar(f, giro).then(function (img) { return w.recognize(img); }).then(function (r) { return r.data.text || ""; }); };
+      var ler = function (giro) {
+        return w.setParameters({ tessedit_pageseg_mode: op.psm || "6" }).then(function () { return realcar(f, giro, op.cinza); })
+          .then(function (img) { return w.recognize(img); }).then(function (r) { return { texto: r.data.text || "", giro: giro }; });
+      };
+      if (op.giro !== undefined) return ler(op.giro);
       return ler(0).then(function (t0) {
-        if (qualidade(t0) >= 12) return t0;
+        if (qualidade(t0.texto) >= 12) return t0;
         return ler(90).then(function (t1) {
           return ler(270).then(function (t2) {
-            return [t0, t1, t2].sort(function (a, b) { return qualidade(b) - qualidade(a); })[0];
+            return [t0, t1, t2].sort(function (a, b) { return qualidade(b.texto) - qualidade(a.texto); })[0];
           });
         });
       });
@@ -163,7 +170,7 @@
     return (String(t).match(/\d,\d{2}\b/g) || []).length * 2 + (String(t).match(/\b[A-Za-zÀ-ú]{4,}\b/g) || []).length / 4;
   }
   // foto de papel (sombra, inclinação): amplia, passa para preto e branco pela claridade de cada região. Melhora muito a leitura de notas.
-  function realcar(f, giro) {
+  function realcar(f, giro, cinza) {
     if (!window.createImageBitmap) return Promise.resolve(f);
     return createImageBitmap(f).then(function (bmp) {
       var k = Math.min(2, 3200 / Math.max(bmp.width, bmp.height)), w0 = Math.round(bmp.width * k), h0 = Math.round(bmp.height * k);
@@ -175,6 +182,11 @@
       if (bmp.close) bmp.close();
       var d = cx.getImageData(0, 0, W, H), px = d.data, g = new Float32Array(W * H), I = new Float64Array((W + 1) * (H + 1)), x, y;
       for (var i = 0; i < W * H; i++) g[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
+      if (cinza) {   // só tons de cinza (a 2ª leitura de nota usa assim)
+        for (i = 0; i < W * H; i++) px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = g[i];
+        cx.putImageData(d, 0, 0);
+        return new Promise(function (ok) { cv.toBlob(function (b) { ok(b || f); }, "image/png"); });
+      }
       for (y = 0; y < H; y++) { var sl = 0; for (x = 0; x < W; x++) { sl += g[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + sl; } }
       var r = Math.max(8, Math.round(Math.max(W, H) / 60));
       for (y = 0; y < H; y++) {
@@ -214,10 +226,10 @@
       });
     });
   }
-  function textoDoArquivo(f) {
+  function textoDoArquivo(f, op) {
     if (/pdf/.test(f.type) || /\.pdf$/i.test(f.name || "")) return lerPdf(f);
-    if (/^image\//.test(f.type)) return ocr(f).then(function (t) { return { texto: t, imagem: f }; });
-    return f.text().then(function (t) { return { texto: t }; });
+    if (/^image\//.test(f.type)) return ocr(f, op).then(function (o) { return { texto: o.texto, imagem: f, giro: o.giro }; });
+    return f.text().then(function (t) { return { texto: t, xml: /xml/i.test(f.type) || /\.xml$/i.test(f.name || "") || /<infNFe/i.test(t) }; });
   }
 
   // ---------------- conferir e salvar ----------------

@@ -135,10 +135,33 @@
     else if (/dinheiro|especie/.test(sa)) r.forma = "dinheiro";
     // despesa avulsa (posto, oficina, lanchonete...): categoria sugerida
     r.categoria = categoriaPeloTexto(sa);
+    // nenhum formato reconhecido: qualquer linha com unidade (UN, PC, GL...) seguida de pelo menos 2 valores é um material;
+    // a descrição é o que vem antes (sem o código, NCM, CST, CFOP) ou a linha de cima, se a de cima for só o nome
+    // material que não faz sentido (quantidade que é o CFOP "5102", cabeçalho da tabela...) sai da lista
+    var palavras = function (d) { return (String(d).match(/[A-Za-zÀ-ú]{3,}/g) || []).filter(function (w) { return /[aeiouáéíóúâêôãõ]/i.test(w); }).length; };
+    var semFim = function (d) { var w = String(d).split(" "); while (w.length && /^[\dOIlS.\/-]{3,}$/.test(w[w.length - 1]) && (w[w.length - 1].match(/\d/g) || []).length >= 2) w.pop(); return w.join(" "); };
+    var CAB = /total|subtotal|desconto|valor|base de c|imposto|icms|frete|quant|descri|\bcod\b|codigo|código|produto|unid/i;
+    r.itens = r.itens.filter(function (x) { return x.qtd > 0 && x.qtd <= 999 && palavras(x.item) >= 1 && !CAB.test(x.item); })
+      .map(function (x) { x.item = semFim(x.item); return x; });
+    if (!r.itens.length) ls.forEach(function (x, i) {
+      var l = String(x || "").replace(/[|\[\]“”"=_{}]/g, " ").replace(/\s+/g, " ").trim();
+      var mu = l.match(/^(.*?)\b(UN|UND|UNID|PC|PÇ|PCT|M|MT|KG|CX|RL|LT|GL|LATA|BD|PAR)\b\.?\s*(.*)$/i);
+      if (!mu) return;
+      var ns = (mu[3].match(/\d{1,3}(?:\.\d{3})*,\d{2,6}/g) || []).map(A.lerNumero);
+      if (ns.length < 2 || !(ns[0] > 0) || !(ns[1] > 0) || ns[0] > 9999) return;
+      if (/\d,\d{2}\s*$/.test(mu[1])) return;   // "1,00 UN ESMALTE..." (quantidade antes da unidade) é outro formato
+      var desc = semFim(mu[1].replace(/^\W*\d{2,14}\s+/, "").trim()).replace(/(\s+\d{1,4})+\s*$/, "").trim();
+      if (palavras(desc) < 2 && ls[i - 1] && !/\d,\d{2}/.test(ls[i - 1])) desc = semFim(String(ls[i - 1]).replace(/[|\[\]“”"=_]/g, " ").replace(/^\W*\d{2,14}\s+/, "").replace(/\s+/g, " ").trim());
+      if (palavras(desc) < 2 || CAB.test(desc)) return;
+      var qtd = ns[0], unit = ns[1], tot = null;
+      for (var k = 2; k < ns.length && tot === null; k++) if (Math.abs(ns[k] - qtd * unit) < 0.05) tot = ns[k];
+      if (tot === null) tot = Math.round(qtd * unit * 100) / 100;
+      r.itens.push({ item: desc.slice(0, 120), qtd: qtd, un: mu[2].toLowerCase().replace(/und|unid/, "un").replace("mt", "m"), unit: unit, valor: tot });
+    });
     // unitário que faltou e conferência: se a soma dos materiais bate com o total, o valor está certo
     r.itens.forEach(function (x) { if (!x.unit && x.qtd > 0 && x.valor) x.unit = Math.round(x.valor / x.qtd * 100) / 100; });
     var somaIt = r.itens.reduce(function (s2, x) { return s2 + (Number(x.valor) || 0); }, 0);
-    if (r.valorIncerto && somaIt && Math.abs(somaIt - r.valor) < 0.05) delete r.valorIncerto;
+    if (r.valorIncerto && r.itens.length >= 2 && Math.abs(somaIt - r.valor) < 0.05) delete r.valorIncerto;   // 1 item só pode ser o próprio “maior valor”
     if (!r.valor && somaIt) { r.valor = Math.round(somaIt * 100) / 100; r.valorIncerto = true; }
     // chave de acesso da NF-e/NFC-e (44 números, pode vir quebrada em grupos ou linhas): só vale se o dígito verificador conferir
     var junto = t.replace(/(\d)[ \t]*\n[ \t]*(\d)/g, "$1 $2"), mc2, reC = /\d[\d .]{42,80}\d/g;
@@ -201,6 +224,67 @@
   }
 
 
+  // ---------------- uma nota: XML (exato), PDF digital (exato) ou foto (OCR, com 2ª leitura da tabela) ----------------
+  function somaItens(d) { return (d.itens || []).reduce(function (t, x) { return t + (Number(x.valor) || 0); }, 0); }
+  function fecha(d) { return !!(d && d.itens && d.itens.length && d.valor && (!d.valorIncerto || d.itens.length >= 2) && Math.abs(somaItens(d) - d.valor) < 0.05); }
+  // total lido da foto menor que a soma dos materiais (ou igual a um item só): fica com a soma e pede conferência
+  function corrigeTotal(d) {
+    var soma = Math.round(somaItens(d) * 100) / 100;
+    if (!soma || (d.itens || []).length < 2) return;
+    var umItem = d.itens.some(function (x) { return Math.abs((Number(x.valor) || 0) - d.valor) < 0.05; });
+    if (!d.valor || d.valorIncerto || umItem || d.valor < soma * 0.95) { d.valor = soma; d.valorIncerto = true; d.valorSoma = true; }
+  }
+  function lerUmaNota(f, status) {
+    return window.AGE_PAG.lerArquivo(f).then(function (r) {
+      var d = r.xml ? lerXml(r.texto) : null;
+      if (d) return { dados: d, imagem: null, bruto: "" };
+      d = lerNota(r.texto);
+      if (!/^image\//.test(f.type) || fecha(d)) { if (!fecha(d)) corrigeTotal(d); return { dados: d, imagem: r.imagem || f, bruto: r.texto }; }
+      // a soma dos materiais não fecha com o total: lê a tabela de novo de outros jeitos e fica com a leitura que fecha
+      var melhor = d, bruto = r.texto, tentativas = [{ psm: "6", cinza: true }, { psm: "4" }, { psm: "3" }];
+      return tentativas.reduce(function (pr, op, n) {
+        return pr.then(function () {
+          if (fecha(melhor)) return;
+          if (status) status("🔎 Conferindo os materiais (" + (n + 2) + "ª leitura)...");
+          return window.AGE_PAG.lerArquivo(f, Object.assign({ giro: r.giro }, op)).then(function (r2) {
+            var d2 = lerNota(r2.texto);
+            if (fecha(Object.assign({}, d2, { valor: d.valor || d2.valor })) || d2.itens.length > melhor.itens.length) {
+              melhor = Object.assign({}, d2, d, { itens: d2.itens });
+              ["data", "fornecedor", "cnpj", "chave", "numero", "forma", "parcelas"].forEach(function (k) { if (!melhor[k] && d2[k]) melhor[k] = d2[k]; });
+              if (!melhor.valor) melhor.valor = d2.valor;
+              bruto = r.texto + "\n\n----- 2ª leitura -----\n" + r2.texto;
+            }
+          }).catch(function () { /* fica com a 1ª leitura */ });
+        });
+      }, Promise.resolve()).then(function () {
+        if (fecha(melhor)) delete melhor.valorIncerto;
+        else corrigeTotal(melhor);
+        return { dados: melhor, imagem: r.imagem || f, bruto: bruto };
+      });
+    });
+  }
+  // XML da NF-e/NFC-e (vem no e-mail da loja): tudo exato, sem leitura de foto
+  function lerXml(txt) {
+    var doc;
+    try { doc = new DOMParser().parseFromString(txt, "application/xml"); } catch (e) { return null; }
+    var inf = doc.getElementsByTagName("infNFe")[0];
+    if (!inf) return null;
+    var g = function (el, tag) { var x = el && el.getElementsByTagName(tag)[0]; return x ? x.textContent.trim() : ""; };
+    var emit = inf.getElementsByTagName("emit")[0], tot = inf.getElementsByTagName("ICMSTot")[0] || inf, cj = g(emit, "CNPJ");
+    var tPag = g(inf.getElementsByTagName("pag")[0], "tPag");
+    var r = { fornecedor: g(emit, "xFant") || g(emit, "xNome"), cnpj: cj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"),
+      data: (g(inf, "dhEmi") || g(inf, "dEmi")).slice(0, 10), valor: Number(g(tot, "vNF")) || null, chave: (inf.getAttribute("Id") || "").replace(/\D/g, "") || null,
+      numero: String(Number(g(inf.getElementsByTagName("ide")[0], "nNF"))), forma: { "01": "dinheiro", "03": "cartao", "04": "cartao", "15": "boleto", "17": "pix" }[tPag] || "",
+      itens: Array.prototype.map.call(inf.getElementsByTagName("det"), function (dt) {
+        return { item: g(dt, "xProd"), qtd: Number(g(dt, "qCom")) || null, un: (g(dt, "uCom") || "un").toLowerCase(), unit: Math.round(Number(g(dt, "vUnCom")) * 100) / 100 || null, valor: Number(g(dt, "vProd")) || null };
+      }) };
+    if (r.forma === "boleto") r.pago = false;
+    var cartao = inf.getElementsByTagName("dup").length;
+    if (r.forma === "cartao" && cartao > 1) r.parcelas = cartao;
+    r.categoria = categoriaPeloTexto(semAcento(r.fornecedor + " " + r.itens.map(function (x) { return x.item; }).join(" ")));
+    return r;
+  }
+
   // ---------------- receber notas (Compartilhar, arquivos) ----------------
   function receber(rc, ctx) {
     P = ctx;
@@ -212,7 +296,7 @@
     fila.reduce(function (pr, f, i) {
       return pr.then(function () {
         $("#cn-st", j.el).textContent = "📖 Lendo a nota " + (i + 1) + " de " + fila.length + "...";
-        return window.AGE_PAG.lerArquivo(f).then(function (r) { lidas.push({ dados: lerNota(r.texto), imagem: r.imagem || f, bruto: r.texto }); },
+        return lerUmaNota(f, function (t) { $("#cn-st", j.el).textContent = t; }).then(function (x) { lidas.push(x); },
           function () { lidas.push({ dados: {}, imagem: /^image\//.test(f.type) ? f : null, erro: true }); });
       });
     }, Promise.resolve()).then(function () {
@@ -244,12 +328,13 @@
     var j = A.janela(
       (op.imagem ? '<img alt="Nota" src="' + URL.createObjectURL(op.imagem) + '" style="max-height:160px;max-width:100%;display:block;margin-bottom:6px;border-radius:6px">' : "") +
       (op.erro ? '<div class="aviso erro">Não consegui ler a nota. Preencha à mão.</div>' : "") +
-      (!op.erro && op.imagem && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ Não achei o “TOTAL” com clareza na foto: <b>confira o valor total</b> antes de salvar.</div>' : "") +
+      (!op.erro && op.imagem && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ ' + (d.valorSoma ? "O “TOTAL” da foto não bateu com os materiais: usei a <b>soma dos materiais</b>. <b>Confira o valor total</b> antes de salvar." : "Não achei o “TOTAL” com clareza na foto: <b>confira o valor total</b> antes de salvar.") + '</div>' : "") +
       (function () {
         var rp0 = !c0 && repetida({ chave: d.chave, numero_nota: d.numero, cnpj: d.cnpj, fornecedor: d.fornecedor, comprado_em: d.data, valor: d.valor }, null);
         return rp0 ? '<div class="aviso erro" id="cn-rep0">' + textoRepetida(rp0) + "</div>" : "";
       })() +
       (op.falta ? '<div class="peq mudo">Depois desta: mais ' + op.falta + " nota" + (op.falta > 1 ? "s" : "") + ".</div>" : "") +
+      (op.bruto ? '<details class="peq" style="margin:4px 0"><summary>🔍 ver o texto que o app leu da foto</summary><pre style="white-space:pre-wrap;max-height:220px;overflow:auto;font-size:11px">' + esc(String(op.bruto).slice(0, 6000)) + "</pre></details>" : "") +
       '<div class="filtros" id="cn-tipos"><button type="button" data-tipo="material">🧱 Material de obra</button><button type="button" data-tipo="despesa">⛽ Despesa avulsa</button></div>' +
       '<label for="cn-forn">Onde comprou (loja / posto / fornecedor)</label><input id="cn-forn" list="cn-dl-forn" maxlength="120" placeholder="Ex.: Leroy Merlin, Posto Ipiranga...">' +
       '<datalist id="cn-dl-forn">' + Object.keys(lojasCompra).sort().map(function (f) { return '<option value="' + esc(f) + '">'; }).join("") + "</datalist>" +
@@ -457,11 +542,11 @@
     }
     var desp = filtro.tipo === "despesa";
     c.innerHTML = '<div class="cab-secao"><h2>🧾 Compras e despesas</h2><span><button class="prim" id="cp-nota">📷 Nota / cupom</button> <button id="cp-mao">➕ ' + (desp ? "Despesa avulsa" : "Lançar à mão") + "</button></span></div>" +
-      '<input type="file" id="cp-arq" accept="image/*,application/pdf" multiple class="oculto">' +
+      '<input type="file" id="cp-arq" accept="image/*,application/pdf,.xml,text/xml,application/xml" multiple class="oculto">' +
       '<div class="filtros" id="cp-tipos">' + [["", "Tudo"], ["material", "🧱 Material de obra"], ["despesa", "⛽ Despesas avulsas"], ["apagar", "💳 A pagar"], ["precos", "📊 Comparar preços"]].map(function (x) {
         return '<button class="' + (filtro.tipo === x[0] ? "prim" : "") + '" data-ctipo="' + x[0] + '">' + x[1] + "</button>";
       }).join("") + "</div>" +
-      '<p class="mudo peq" style="margin-top:-4px">Tire a foto da nota (ou no celular: Compartilhar → AGE Painel). O app lê valor, data, loja, itens e pagamento; você completa o resto.</p>' +
+      '<p class="mudo peq" style="margin-top:-4px">Foto da nota, PDF ou o <b>XML</b> do e-mail da loja (o XML e o PDF trazem os materiais exatos). No celular: Compartilhar → AGE Painel. Você completa o resto.</p>' +
       '<div class="filtros"><select id="cp-per" aria-label="Período"' + (filtro.tipo === "apagar" ? " disabled" : "") + '><option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="3meses">Últimos 3 meses</option>' +
       '<option value="ano">Este ano</option><option value="tudo">Tudo</option><option value="datas">Escolher datas</option></select>' +
       '<select id="cp-area" aria-label="Área"><option value="">Todas as áreas</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option><option value="geral">Geral</option></select>' +
