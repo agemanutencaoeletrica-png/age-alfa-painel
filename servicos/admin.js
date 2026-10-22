@@ -403,6 +403,9 @@
         (a[0] === "compras" && aPagar ? '<span class="cont" title="Notas não quitadas">' + aPagar + "</span>" : "") +
         (a[0] === "faturamento" && aReceber ? '<span class="cont" style="background:var(--atencao)" title="Notas de serviço a receber">' + aReceber + "</span>" : "") + "</a>";
     }).join("");
+    // celular: a barra desliza de lado; a aba aberta fica sempre à vista
+    var at = $("#abas a.ativa");
+    if (at && at.scrollIntoView) at.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   function rota() {

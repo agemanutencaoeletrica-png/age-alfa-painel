@@ -45,11 +45,12 @@
       var v;
       if (forteT.test(x)) {
         v = pos(valoresT(x.slice(x.search(forteT))));
+        var naLinha = v.length > 0;
         [i + 1, i - 1, i + 2].forEach(function (k) { if (!v.length && ls[k]) v = pos(valoresT(ls[k])); });
-        if (v.length) achou = v[v.length - 1];
+        if (v.length) { achou = v[v.length - 1]; r.naLinha = naLinha; }
       } else if (achou === null && fracoT.test(x)) {
         v = pos(valoresT(x.slice(x.search(fracoT))));
-        if (v.length) r.valorFraco = v[v.length - 1];
+        if (v.length) { r.valorFraco = v[v.length - 1]; r.naLinha = true; }
       }
     });
     if (achou === null && r.valorFraco) achou = r.valorFraco;
@@ -64,6 +65,9 @@
       if (ano >= 2020 && ano <= new Date().getFullYear() + 1 && mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31)
         datas.push({ iso: ano + "-" + md2[2] + "-" + md2[1], emissao: /emiss/i.test(t.slice(Math.max(0, md2.index - 40), md2.index)) });
     }
+    // a foto às vezes lê "2026" como "2020": havendo datas recentes (último ano), as antigas não contam
+    var lim = A.isoLocal(new Date(Date.now() - 400 * 864e5)), recentes = datas.filter(function (x) { return x.iso >= lim; });
+    if (recentes.length) datas = recentes;
     var dEm = datas.filter(function (x) { return x.emissao; })[0] || datas[0];
     if (dEm) r.data = dEm.iso; else r.semData = true;
     // loja: a linha com o nome antes do CNPJ (ou a primeira linha com letras)
@@ -134,14 +138,19 @@
       if (m3) { r.itens.push({ item: m3[3].replace(/\s+/g, " ").slice(0, 120), qtd: A.lerNumero(m3[1]), un: m3[2].toLowerCase().replace("und", "un"), valor: A.lerNumero(m3[5]) }); x = ""; return; }
       // o mesmo formato com a foto ruim (pré-venda): "003462 400 UN ROLOANTIGOTASCM oo 21,90 Bro" — a vírgula da quantidade sumiu (400 = 4,00),
       // sujeira depois do nome e o total ilegível ("21 80", "Bro"): o total vale se bater com qtd × unitário, senão é calculado
-      var m4 = x.match(/^\W*[\dDOIl]{4,8}\s+(?:[—–-]+\s+)?(\d{1,4}(?:[.,]\d{1,3})?)\s*(UN|UND|PC|PÇ|PCT|M|MT|KG|CX|RL|LT|GL|LATA|BD|PAR)\b\.?\s+([A-ZÀ-Ú0-9].*?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})\b(.*)$/);
+      var m4 = x.match(/^\W*[\dDOIl]{4,8}\s+(?:[—–-]+\s+)?(\d{1,4}(?:[.,]\d{1,3})?)\s*(UN|UND|PC|PÇ|PCT|M|MT|KG|CX|RL|LT|GL|LATA|BD|PAR)\b\.?\s+([A-ZÀ-Ú0-9].*)$/);
       if (!m4) return;
       var q4 = /[.,]/.test(m4[1]) ? A.lerNumero(m4[1]) : m4[1].length >= 3 && /00$/.test(m4[1]) ? Number(m4[1]) / 100 : Number(m4[1]);
-      var u4 = A.lerNumero(m4[4]), w4 = m4[3].replace(/[|"'“”]/g, " ").split(/\s+/), d4 = [];
+      // preço unitário: o 1º valor depois do nome (a foto troca a vírgula por ponto: "12.90"); pode faltar (fica para você completar)
+      var mp4 = m4[3].match(/(?:^|\s)(\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,4}\.\d{2})(?![\d,.])/), u4 = mp4 ? A.lerNumero(mp4[1].replace(/^(\d{1,4})\.(\d{2})$/, "$1,$2")) : null;
+      var antes4 = mp4 ? m4[3].slice(0, mp4.index) : m4[3], depois4 = mp4 ? m4[3].slice(mp4.index + mp4[0].length) : "";
+      var w4 = antes4.replace(/[|"'“”]/g, " ").split(/\s+/), d4 = [];
       for (var k4 = 0; k4 < w4.length; k4++) { if (!w4[k4]) continue; if (/[a-zà-ú]/.test(w4[k4]) || /[—–_]/.test(w4[k4]) || !/[A-ZÀ-Ú0-9]/.test(w4[k4])) break; d4.push(w4[k4]); }
-      var mt4 = m4[5].match(/(\d{1,3}(?:\.\d{3})*)[ ,.](\d{2})(?!\d)/), t4 = mt4 ? A.lerNumero(mt4[1] + "," + mt4[2]) : null;
-      if (!(t4 && Math.abs(t4 - q4 * u4) < 0.05)) t4 = Math.round(q4 * u4 * 100) / 100;
-      if (d4.length && q4 > 0 && u4 > 0) r.itens.push({ item: d4.join(" ").slice(0, 120), qtd: q4, un: m4[2].toLowerCase().replace("und", "un"), unit: u4, valor: t4 });
+      var mt4 = depois4.match(/(\d{1,3}(?:\.\d{3})*)[ ,.](\d{2})(?!\d)/), t4 = mt4 ? A.lerNumero(mt4[1] + "," + mt4[2]) : null;
+      if (u4 > 0 && !(t4 && Math.abs(t4 - q4 * u4) < 0.05)) t4 = Math.round(q4 * u4 * 100) / 100;
+      if (!(u4 > 0)) { u4 = null; t4 = null; }
+      while (d4.length > 1 && /^\d{1,2}[º°.]*$/.test(d4[d4.length - 1])) d4.pop();   // número solto no fim ("TRINCHA396-2 1º.")
+      if (d4.length && q4 > 0 && q4 <= 999) r.itens.push({ item: d4.join(" ").slice(0, 120), qtd: q4, un: m4[2].toLowerCase().replace("und", "un"), unit: u4, valor: t4 });
     });
     ls.forEach(function (x) {
       // a quantidade é a última "N UN" antes do preço ("100M" no nome do cabo não é a quantidade)
@@ -206,6 +215,10 @@
       if (v1.length) vProd = v1[v1.length - 1];
     });
     var piso = Math.max(somaIt, vProd * 0.9);
+    // total na mesma linha do rótulo e repetido na nota ("TOTAL 219,68" e "Crédito 2x R$ 219,68"): é ele; o material é que foi lido errado
+    var repete = r.valor && valoresT(t).filter(function (v) { return Math.abs(v - r.valor) < 0.005; }).length >= 2;
+    if (r.naLinha && repete && !vProd) { piso = 0; r.totalFirme = true; }
+    delete r.naLinha;
     if (piso && r.valor && r.valor < piso - 0.05) {
       var base = Math.max(somaIt, vProd), cont = {}, mx = base * 1.5 + 0.05;
       valoresT(t).forEach(function (v) { if (v >= piso - 0.05 && v <= mx) cont[v] = (cont[v] || 0) + 1; });
@@ -281,7 +294,7 @@
   // total lido da foto menor que a soma dos materiais (ou igual a um item só): fica com a soma e pede conferência
   function corrigeTotal(d) {
     var soma = Math.round(somaItens(d) * 100) / 100;
-    if (!soma || (d.itens || []).length < 2) return;
+    if (!soma || (d.itens || []).length < 2 || d.totalFirme) return;
     var umItem = d.itens.some(function (x) { return Math.abs((Number(x.valor) || 0) - d.valor) < 0.05; });
     if (!d.valor || d.valorIncerto || umItem || d.valor < soma * 0.95) { d.valor = soma; d.valorIncerto = true; d.valorSoma = true; }
   }

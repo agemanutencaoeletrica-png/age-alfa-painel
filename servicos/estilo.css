@@ -36,6 +36,8 @@ h3 { font-size: 15px; }
 .abas { display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px; background: var(--sup); border-bottom: 1px solid var(--borda);
   position: sticky; top: 54px; z-index: 19; scrollbar-width: none; }
 .abas::-webkit-scrollbar { display: none; }
+/* tela larga: as abas quebram em mais de uma linha (nenhuma fica escondida à direita) */
+@media (min-width: 700px) { .abas { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; } }
 .abas a { flex: none; padding: 7px 12px; border-radius: 999px; text-decoration: none; color: var(--texto2); font-weight: 700; font-size: 14px; }
 .abas a.ativa { background: var(--prim); color: var(--prim-t); }
 .abas .cont { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--critico);
