@@ -325,6 +325,26 @@ alter table public.compras add column if not exists chave text;
 alter table public.compras add column if not exists numero_nota text;
 create unique index if not exists compras_chave_idx on public.compras (chave) where chave is not null;
 
+-- Fornecedores (lojas onde compra): dados da loja guardados pelo CNPJ da nota (endereço, telefone, WhatsApp, e-mail)
+create table if not exists public.fornecedores (
+  id            uuid primary key default gen_random_uuid(),
+  cnpj          text,                         -- só os números
+  nome          text not null,                -- nome usado no app (fantasia ou razão social)
+  razao_social  text,
+  endereco      text,
+  bairro        text,
+  cidade        text,
+  uf            text,
+  cep           text,
+  telefone      text,
+  whatsapp      text,
+  email         text,
+  obs           text,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create unique index if not exists fornecedores_cnpj_idx on public.fornecedores (cnpj) where cnpj is not null;
+
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
   id             uuid primary key default gen_random_uuid(),
@@ -389,7 +409,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

@@ -359,13 +359,15 @@
       ]).catch(function () { return null; }),
       q(sb.from("veiculos").select("*").order("placa")).catch(function () { return null; }),
       q(sb.from("pagamentos").select("*").order("pago_em", { ascending: false })).catch(function (e) { S.erroPag = A.msgErro(e); return null; }),
-      q(sb.from("compras").select("*").order("comprado_em", { ascending: false })).catch(function (e) { S.erroCompras = A.msgErro(e); return null; })
+      q(sb.from("compras").select("*").order("comprado_em", { ascending: false })).catch(function (e) { S.erroCompras = A.msgErro(e); return null; }),
+      q(sb.from("fornecedores").select("*").order("nome")).catch(function (e) { S.erroForn = A.msgErro(e); return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
       S.semVeic = !r[8]; S.veic = r[8] || [];
       S.semPag = !r[9]; S.pag = r[9] || [];
       S.semCompras = !r[10]; S.compras = r[10] || [];
+      S.semForn = !r[11]; S.forn = r[11] || [];
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
     });
   }
