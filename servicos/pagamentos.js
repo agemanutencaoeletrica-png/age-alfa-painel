@@ -156,7 +156,7 @@
       };
       if (op.giro !== undefined) return ler(op.giro);
       return ler(0).then(function (t0) {
-        if (qualidade(t0.texto) >= 12) return t0;
+        if (qualidade(t0.texto) >= 20) return t0;
         return ler(90).then(function (t1) {
           return ler(270).then(function (t2) {
             return [t0, t1, t2].sort(function (a, b) { return qualidade(b.texto) - qualidade(a.texto); })[0];
@@ -166,8 +166,11 @@
     });
   }
   // nota de leitura: valores em reais e palavras de verdade
+  // nota da leitura: valores em dinheiro e palavras de verdade de nota/comprovante (foto deitada dá só "letras soltas", que não contam)
+  var VOCAB = /^(valor|total|nota|fiscal|data|emissao|cnpj|cpf|produto|produtos|descricao|quantidade|quant|unitario|unit|rua|avenida|bairro|cep|municipio|endereco|telefone|fone|pagamento|pix|cartao|dinheiro|troco|documento|eletronica|consumidor|chave|acesso|protocolo|serie|item|codigo|desconto|icms|frete|inscricao|estadual|razao|social|destinatario|emitente|transferencia|comprovante|para|nome|instituicao|banco|agencia|conta|horario|tipo|cupom|venda|cliente|vencimento|fatura|natureza|operacao|tributos|forma|pagto|danfe|saida|entrada|autorizacao|transacao|enviado|recebido|realizado|origem|destino|subtotal|qtde|qtd|vendedor|pedido)$/;
   function qualidade(t) {
-    return (String(t).match(/\d,\d{2}\b/g) || []).length * 2 + (String(t).match(/\b[A-Za-zÀ-ú]{4,}\b/g) || []).length / 4;
+    var pal = (semAcento(t).match(/[a-z]+/g) || []).filter(function (x) { return VOCAB.test(x); }).length;
+    return (String(t).match(/\d,\d{2}\b/g) || []).length * 2 + pal * 3;
   }
   // foto de papel (sombra, inclinação): amplia, passa para preto e branco pela claridade de cada região. Melhora muito a leitura de notas.
   function realcar(f, giro, cinza) {

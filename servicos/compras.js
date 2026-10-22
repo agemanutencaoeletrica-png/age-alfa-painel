@@ -33,17 +33,22 @@
     var valores = function (x) { return (x.match(/\d{1,3}(?:\.\d{3})*,\d{2}(?![\d\/])/g) || []).map(A.lerNumero); };
     // total: rótulo forte ("TOTAL DA NOTA", "TOTAL A PAGAR") aceita o número na linha vizinha (DANFE: rótulos numa linha,
     // números na de baixo); rótulo fraco ("VALOR TOTAL", "TOTAL") só com o número na mesma linha; depois a fatura/parcela
-    var forteT = /total\s+da\s+nota|total\s+a\s+pagar|valor\s+a\s+pagar|valor\s+pago/i;
+    var forteT = /total\s*da\s*nota|total\s+a\s+pagar|valor\s+a\s+pagar|valor\s+pago/i;
     var fracoT = /valor\s+total(?!\s+dos?\s+(?:produtos|servi))|total\s+(?:geral|r\$)|^\W*total\b(?!\s+(?:bruto|de\s+itens|dos))/i;
     var achou = null, pos = function (v) { return v.filter(function (n) { return n > 0; }); };
+    // junto do rótulo do total a foto costuma trocar 5 por S e a vírgula por ponto ("s4.00" = 54,00)
+    var valoresT = function (x) {
+      return valores(x.replace(/(^|[\s:|;=-])[sS](?=\d[.,]\d{2}(?!\d))/g, function (m, a1) { return a1 + "5"; })
+        .replace(/(^|[^\d.,\/])(\d{1,4})\.(\d{2})(?![\d.,\/])/g, function (m, a1, n, c) { return a1 + n + "," + c; }));
+    };
     ls.forEach(function (x, i) {
       var v;
       if (forteT.test(x)) {
-        v = pos(valores(x.slice(x.search(forteT))));
-        [i + 1, i - 1, i + 2].forEach(function (k) { if (!v.length && ls[k]) v = pos(valores(ls[k])); });
+        v = pos(valoresT(x.slice(x.search(forteT))));
+        [i + 1, i - 1, i + 2].forEach(function (k) { if (!v.length && ls[k]) v = pos(valoresT(ls[k])); });
         if (v.length) achou = v[v.length - 1];
       } else if (achou === null && fracoT.test(x)) {
-        v = pos(valores(x.slice(x.search(fracoT))));
+        v = pos(valoresT(x.slice(x.search(fracoT))));
         if (v.length) r.valorFraco = v[v.length - 1];
       }
     });
@@ -86,10 +91,17 @@
     if (mk) f0 = mk[0];
     if (f0) {
       var mr = forte.test(f0) && f0.match(/[A-ZÀ-Ú0-9&.' -]*?\b(?:LTDA|EIRELI|EPP|S\.A\.|S\/A|ME)\b\.?/i);
-      r.fornecedor = (mr ? mr[0] : f0).replace(/\s+/g, " ").trim().slice(0, 120);
+      // sujeira antes do nome na foto ("Bugs. Na Rodol Ltda"): sai palavra terminada em pontuação e pedaço de 2 letras
+      var wf = (mr ? mr[0] : f0).replace(/\s+/g, " ").trim().split(" ");
+      while (wf.length > 2 && (/[.:;,!]$/.test(wf[0]) || /^[A-ZÀ-Ú][a-zà-ú]$/.test(wf[0]) || /^[a-zà-ú]{1,3}$/.test(wf[0]))) wf.shift();
+      r.fornecedor = wf.join(" ").slice(0, 120);
     }
-    var mcnpj = t.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
-    if (mcnpj) r.cnpj = mcnpj[0];
+    // CNPJ da loja (válido e que não é o da AGE, que aparece como destinatário), telefone e e-mail da loja
+    if (window.AGE_FORN) {
+      var lj = window.AGE_FORN.doTexto(t);
+      if (lj.cnpj) r.cnpj = lj.cnpj;
+      if (lj.telefone || lj.email) r.loja = { telefone: lj.telefone || "", whatsapp: lj.whatsapp || "", email: lj.email || "" };
+    } else { var mcnpj = t.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/); if (mcnpj) r.cnpj = mcnpj[0]; }
     // itens: "001 CABO FLEX 2,5MM 1 UN 189,90" (código, descrição, quantidade, unidade ... valor)
     // item em 2 linhas (cupom NFC-e): "604 PRO-TECH EPOXI AMARELO" / "2,00 UN 330,44 660,88"
     ls.forEach(function (x, i) {
@@ -158,11 +170,30 @@
       if (tot === null) tot = Math.round(qtd * unit * 100) / 100;
       r.itens.push({ item: desc.slice(0, 120), qtd: qtd, un: mu[2].toLowerCase().replace(/und|unid/, "un").replace("mt", "m"), unit: unit, valor: tot });
     });
+    // descrição limpa: sem o código do produto no começo ("ODOUO069" = 00000069 lido torto), sem NCM/CST/CFOP e sem traços soltos
+    var ehCodigo = function (w) { return w.length >= 5 && (w.match(/\d/g) || []).length >= 2 && (w.match(/[\dOoUIl]/g) || []).length / w.length >= 0.8; };
+    r.itens.forEach(function (x) {
+      var d = String(x.item || "").replace(/[\s\/|;:—–-]*\d{8}(?!\d).*$/, "").replace(/\s[—–*]+(?=\s|$)/g, " ").replace(/\s+/g, " ").trim();
+      var w = d.split(" ");
+      while (w.length > 1 && ehCodigo(w[0].replace(/\W/g, ""))) w.shift();
+      d = w.join(" ").replace(/^[\s—–*;:.,|\/-]+|[\s—–*;:,|\/-]+$/g, "").trim();
+      if (palavras(d) >= 1) x.item = d;
+    });
     // unitário que faltou e conferência: se a soma dos materiais bate com o total, o valor está certo
     r.itens.forEach(function (x) { if (!x.unit && x.qtd > 0 && x.valor) x.unit = Math.round(x.valor / x.qtd * 100) / 100; });
     var somaIt = r.itens.reduce(function (s2, x) { return s2 + (Number(x.valor) || 0); }, 0);
     if (r.valorIncerto && r.itens.length >= 2 && Math.abs(somaIt - r.valor) < 0.05) delete r.valorIncerto;   // 1 item só pode ser o próprio “maior valor”
     if (!r.valor && somaIt) { r.valor = Math.round(somaIt * 100) / 100; r.valorIncerto = true; }
+    // total menor que os materiais não existe (a foto pegou outro número, ex.: o ICMS): fica com o valor que mais aparece
+    // entre a soma dos materiais e 50% acima (impostos/frete), de preferência o da fatura; e pede para conferir
+    if (somaIt && r.valor && r.valor < somaIt - 0.05) {
+      var cont = {}, mx = somaIt * 1.5 + 0.05;
+      valoresT(t).forEach(function (v) { if (v >= somaIt - 0.05 && v <= mx) cont[v] = (cont[v] || 0) + 1; });
+      var mf2 = t.match(/(?:fatura|parcela|vencimento|duplicata)[^\n]*?valor[^\d\n]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d\/])/i);
+      if (mf2 && A.lerNumero(mf2[1]) >= somaIt - 0.05 && A.lerNumero(mf2[1]) <= mx) cont[A.lerNumero(mf2[1])] = (cont[A.lerNumero(mf2[1])] || 0) + 10;
+      var melhorV = Object.keys(cont).map(Number).sort(function (a2, b2) { return cont[b2] - cont[a2] || a2 - b2; })[0];
+      r.valor = melhorV || Math.round(somaIt * 100) / 100; r.valorIncerto = true;
+    }
     // chave de acesso da NF-e/NFC-e (44 números, pode vir quebrada em grupos ou linhas): só vale se o dígito verificador conferir
     var junto = t.replace(/(\d)[ \t]*\n[ \t]*(\d)/g, "$1 $2"), mc2, reC = /\d[\d .]{42,80}\d/g;
     while (!r.chave && (mc2 = reC.exec(junto))) {
@@ -278,6 +309,9 @@
       itens: Array.prototype.map.call(inf.getElementsByTagName("det"), function (dt) {
         return { item: g(dt, "xProd"), qtd: Number(g(dt, "qCom")) || null, un: (g(dt, "uCom") || "un").toLowerCase(), unit: Math.round(Number(g(dt, "vUnCom")) * 100) / 100 || null, valor: Number(g(dt, "vProd")) || null };
       }) };
+    var en = emit && emit.getElementsByTagName("enderEmit")[0];
+    if (en) r.loja = { razao_social: g(emit, "xNome"), endereco: [g(en, "xLgr"), g(en, "nro")].filter(Boolean).join(", ") + (g(en, "xCpl") ? " - " + g(en, "xCpl") : ""),
+      bairro: g(en, "xBairro"), cidade: g(en, "xMun"), uf: g(en, "UF"), cep: g(en, "CEP").replace(/^(\d{5})(\d{3})$/, "$1-$2"), telefone: g(en, "fone"), email: g(emit, "email") };
     if (r.forma === "boleto") r.pago = false;
     var cartao = inf.getElementsByTagName("dup").length;
     if (r.forma === "cartao" && cartao > 1) r.parcelas = cartao;
@@ -285,18 +319,35 @@
     return r;
   }
 
+  // loja da nota pelo CNPJ: a já guardada (nome certo, mesmo com a foto ruim) ou o cadastro público do CNPJ
+  function completarLoja(d) {
+    if (!d || !d.cnpj || !window.AGE_FORN) return Promise.resolve(d);
+    var F = window.AGE_FORN, f = F.achar(P.S, d.cnpj, null);
+    var junta = function (base) { d.loja = Object.assign({}, base, d.loja || {}, { cnpj: d.cnpj }); Object.keys(base).forEach(function (k) { if (base[k] && !d.loja[k]) d.loja[k] = base[k]; }); };
+    if (f) { d.fornecedor = f.nome; junta(f); return Promise.resolve(d); }
+    var ant = P.S.compras.filter(function (x) { return x.cnpj && x.cnpj.replace(/\D/g, "") === d.cnpj.replace(/\D/g, "") && x.fornecedor; })[0];
+    return F.consultar(d.cnpj).then(function (c) {
+      if (c) { d.fornecedor = ant ? ant.fornecedor : c.nome; junta(c); }
+      else if (ant) d.fornecedor = ant.fornecedor;
+      return d;
+    });
+  }
+
   // ---------------- receber notas (Compartilhar, arquivos) ----------------
   function receber(rc, ctx) {
     P = ctx;
     if (P.S.semCompras) { A.avisar("Rode de novo o supabase.sql no Supabase para usar as compras.", "erro"); return; }
     var fila = (rc.arquivos || []).slice(0, 10);
-    if (!fila.length) { formulario({ texto: rc.texto ? lerNota(rc.texto) : {}, bruto: rc.texto || "", tipo: rc.tipo }); return; }
+    if (!fila.length) { var dt = rc.texto ? lerNota(rc.texto) : {}; completarLoja(dt).then(function () { formulario({ texto: dt, bruto: rc.texto || "", tipo: rc.tipo }); }); return; }
     var j = A.janela('<div class="peq" id="cn-st">📖 Lendo a nota... (a 1ª vez demora um pouco)</div>', { titulo: "🧾 Nota" });
     var lidas = [];
     fila.reduce(function (pr, f, i) {
       return pr.then(function () {
         $("#cn-st", j.el).textContent = "📖 Lendo a nota " + (i + 1) + " de " + fila.length + "...";
-        return lerUmaNota(f, function (t) { $("#cn-st", j.el).textContent = t; }).then(function (x) { lidas.push(x); },
+        return lerUmaNota(f, function (t) { $("#cn-st", j.el).textContent = t; }).then(function (x) {
+          $("#cn-st", j.el).textContent = "🏪 Conferindo os dados da loja...";
+          return completarLoja(x.dados).then(function () { lidas.push(x); });
+        },
           function () { lidas.push({ dados: {}, imagem: /^image\//.test(f.type) ? f : null, erro: true }); });
       });
     }, Promise.resolve()).then(function () {
@@ -311,11 +362,16 @@
   function obraPorRotulo(t) { t = String(t || "").trim(); return P.S.obras.filter(function (o) { return rotuloObra(o) === t; })[0] || null; }
   function formulario(op) {
     var c0 = op.compra || null, d = op.texto || {};
-    if (!c0 && d.cnpj) {   // loja já conhecida pelo CNPJ da nota
+    if (!c0 && d.cnpj && !d.loja) {   // loja já conhecida pelo CNPJ da nota
       var dg = d.cnpj.replace(/\D/g, ""), ant = P.S.compras.filter(function (x) { return x.cnpj && x.cnpj.replace(/\D/g, "") === dg && x.fornecedor; })[0];
       if (ant) d.fornecedor = ant.fornecedor;
     }
-    var lojasCompra = {}; P.S.compras.forEach(function (x) { if (x.fornecedor) lojasCompra[x.fornecedor] = 1; });
+    var F = window.AGE_FORN;
+    // sem CNPJ lido (foto ruim), mas o nome é de uma loja já guardada: usa o nome e os dados dela
+    var fNome = !c0 && F && !d.cnpj && d.fornecedor ? F.achar(P.S, null, d.fornecedor) : null;
+    if (fNome) { d.fornecedor = fNome.nome; d.loja = Object.assign({}, fNome, d.loja || {}); if (fNome.cnpj) d.cnpj = F.fmtCnpj(fNome.cnpj); }
+    var loja0 = c0 ? Object.assign({}, F ? F.achar(P.S, c0.cnpj, c0.fornecedor) : null, c0.cnpj ? { cnpj: c0.cnpj } : {}) : Object.assign({}, d.loja || {}, d.cnpj ? { cnpj: d.cnpj } : {});
+    var lojasCompra = {}; P.S.compras.forEach(function (x) { if (x.fornecedor) lojasCompra[x.fornecedor] = 1; }); (P.S.forn || []).forEach(function (x) { lojasCompra[x.nome] = 1; });
     var it = c0 ? (c0.itens || []).map(function (x) { return Object.assign({}, x); }) : (d.itens || []).map(function (x) { return Object.assign({}, x); });
     var areaSug = areaPelosItens(it, op.bruto);
     // despesa avulsa: escolhida na parte "Despesas", ou nota de posto/oficina/lanchonete sem material de obra
@@ -338,6 +394,7 @@
       '<div class="filtros" id="cn-tipos"><button type="button" data-tipo="material">🧱 Material de obra</button><button type="button" data-tipo="despesa">⛽ Despesa avulsa</button></div>' +
       '<label for="cn-forn">Onde comprou (loja / posto / fornecedor)</label><input id="cn-forn" list="cn-dl-forn" maxlength="120" placeholder="Ex.: Leroy Merlin, Posto Ipiranga...">' +
       '<datalist id="cn-dl-forn">' + Object.keys(lojasCompra).sort().map(function (f) { return '<option value="' + esc(f) + '">'; }).join("") + "</datalist>" +
+      (F && !P.S.semForn ? F.htmlCampos(loja0) : "") +
       '<div class="duas"><div><label for="cn-data">Data da compra</label><input type="date" id="cn-data"></div>' +
       '<div><label for="cn-valor">Valor total (R$)</label><input id="cn-valor" inputmode="decimal" placeholder="soma dos itens, se vazio"></div></div>' +
       '<div class="duas"><div><label for="cn-forma">Pagamento</label><select id="cn-forma">' + Object.keys(FORMAS).map(function (k) { return '<option value="' + k + '">' + FORMAS[k] + "</option>"; }).join("") + "</select></div>" +
@@ -365,6 +422,11 @@
     $("#cn-pago", el).checked = c0 ? c0.pago !== false : d.pago !== false;
     $("#cn-venc", el).value = c0 && c0.vencimento ? c0.vencimento : "";
     $("#cn-cat", el).value = cat;
+    if (F && $("#fo-dados", el)) {
+      F.ligarCampos(el, $("#cn-forn", el));
+      // escolheu uma loja já guardada: completa os dados dela
+      $("#cn-forn", el).addEventListener("change", function () { var f = F.achar(P.S, null, this.value); if (f) F.preencher(el, f, true); });
+    }
     if ($("#cn-veic", el) && c0) $("#cn-veic", el).value = c0.veiculo_id || "";
     function verPago() { $("#cn-venc-c", el).classList.toggle("oculto", $("#cn-pago", el).checked); }
     $("#cn-pago", el).onchange = verPago;
@@ -443,7 +505,9 @@
         obra_id: ob ? ob.id : null, destino: ob ? null : ($("#cn-dest", el).value.trim() || null), tipo_servico: tipo === "despesa" ? null : $("#cn-tipo", el).value.trim() || null,
         itens: itens, descricao: $("#cn-obs", el).value.trim() || null, forma_pagamento: $("#cn-forma", el).value, pago: pago,
         vencimento: pago ? null : $("#cn-venc", el).value || null };
-      if (!c0 && d.cnpj) dados.cnpj = d.cnpj;
+      var loja = F && $("#fo-dados", el) ? F.lerCampos(el) : null;
+      if (loja && loja.cnpj) dados.cnpj = F.fmtCnpj(loja.cnpj);
+      else if (!c0 && d.cnpj) dados.cnpj = d.cnpj;
       if (!c0 && d.chave) dados.chave = d.chave;
       if (!c0 && d.numero) dados.numero_nota = d.numero;
       // não lança nota repetida (a "provável" passa se você confirmar tocando em salvar de novo)
@@ -461,6 +525,9 @@
       pNota.then(function (cam) {
         if (cam) dados.nota = cam;
         return P.q(c0 ? P.sb.from("compras").update(dados).eq("id", c0.id).select().single() : P.sb.from("compras").insert(dados).select().single());
+      }).then(function (n) {
+        // guarda os dados da loja (CNPJ, telefone, WhatsApp, e-mail, endereço) para as próximas notas
+        return loja && n.fornecedor ? F.salvar(P, loja, n.fornecedor).then(function () { return n; }) : n;
       }).then(function (n) {
         // marcou "Já pago" numa nota que estava a pagar: registra a data da quitação
         return c0 && c0.pago === false && n.pago ? quitar(n.id, P).catch(function () { return n; }) : n;
@@ -530,11 +597,22 @@
     var g = {};
     cs.forEach(function (c) {
       var nome = chave(c), k = semAcento(nome).replace(/[^a-z0-9]+/g, " ").replace(/\b(ltda|me|epp|eireli|sa|s a)\b/g, " ").replace(/\s+/g, " ").trim();
-      g[k] = g[k] || { nome: nome, n: 0, total: 0, aPagar: 0, venc: "" }; g[k].n++; g[k].total += Number(c.valor) || 0;
+      g[k] = g[k] || { nome: nome, n: 0, total: 0, aPagar: 0, venc: "", datas: [] }; g[k].n++; g[k].total += Number(c.valor) || 0;
+      if (c.comprado_em && g[k].datas.indexOf(c.comprado_em) < 0) g[k].datas.push(c.comprado_em);
       if (c.pago === false) { g[k].aPagar += Number(c.valor) || 0; if (c.vencimento && (!g[k].venc || c.vencimento < g[k].venc)) g[k].venc = c.vencimento; } });
     return Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return b.total - a.total; });
   }
 
+  // datas das compras (as da nota): "19/10/2026" ou "19/10, 22/10 e 25/10/2026"
+  function textoDatas(ds) {
+    ds = ds.slice().sort();
+    if (!ds.length) return "—";
+    if (ds.length === 1) return A.dataSimples(ds[0]);
+    var mesmoAno = ds.every(function (x) { return x.slice(0, 4) === ds[0].slice(0, 4); });
+    var curta = function (x, ult) { return mesmoAno && !ult ? A.dataSimples(x).slice(0, 5) : A.dataSimples(x); };
+    var vis = ds.length > 4 ? ds.slice(0, 2).concat(ds.slice(-1)) : ds;
+    return vis.map(function (x, i) { return curta(x, i === vis.length - 1); }).join(ds.length > 4 ? " … " : ", ").replace(/, ([^,]*)$/, " e $1");
+  }
   function ver(c, ctx) {
     P = ctx;
     if (P.S.semCompras) {
@@ -546,7 +624,7 @@
     var desp = filtro.tipo === "despesa";
     c.innerHTML = '<div class="cab-secao"><h2>🧾 Compras e despesas</h2><span><button class="prim" id="cp-nota">📷 Nota / cupom</button> <button id="cp-mao">➕ ' + (desp ? "Despesa avulsa" : "Lançar à mão") + "</button></span></div>" +
       '<input type="file" id="cp-arq" accept="image/*,application/pdf,.xml,text/xml,application/xml" multiple class="oculto">' +
-      '<div class="filtros" id="cp-tipos">' + [["", "Tudo"], ["material", "🧱 Material de obra"], ["despesa", "⛽ Despesas avulsas"], ["apagar", "💳 A pagar"], ["precos", "📊 Comparar preços"]].map(function (x) {
+      '<div class="filtros" id="cp-tipos">' + [["", "Tudo"], ["material", "🧱 Material de obra"], ["despesa", "⛽ Despesas avulsas"], ["apagar", "💳 A pagar"], ["precos", "📊 Comparar preços"], ["fornec", "🏪 Fornecedores"]].map(function (x) {
         return '<button class="' + (filtro.tipo === x[0] ? "prim" : "") + '" data-ctipo="' + x[0] + '">' + x[1] + "</button>";
       }).join("") + "</div>" +
       '<p class="mudo peq" style="margin-top:-4px">Foto da nota, PDF ou o <b>XML</b> do e-mail da loja (o XML e o PDF trazem os materiais exatos). No celular: Compartilhar → AGE Painel. Você completa o resto.</p>' +
@@ -569,6 +647,7 @@
     function depoisDeQuitar() { if (P.atualizarAbas) P.atualizarAbas(); listar(); }
     function listar() {
       if (filtro.tipo === "precos") { precos($("#cp-res")); return; }
+      if (filtro.tipo === "fornec") { window.AGE_FORN.ver($("#cp-res"), P, filtro.busca, P.S.compras, listar); return; }
       var cs = lista(), t = totais(cs), r = $("#cp-res");
       var lad = function (rot, v, cor, id) { return '<div class="ladrilho"' + (id ? ' id="' + id + '" role="button" style="cursor:pointer;' : ' style="') + 'border-left:4px solid var(--' + cor + ')"><div class="r">' + rot + '</div><div class="v" style="font-size:1.3em">' + dinheiro(v) + "</div></div>"; };
       var h = htmlAlerta(P.S) + '<div class="grade">' +
@@ -579,20 +658,20 @@
       if (!cs.length) { r.innerHTML = h + '<div class="cartao vazio">' + (filtro.tipo === "apagar" ? "✅ Nenhuma nota a pagar: tudo quitado." : "Nada lançado neste período.") + "</div>"; ligarAlerta(r, P, depoisDeQuitar); return; }
       // por loja: tudo somado, com o que falta pagar
       var lojas = agrupar(cs, lojaDe);
-      h += '<div class="cartao"><h3 style="margin:0 0 6px">🏪 Por loja</h3><div class="tabela-caixa"><table><thead><tr><th>Loja</th><th class="num">Notas</th><th class="num">Total</th><th class="num">A pagar</th></tr></thead><tbody>' +
+      h += '<div class="cartao"><h3 style="margin:0 0 6px">🏪 Por loja</h3><div class="tabela-caixa"><table><thead><tr><th>Loja</th><th>Data da compra</th><th class="num">Notas</th><th class="num">Total</th><th class="num">A pagar</th></tr></thead><tbody>' +
         lojas.map(function (x) {
-          return "<tr><td><b>" + esc(x.nome) + '</b></td><td class="num">' + x.n + '</td><td class="num"><b>' + dinheiro(x.total) + '</b></td><td class="num">' +
+          return "<tr><td><b>" + esc(x.nome) + '</b></td><td class="peq">' + esc(textoDatas(x.datas)) + '</td><td class="num">' + x.n + '</td><td class="num"><b>' + dinheiro(x.total) + '</b></td><td class="num">' +
             (x.aPagar ? '<span class="selo critico">' + dinheiro(x.aPagar) + "</span>" + (x.venc ? '<div class="peq mudo">vence ' + esc(A.dataSimples(x.venc)) + "</div>" : "") : "—") + "</td></tr>";
-        }).join("") + '<tr><td><b>Total</b></td><td class="num">' + cs.length + '</td><td class="num"><b>' + dinheiro(t.total) + '</b></td><td class="num"><b>' + (t.aPagar ? dinheiro(t.aPagar) : "—") + "</b></td></tr>" +
+        }).join("") + '<tr><td><b>Total</b></td><td></td><td class="num">' + cs.length + '</td><td class="num"><b>' + dinheiro(t.total) + '</b></td><td class="num"><b>' + (t.aPagar ? dinheiro(t.aPagar) : "—") + "</b></td></tr>" +
         "</tbody></table></div>" +
         '<div class="acoes"><button id="cp-csv">⬇ Planilha (CSV)</button><button id="cp-comp">📤 Compartilhar resumo</button></div></div>';
       var mats = cs.filter(function (x) { return !ehDespesa(x); }), desps = cs.filter(ehDespesa);
       if (mats.length) {
         var dest = {};
-        mats.forEach(function (x) { var k = destinoDe(x), a = porArea(x); dest[k] = dest[k] || { e: 0, p: 0 }; dest[k].e += a.eletrica; dest[k].p += a.pintura; });
-        h += '<div class="cartao"><h3 style="margin:0 0 6px">📍 Material por destino</h3><div class="tabela-caixa"><table><thead><tr><th>Obra / loja / cliente</th><th class="num">⚡ Elétrica</th><th class="num">🖌️ Pintura</th><th class="num">Total</th></tr></thead><tbody>' +
+        mats.forEach(function (x) { var k = destinoDe(x), a = porArea(x); dest[k] = dest[k] || { e: 0, p: 0, datas: [] }; dest[k].e += a.eletrica; dest[k].p += a.pintura; if (dest[k].datas.indexOf(x.comprado_em) < 0) dest[k].datas.push(x.comprado_em); });
+        h += '<div class="cartao"><h3 style="margin:0 0 6px">📍 Material por destino</h3><div class="tabela-caixa"><table><thead><tr><th>Obra / loja / cliente</th><th>Data da compra</th><th class="num">⚡ Elétrica</th><th class="num">🖌️ Pintura</th><th class="num">Total</th></tr></thead><tbody>' +
           Object.keys(dest).sort(function (a, b) { return (dest[b].e + dest[b].p) - (dest[a].e + dest[a].p); }).map(function (k) {
-            return "<tr><td>" + esc(k) + '</td><td class="num">' + dinheiro(dest[k].e) + '</td><td class="num">' + dinheiro(dest[k].p) + '</td><td class="num"><b>' + dinheiro(dest[k].e + dest[k].p) + "</b></td></tr>";
+            return "<tr><td>" + esc(k) + '</td><td class="peq">' + esc(textoDatas(dest[k].datas)) + '</td><td class="num">' + dinheiro(dest[k].e) + '</td><td class="num">' + dinheiro(dest[k].p) + '</td><td class="num"><b>' + dinheiro(dest[k].e + dest[k].p) + "</b></td></tr>";
           }).join("") + "</tbody></table></div></div>";
       }
       if (desps.length) {
@@ -665,7 +744,7 @@
     return "*" + ((A.CFG.EMPRESA || {}).nome || "AGE") + " — Compras e despesas*\n" + (filtro.tipo === "apagar" ? "Contas a pagar\n" : filtro.periodo !== "tudo" ? A.dataSimples(pr.de) + " a " + A.data(fim) + "\n" : "") +
       "\n⚡ Material elétrica: " + dinheiro(t.eletrica) + "\n🖌️ Material pintura: " + dinheiro(t.pintura) + "\n⛽ Despesas avulsas: " + dinheiro(t.despesas) +
       "\n*Total: " + dinheiro(t.total) + "*" + (t.aPagar ? "\n💳 A pagar: " + dinheiro(t.aPagar) : "") + "\n\nPor loja:\n" +
-      lojas.map(function (x) { return "• " + x.nome + ": " + dinheiro(x.total) + (x.aPagar ? " (a pagar " + dinheiro(x.aPagar) + (x.venc ? ", vence " + A.dataSimples(x.venc) : "") + ")" : ""); }).join("\n");
+      lojas.map(function (x) { return "• " + x.nome + " (" + textoDatas(x.datas) + "): " + dinheiro(x.total) + (x.aPagar ? " (a pagar " + dinheiro(x.aPagar) + (x.venc ? ", vence " + A.dataSimples(x.venc) : "") + ")" : ""); }).join("\n");
   }
   function baixarCsv(cs) {
     var cel = function (x) { x = String(x === null || x === undefined ? "" : x); return /[;"\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
