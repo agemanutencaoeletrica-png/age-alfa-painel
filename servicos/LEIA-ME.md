@@ -296,3 +296,6 @@ situação no portal e **valor**; total do mês, o que falta finalizar e o que e
 páginas de **Ordens de serviço** (valores) e **Finalizados** (data de encerramento) e o app atualiza tudo. 💲 corrige um valor à mão.
 - **Nota repetida não entra:** pela **chave de acesso** (44 números da NF-e/NFC-e, conferida pelo dígito verificador) ou pelo
   **número da nota + CNPJ** da loja. Mesma loja, valor e data: o app avisa e só salva se você confirmar (outra compra igual).
+- **Materiais da nota:** o app lê cada material com **quantidade, valor unitário e total** (DANFE, cupom, pré-venda) e confere
+  a soma com o total da nota. Digitando à mão, quantidade × unitário dá o total sozinho.
+- **📊 Comparar preços:** cada material com o preço unitário em cada loja e data, o mais barato marcado e a diferença em %.

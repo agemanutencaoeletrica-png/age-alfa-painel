@@ -102,9 +102,18 @@
       }
     });
     // DANFE: "00000069 IT R SUPERMAC 200 5 LTS 34029090 000 5101 UN 1,0000 52,300000 52,30 ..." (código, descrição, NCM ... unidade, qtd, unitário, total)
+    // a foto traz sujeira nas colunas ("|", "[", "="); a coluna do total às vezes some: total = quantidade × unitário
     ls.forEach(function (x, i) {
-      var md = x.match(/^\W*\d{3,14}\s+([A-Za-zÀ-ú].*?)\s+\d{8}(?!\d).*?\b(UN|UND|PC|PCT|M|MT|KG|CX|RL|LT|L|GL|LATA|BD|PAR)\b\W*(\d+[.,]\d+)\W+(\d+[.,]\d+)\W+(\d{1,3}(?:\.\d{3})*,\d{2})(?!\d)/i);
-      if (md) { r.itens.push({ item: md[1].replace(/\s+/g, " ").slice(0, 120), qtd: A.lerNumero(md[3]), un: md[2].toLowerCase().replace("und", "un"), valor: A.lerNumero(md[5]) }); ls[i] = ""; }
+      var l = x.replace(/[|\[\]“”"=_]/g, " ").replace(/\s+/g, " ").trim();
+      var md = l.match(/^\W*\d{3,14}\s+([A-Za-zÀ-ú].*?)\s+\d{8}(?!\d)(.*)$/);
+      var mu = md && md[2].match(/\b(UN|UND|PC|PCT|M|MT|KG|CX|RL|LT|L|GL|LATA|BD|PAR)\b(.*)$/i);
+      var ns = mu ? (mu[2].match(/\d{1,3}(?:\.\d{3})*,\d{2,6}/g) || []).map(A.lerNumero) : [];
+      if (ns.length < 2 || !(ns[0] > 0) || !(ns[1] > 0)) return;
+      var qtd = ns[0], unit = ns[1], tot = null;
+      for (var k = 2; k < ns.length && tot === null; k++) if (Math.abs(ns[k] - qtd * unit) < 0.05) tot = ns[k];
+      if (tot === null) tot = Math.round(qtd * unit * 100) / 100;
+      r.itens.push({ item: md[1].replace(/\s+/g, " ").trim().slice(0, 120), qtd: qtd, un: mu[1].toLowerCase().replace("und", "un"), unit: unit, valor: tot });
+      ls[i] = "";
     });
     // "002637 1,00 UN ESMALTE CORALIT 3,6L AMARELO 49,90 49,90" (código, quantidade, unidade, descrição, unitário, total)
     ls.forEach(function (x) {
@@ -118,13 +127,19 @@
         r.itens.push({ item: mi[1].replace(/\s+/g, " ").slice(0, 120), qtd: A.lerNumero(mi[2]), un: mi[3].toLowerCase().replace("und", "un").replace("mt", "m"), valor: A.lerNumero(mi[4]) });
     });
     // forma de pagamento: Pix, dinheiro, cartão (parcelas) ou boleto/a prazo (fica "a pagar")
-    var sa = semAcento(t), mp = sa.match(/cart[a-z]*\s+de\s+credito\s*(\d{1,2})\s*x|credito\s*(\d{1,2})\s*x/);
-    if (/boleto|duplicata|a prazo|faturad[ao] para|vencimento/.test(sa) && !/pix/.test(sa)) { r.forma = "boleto"; r.pago = false; }
-    else if (mp || /cart[a-z]*\s+(de\s+)?(credito|debito)|\(pos\)|cartao/.test(sa)) { r.forma = "cartao"; if (mp) r.parcelas = Number(mp[1] || mp[2]); }
+    // (o quadro "Duplicatas / Vencimento" existe em toda DANFE: não quer dizer boleto)
+    var sa = semAcento(t), mp = sa.match(/cart[a-z]*\s+de\s+credito[\s,.:-]*(\d{1,2})\s*x|credito[\s,.:-]*(\d{1,2})\s*x/);
+    if (mp || /cart[a-z]*\s+(de\s+)?(credito|debito)|\(pos\)|cartao/.test(sa)) { r.forma = "cartao"; if (mp) r.parcelas = Number(mp[1] || mp[2]); }
+    else if (/boleto|a prazo|faturad[ao] para/.test(sa) && !/\bpix\b/.test(sa)) { r.forma = "boleto"; r.pago = false; }
     else if (/\bpix\b/.test(sa)) r.forma = "pix";
     else if (/dinheiro|especie/.test(sa)) r.forma = "dinheiro";
     // despesa avulsa (posto, oficina, lanchonete...): categoria sugerida
     r.categoria = categoriaPeloTexto(sa);
+    // unitário que faltou e conferência: se a soma dos materiais bate com o total, o valor está certo
+    r.itens.forEach(function (x) { if (!x.unit && x.qtd > 0 && x.valor) x.unit = Math.round(x.valor / x.qtd * 100) / 100; });
+    var somaIt = r.itens.reduce(function (s2, x) { return s2 + (Number(x.valor) || 0); }, 0);
+    if (r.valorIncerto && somaIt && Math.abs(somaIt - r.valor) < 0.05) delete r.valorIncerto;
+    if (!r.valor && somaIt) { r.valor = Math.round(somaIt * 100) / 100; r.valorIncerto = true; }
     // chave de acesso da NF-e/NFC-e (44 números, pode vir quebrada em grupos ou linhas): só vale se o dígito verificador conferir
     var junto = t.replace(/(\d)[ \t]*\n[ \t]*(\d)/g, "$1 $2"), mc2, reC = /\d[\d .]{42,80}\d/g;
     while (!r.chave && (mc2 = reC.exec(junto))) {
@@ -293,14 +308,22 @@
           '<input data-c="item" placeholder="Material" value="' + esc(x.item || "") + '" style="flex:3 1 160px">' +
           '<input data-c="qtd" inputmode="decimal" placeholder="Qtd" value="' + esc(x.qtd ? A.numero(x.qtd) : "") + '" style="flex:0 1 60px">' +
           '<select data-c="un" style="flex:0 1 70px">' + UN.map(function (u) { return '<option' + ((x.un || "un") === u ? " selected" : "") + ">" + u + "</option>"; }).join("") + "</select>" +
-          '<input data-c="valor" inputmode="decimal" placeholder="R$" value="' + esc(num2(x.valor)) + '" style="flex:0 1 80px">' +
+          '<input data-c="unit" inputmode="decimal" placeholder="Unit. R$" title="Valor unitário" value="' + esc(num2(x.unit)) + '" style="flex:0 1 80px">' +
+          '<input data-c="valor" inputmode="decimal" placeholder="Total R$" title="Valor total do item" value="' + esc(num2(x.valor)) + '" style="flex:0 1 85px">' +
           (area === "dividir" ? '<select data-c="area" style="flex:0 1 110px"><option value="eletrica"' + (x.area !== "pintura" ? " selected" : "") + '>⚡ Elétrica</option><option value="pintura"' + (x.area === "pintura" ? " selected" : "") + ">🖌️ Pintura</option></select>" : "") +
           '<button class="peq" type="button" data-rm="' + i + '">✕</button></div>';
       }).join("");
       $$("[data-li]", el).forEach(function (l) {
         var x = it[Number(l.dataset.li)];
         $$("[data-c]", l).forEach(function (inp) {
-          inp.oninput = inp.onchange = function () { var k = inp.dataset.c; x[k] = k === "qtd" || k === "valor" ? A.lerNumero(inp.value) : inp.value; somar(); };
+          inp.oninput = inp.onchange = function () {
+            var k = inp.dataset.c;
+            x[k] = k === "qtd" || k === "valor" || k === "unit" ? A.lerNumero(inp.value) : inp.value;
+            // quantidade × unitário = total (e o unitário sai do total, se for ele que você digitou)
+            if ((k === "qtd" || k === "unit") && x.qtd > 0 && x.unit > 0) { x.valor = Math.round(x.qtd * x.unit * 100) / 100; $('[data-c="valor"]', l).value = num2(x.valor); }
+            else if (k === "valor" && x.qtd > 0 && x.valor > 0) { x.unit = Math.round(x.valor / x.qtd * 100) / 100; $('[data-c="unit"]', l).value = num2(x.unit); }
+            somar();
+          };
         });
       });
       $$("[data-rm]", el).forEach(function (b) { b.onclick = function () { it.splice(Number(b.dataset.rm), 1); desenharItens(); }; });
@@ -320,7 +343,7 @@
     };
     $("#cn-salvar", el).onclick = function () {
       var b = this, itens = tipo === "despesa" ? [] : it.filter(function (x) { return String(x.item || "").trim(); }).map(function (x) {
-        var y = { item: String(x.item).trim(), qtd: Number(x.qtd) || null, un: x.un || "un", valor: Number(x.valor) || null };
+        var y = { item: String(x.item).trim(), qtd: Number(x.qtd) || null, un: x.un || "un", unit: Number(x.unit) || (x.qtd > 0 && x.valor ? Math.round(x.valor / x.qtd * 100) / 100 : null), valor: Number(x.valor) || null };
         if (area === "dividir") y.area = x.area === "pintura" ? "pintura" : "eletrica";
         return y;
       });
@@ -435,7 +458,7 @@
     var desp = filtro.tipo === "despesa";
     c.innerHTML = '<div class="cab-secao"><h2>🧾 Compras e despesas</h2><span><button class="prim" id="cp-nota">📷 Nota / cupom</button> <button id="cp-mao">➕ ' + (desp ? "Despesa avulsa" : "Lançar à mão") + "</button></span></div>" +
       '<input type="file" id="cp-arq" accept="image/*,application/pdf" multiple class="oculto">' +
-      '<div class="filtros" id="cp-tipos">' + [["", "Tudo"], ["material", "🧱 Material de obra"], ["despesa", "⛽ Despesas avulsas"], ["apagar", "💳 A pagar"]].map(function (x) {
+      '<div class="filtros" id="cp-tipos">' + [["", "Tudo"], ["material", "🧱 Material de obra"], ["despesa", "⛽ Despesas avulsas"], ["apagar", "💳 A pagar"], ["precos", "📊 Comparar preços"]].map(function (x) {
         return '<button class="' + (filtro.tipo === x[0] ? "prim" : "") + '" data-ctipo="' + x[0] + '">' + x[1] + "</button>";
       }).join("") + "</div>" +
       '<p class="mudo peq" style="margin-top:-4px">Tire a foto da nota (ou no celular: Compartilhar → AGE Painel). O app lê valor, data, loja, itens e pagamento; você completa o resto.</p>' +
@@ -455,6 +478,7 @@
     $("#cp-mao").onclick = function () { formulario({ tipo: desp ? "despesa" : "" }); };
     listar();
     function listar() {
+      if (filtro.tipo === "precos") { precos($("#cp-res")); return; }
       var cs = lista(), t = totais(cs), r = $("#cp-res");
       var lad = function (rot, v, cor, id) { return '<div class="ladrilho"' + (id ? ' id="' + id + '" role="button" style="cursor:pointer;' : ' style="') + 'border-left:4px solid var(--' + cor + ')"><div class="r">' + rot + '</div><div class="v" style="font-size:1.3em">' + dinheiro(v) + "</div></div>"; };
       var h = '<div class="grade">' +
@@ -494,7 +518,7 @@
             (d2 ? esc(CATS[x.categoria] || CATS.outros) + (veicDe(x) ? '<div class="peq mudo">🚗 ' + esc(veicDe(x)) + "</div>" : "") :
               x.area === "dividir" ? '<span class="peq">⚡ ' + dinheiro(a.eletrica) + "<br>🖌️ " + dinheiro(a.pintura) + "</span>" : A.seloCategoria(x.area === "pintura" ? "pintura" : "eletrica")) +
             "</td><td>" + esc(destinoDe(x)) + (x.tipo_servico ? '<div class="peq mudo">' + esc(x.tipo_servico) + "</div>" : "") + '</td><td class="peq">' +
-            esc((x.itens || []).map(function (y) { return (y.qtd ? A.numero(y.qtd) + " " + (y.un || "") + " " : "") + y.item; }).join("; ").slice(0, 140)) +
+            esc((x.itens || []).map(function (y) { return (y.qtd ? A.numero(y.qtd) + " " + (y.un || "") + " " : "") + y.item + (y.unit ? " (" + dinheiro(y.unit) + ")" : ""); }).join("; ").slice(0, 180)) +
             (x.descricao ? '<div class="mudo">' + esc(x.descricao) + "</div>" : "") + "</td><td>" + esc(FORMAS[x.forma_pagamento] || "") +
             (x.pago === false ? '<div><span class="selo critico">a pagar' + (x.vencimento ? " · " + esc(A.dataSimples(x.vencimento)) : "") + '</span> <button class="peq" data-cp-pago="' + x.id + '">✔ Pago</button></div>' : "") +
             '</td><td class="num"><b>' + dinheiro(x.valor) + "</b></td><td>" +
@@ -520,6 +544,35 @@
         };
       });
     }
+  }
+  // 📊 comparar preços: cada material (pelo nome) com o preço unitário em cada loja e data; o mais barato em verde
+  function chaveMaterial(n) { return semAcento(n).replace(/[^a-z0-9,]+/g, " ").replace(/\s+/g, " ").trim(); }
+  function precos(r) {
+    var b = semAcento(filtro.busca), g = {};
+    P.S.compras.forEach(function (c) {
+      if (ehDespesa(c)) return;
+      (c.itens || []).forEach(function (x) {
+        var u = Number(x.unit) || (x.qtd > 0 && x.valor ? x.valor / x.qtd : 0);
+        if (!x.item || !(u > 0)) return;
+        var k = chaveMaterial(x.item);
+        if (b && k.indexOf(b) < 0 && semAcento(c.fornecedor).indexOf(b) < 0) return;
+        (g[k] = g[k] || { nome: x.item, linhas: [] }).linhas.push({ loja: lojaDe(c), data: c.comprado_em, unit: u, qtd: x.qtd, un: x.un || "un", compra: c });
+      });
+    });
+    var ks = Object.keys(g).sort(function (a, b2) { return g[b2].linhas.length - g[a].linhas.length || a.localeCompare(b2); });
+    if (!ks.length) { r.innerHTML = '<div class="cartao vazio">Nenhum material com preço ainda. Lance as notas: os materiais, a quantidade e o valor unitário entram sozinhos.</div>'; return; }
+    r.innerHTML = '<p class="mudo peq">Preço unitário de cada material em cada compra (todos os períodos). Use a busca para achar um material ou uma loja.</p>' +
+      ks.map(function (k) {
+        var ls = g[k].linhas.sort(function (a, b2) { return a.unit - b2.unit || b2.data.localeCompare(a.data); });
+        var min = ls[0].unit, max = ls[ls.length - 1].unit;
+        return '<div class="cartao"><div class="linha"><h3 style="margin:0">' + esc(g[k].nome) + '</h3><span class="dir peq mudo">' + ls.length + " compra" + (ls.length > 1 ? "s" : "") +
+          (max > min ? " · diferença de <b>" + Math.round((max - min) / min * 100) + "%</b>" : "") + "</span></div>" +
+          '<div class="tabela-caixa"><table><thead><tr><th>Loja</th><th>Data</th><th class="num">Qtd</th><th class="num">Unitário</th></tr></thead><tbody>' +
+          ls.map(function (x, i) {
+            return "<tr><td>" + (i === 0 && ls.length > 1 ? '<span class="selo bom">mais barato</span> ' : "") + esc(x.loja) + "</td><td>" + esc(A.dataSimples(x.data)) + '</td><td class="num">' +
+              (x.qtd ? esc(A.numero(x.qtd) + " " + x.un) : "") + '</td><td class="num"><b>' + dinheiro(x.unit) + "</b></td></tr>";
+          }).join("") + "</tbody></table></div></div>";
+      }).join("");
   }
   function textoResumo(cs, t, lojas) {
     var pr = periodo(), fim = new Date(new Date(pr.ate + "T12:00:00").getTime() - 864e5);
