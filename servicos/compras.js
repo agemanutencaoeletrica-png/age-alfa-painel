@@ -65,9 +65,9 @@
         datas.push({ iso: ano + "-" + md2[2] + "-" + md2[1], emissao: /emiss/i.test(t.slice(Math.max(0, md2.index - 40), md2.index)) });
     }
     var dEm = datas.filter(function (x) { return x.emissao; })[0] || datas[0];
-    if (dEm) r.data = dEm.iso;
+    if (dEm) r.data = dEm.iso; else r.semData = true;
     // loja: a linha com o nome antes do CNPJ (ou a primeira linha com letras)
-    var iC = -1;
+    var iC = -1, proprio = String((A.CFG.EMPRESA || {}).documento || "").replace(/\D/g, "");
     for (var i = 0; i < ls.length; i++) if (/cnpj/i.test(ls[i])) { iC = i; break; }
     // tira da linha o que não é nome (título da nota, CEP, telefone, endereço) e o pedaço solto no fim ("LIDER TINTAS L")
     var limparNome = function (x) {
@@ -76,7 +76,8 @@
         .replace(/\s+\S$/, "").replace(/\s+/g, " ").trim();
     };
     var cand = ls.slice(0, iC > 0 ? iC + 1 : Math.min(10, ls.length)).map(limparNome).filter(function (x) {
-      return /[A-Za-zÀ-ú]{3,}\s+[A-Za-zÀ-ú]{2,}/.test(x) && !/age solu|destinat|remetente|protocolo|emitente|identifica|natureza/i.test(x);
+      return /[A-Za-zÀ-ú]{3,}\s+[A-Za-zÀ-ú]{2,}/.test(x) && !/age solu|destinat|remetente|protocolo|emitente|identifica|natureza|^\W*endere[cç]o|manuten[a-zà-ú]*\s+e?\s*eletric|eletricas e civil/i.test(x) &&
+        !(proprio && x.replace(/\D/g, "").indexOf(proprio) >= 0);   // a linha da AGE (destinatário) não é a loja
     });
     // de preferência a linha com cara de razão social (LTDA, EIRELI...; depois COMÉRCIO, TINTAS, MATERIAIS...)
     var forte = /\b(ltda|eireli|epp)\b|\bs\.a\.|\bs\/a\b|\bme\s*$/i;
@@ -144,7 +145,7 @@
     if (mp || /cart[a-z]*\s+(de\s+)?(credito|debito)|\(pos\)|cartao/.test(sa)) { r.forma = "cartao"; if (mp) r.parcelas = Number(mp[1] || mp[2]); }
     else if (/boleto|a prazo|faturad[ao] para/.test(sa) && !/\bpix\b/.test(sa)) { r.forma = "boleto"; r.pago = false; }
     else if (/\bpix\b/.test(sa)) r.forma = "pix";
-    else if (/dinheiro|especie/.test(sa)) r.forma = "dinheiro";
+    else if (/dinheiro|\bem especie\b|especie\s*[:-]?\s*r?\$?\s*\d/.test(sa.replace(/especie\s+volumes?/g, ""))) r.forma = "dinheiro";   // "ESPÉCIE VOLUMES" da DANFE é do transporte
     // despesa avulsa (posto, oficina, lanchonete...): categoria sugerida
     r.categoria = categoriaPeloTexto(sa);
     // nenhum formato reconhecido: qualquer linha com unidade (UN, PC, GL...) seguida de pelo menos 2 valores é um material;
@@ -186,13 +187,22 @@
     if (!r.valor && somaIt) { r.valor = Math.round(somaIt * 100) / 100; r.valorIncerto = true; }
     // total menor que os materiais não existe (a foto pegou outro número, ex.: o ICMS): fica com o valor que mais aparece
     // entre a soma dos materiais e 50% acima (impostos/frete), de preferência o da fatura; e pede para conferir
-    if (somaIt && r.valor && r.valor < somaIt - 0.05) {
-      var cont = {}, mx = somaIt * 1.5 + 0.05;
-      valoresT(t).forEach(function (v) { if (v >= somaIt - 0.05 && v <= mx) cont[v] = (cont[v] || 0) + 1; });
-      var mf2 = t.match(/(?:fatura|parcela|vencimento|duplicata)[^\n]*?valor[^\d\n]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d\/])/i);
-      if (mf2 && A.lerNumero(mf2[1]) >= somaIt - 0.05 && A.lerNumero(mf2[1]) <= mx) cont[A.lerNumero(mf2[1])] = (cont[A.lerNumero(mf2[1])] || 0) + 10;
+    // DANFE: o "VALOR TOTAL DOS PRODUTOS" também é piso (o total pode ter desconto, mas não é 1,70 numa nota de 52,30)
+    var vProd = 0;
+    ls.forEach(function (x, i) {
+      if (vProd || !/total\s*dos\s*produtos/i.test(x)) return;
+      var v1 = pos(valoresT(x.slice(x.search(/total\s*dos\s*produtos/i))));
+      if (!v1.length && ls[i + 1]) v1 = pos(valoresT(ls[i + 1]));
+      if (v1.length) vProd = v1[v1.length - 1];
+    });
+    var piso = Math.max(somaIt, vProd * 0.9);
+    if (piso && r.valor && r.valor < piso - 0.05) {
+      var base = Math.max(somaIt, vProd), cont = {}, mx = base * 1.5 + 0.05;
+      valoresT(t).forEach(function (v) { if (v >= piso - 0.05 && v <= mx) cont[v] = (cont[v] || 0) + 1; });
+      var reF = /(?:fatura|parcela|vencimento|duplicata)[^\n]*?valor[^\d\n]{0,12}(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d\/])/gi, mf2;
+      while ((mf2 = reF.exec(t))) { var vf = A.lerNumero(mf2[1]); if (vf >= piso - 0.05 && vf <= mx) cont[vf] = (cont[vf] || 0) + 10; }
       var melhorV = Object.keys(cont).map(Number).sort(function (a2, b2) { return cont[b2] - cont[a2] || a2 - b2; })[0];
-      r.valor = melhorV || Math.round(somaIt * 100) / 100; r.valorIncerto = true;
+      r.valor = melhorV || Math.round(base * 100) / 100; r.valorIncerto = true;
     }
     // chave de acesso da NF-e/NFC-e (44 números, pode vir quebrada em grupos ou linhas): só vale se o dígito verificador conferir
     var junto = t.replace(/(\d)[ \t]*\n[ \t]*(\d)/g, "$1 $2"), mc2, reC = /\d[\d .]{42,80}\d/g;
@@ -389,6 +399,7 @@
         var rp0 = !c0 && repetida({ chave: d.chave, numero_nota: d.numero, cnpj: d.cnpj, fornecedor: d.fornecedor, comprado_em: d.data, valor: d.valor }, null);
         return rp0 ? '<div class="aviso erro" id="cn-rep0">' + textoRepetida(rp0) + "</div>" : "";
       })() +
+      (!c0 && op.imagem && !op.erro && d.semData ? '<div class="aviso">⚠️ Não achei a <b>data da compra</b> na foto: confira a data antes de salvar.</div>' : "") +
       (op.falta ? '<div class="peq mudo">Depois desta: mais ' + op.falta + " nota" + (op.falta > 1 ? "s" : "") + ".</div>" : "") +
       (op.bruto ? '<details class="peq" style="margin:4px 0"><summary>🔍 ver o texto que o app leu da foto</summary><pre style="white-space:pre-wrap;max-height:220px;overflow:auto;font-size:11px">' + esc(String(op.bruto).slice(0, 6000)) + "</pre></details>" : "") +
       '<div class="filtros" id="cn-tipos"><button type="button" data-tipo="material">🧱 Material de obra</button><button type="button" data-tipo="despesa">⛽ Despesa avulsa</button></div>' +
