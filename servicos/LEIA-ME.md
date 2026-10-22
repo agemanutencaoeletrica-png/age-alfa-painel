@@ -278,3 +278,19 @@ Antes de finalizar no portal, o serviço avisa se falta **registro de chegada** 
 3. Pagamento em **dinheiro**: parte **💵 Dinheiro (espécie)** → **Novo pagamento em dinheiro**.
 4. Relatório: por período e funcionário, separado **por semana** (seg a dom) com total de cada um, Pix e dinheiro;
    ⬇ planilha (CSV) e 📤 compartilhar. Precisa rodar o **supabase.sql** de novo (cria a tabela de pagamentos).
+
+## 🧾 Compras de material (notas e cupons)
+Aba **🧾 Compras**: **📷 Nota / cupom** (foto ou PDF; no celular, Compartilhar → AGE Painel → 🧾) ou **➕ Lançar à mão**.
+O app lê o valor total, a data, a loja e os itens (cupom NFC-e, DANFE, pré-venda; foto deitada também); quando não acha o
+"TOTAL" com clareza, avisa para conferir. Você completa: **área** (⚡ elétrica, 🖌️ pintura ou ➗ as duas, dividindo pelos
+materiais), **para onde foi** (obra/loja/chamado ou estoque), **tipo de serviço** e os materiais. Os totais de elétrica e pintura,
+o total geral e o resumo **por destino** são somados na hora; ⬇ planilha e 📤 compartilhar. A loja é lembrada pelo CNPJ.
+Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
+- Partes da aba Compras: **Tudo · 🧱 Material de obra · ⛽ Despesas avulsas** (combustível, manutenção de veículo, lanche,
+  pedágio, ferramentas; com o veículo) **· 💳 A pagar** (boleto/a prazo, com vencimento e botão ✔ Pago).
+  Resumo **por loja**: tudo somado, com o que falta pagar em cada uma.
+
+## 📊 Fechamento mensal dos chamados (Supermercados BH)
+Aba **✅ Executados → 📊 Fechamento mensal**: cada chamado concluído no mês com data, chamado, loja, serviço realizado, OS,
+situação no portal e **valor**; total do mês, o que falta finalizar e o que está sem valor. **📋 Colar do portal**: cole as
+páginas de **Ordens de serviço** (valores) e **Finalizados** (data de encerramento) e o app atualiza tudo. 💲 corrige um valor à mão.

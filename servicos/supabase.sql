@@ -293,6 +293,33 @@ alter table public.funcionarios add column if not exists pix text;   -- chave Pi
 create unique index if not exists pagamentos_trans_idx on public.pagamentos (id_transacao) where id_transacao is not null;
 create index if not exists pagamentos_func_idx on public.pagamentos (funcionario_id, pago_em);
 
+-- Compras de material (notas e cupons): área elétrica, pintura ou dividida entre as duas (pelos itens)
+create table if not exists public.compras (
+  id            uuid primary key default gen_random_uuid(),
+  comprado_em   date not null,
+  valor         numeric(12,2) not null check (valor > 0),
+  fornecedor    text,                         -- onde comprou
+  area          text not null default 'eletrica' check (area in ('eletrica', 'pintura', 'dividir', 'geral')),
+  obra_id       uuid references public.obras (id) on delete set null,   -- para onde foi o material
+  destino       text,                         -- destino escrito (quando não é uma obra do app)
+  tipo_servico  text,
+  itens         jsonb not null default '[]'::jsonb,   -- [{item, qtd, un, valor, area}]
+  descricao     text,
+  nota          text,                         -- foto da nota (pasta admin/ das fotos)
+  criado_em     timestamptz not null default now()
+);
+create index if not exists compras_data_idx on public.compras (comprado_em);
+alter table public.compras add column if not exists cnpj text;   -- CNPJ da loja na nota: o app lembra o nome da loja
+-- despesas avulsas (combustível, oficina, lanche...) e contas a pagar
+alter table public.compras add column if not exists tipo text not null default 'material';   -- material ou despesa
+alter table public.compras add column if not exists categoria text;                           -- combustivel, veiculo, alimentacao...
+alter table public.compras add column if not exists veiculo_id uuid references public.veiculos (id) on delete set null;
+alter table public.compras add column if not exists forma_pagamento text;
+alter table public.compras add column if not exists pago boolean not null default true;
+alter table public.compras add column if not exists vencimento date;
+alter table public.compras drop constraint if exists compras_area_check;
+alter table public.compras add constraint compras_area_check check (area in ('eletrica', 'pintura', 'dividir', 'geral'));
+
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
   id             uuid primary key default gen_random_uuid(),
@@ -357,7 +384,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

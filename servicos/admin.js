@@ -11,7 +11,7 @@
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -358,12 +358,14 @@
         q(sb.from("documentos").select("*").order("nome"))
       ]).catch(function () { return null; }),
       q(sb.from("veiculos").select("*").order("placa")).catch(function () { return null; }),
-      q(sb.from("pagamentos").select("*").order("pago_em", { ascending: false })).catch(function (e) { S.erroPag = A.msgErro(e); return null; })
+      q(sb.from("pagamentos").select("*").order("pago_em", { ascending: false })).catch(function (e) { S.erroPag = A.msgErro(e); return null; }),
+      q(sb.from("compras").select("*").order("comprado_em", { ascending: false })).catch(function (e) { S.erroCompras = A.msgErro(e); return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
       S.semVeic = !r[8]; S.veic = r[8] || [];
       S.semPag = !r[9]; S.pag = r[9] || [];
+      S.semCompras = !r[10]; S.compras = r[10] || [];
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
     });
   }
@@ -402,7 +404,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -1015,8 +1017,10 @@
       var prio = (linha.match(/\b(Normal|Alta|Urgente|Baixa|Emergencial|Cr[ií]tica)\b/i) || [])[1] || "";
       var sit = (linha.match(/\b(Pendente|Or[cç]ada|Aprovada|Finalizada|Executada|Conclu[ií]da|Cancelada|Em atendimento|Em execu[cç][aã]o)\b/i) || [])[1] || "";
       // aba Finalizados: tem a data de encerramento depois do centro
-      if (!sit && /\d{2}\/\d{2}\/\d{4}/.test(linha.slice(mc.index + mc[0].length))) sit = "Finalizado";
-      return { numero: num, data: md[1], centro: mc[1] + mc[2], prioridade: prio, situacao: sit };
+      // aba Finalizados: a data de encerramento vem depois do centro (vira a data do fechamento do mês)
+      var mfim = linha.slice(mc.index + mc[0].length).match(/(\d{2}\/\d{2}\/\d{4})/), item = { numero: num, data: md[1], centro: mc[1] + mc[2], prioridade: prio, situacao: sit };
+      if (!sit && mfim) { item.situacao = "Finalizado"; item.portal = { status: "Finalizado", finalizado_em: isoDeBR(mfim[1]), outros: [], lido_em: new Date().toISOString() }; }
+      return item;
     }).filter(Boolean);
   }
   // ---- caixa de chamados: junta várias colagens (páginas da lista, telas de detalhes), organiza e só então lança ----
@@ -1091,7 +1095,7 @@
     var j = A.janela('<p class="peq mudo" style="margin-top:0">Cole aqui quantas vezes quiser: <b>cada página</b> de <b>Meus chamados</b> ou de <b>Ordens de serviço</b> (selecione a tabela e Ctrl+C) ' +
       "e a tela <b>Detalhes</b> de um chamado (completa a descrição). Tudo vai para a caixa abaixo, sem repetir. Depois confira e lance.</p>" +
       '<textarea id="ch-txt" rows="3" placeholder="Cole aqui (Ctrl+V)"></textarea><div id="ch-msg" class="peq" style="margin-top:4px"></div><div id="cx-rev"></div><div id="cx"></div>',
-      { titulo: "📋 Chamados do BH", larga: true, aoFechar: function () { if (location.hash.slice(1) === "servicos") rota(); } });
+      { titulo: "📋 Chamados do BH", larga: true, aoFechar: function () { if (/^(servicos|executados)$/.test(location.hash.slice(1))) rota(); } });
     var el = j.el;
     $("#ch-txt", el).oninput = function () {
       var t = this.value, c, itens = [];
@@ -1258,7 +1262,7 @@
       return q(sb.from("servicos").insert(obras.map(function (o) {
         var c = sel.filter(function (x) { return x.numero === o.chamado; })[0];
         var fin = c.portal && /finaliz/i.test((c.portal.status || "") + " " + (c.portal.osSit || "")) || /finaliz/i.test(c.situacao || "");
-        return { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao, status: fin ? "concluido" : "aberto", concluido_em: fin ? (isoDeBR(c.data) || A.isoLocal(new Date())) + "T12:00:00" : null,
+        return { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao, status: fin ? "concluido" : "aberto", concluido_em: fin ? ((c.portal && c.portal.finalizado_em) || isoDeBR(c.data) || A.isoLocal(new Date())) + "T12:00:00" : null,
           descricao: "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "") + (c.prioridade ? " · prioridade " + c.prioridade : "") + "\n" +
             (c.desc || "Ver a descrição do problema no portal do cliente.") };
       })).select());
@@ -1794,12 +1798,21 @@
   }
   function verExecutados(c) {
     var F = filtroExec;
-    c.innerHTML = '<div class="cab-secao"><h2>✅ Serviços executados</h2></div>' +
+    // duas visões: por dia (com fotos) e o fechamento mensal dos chamados (valores do portal)
+    var trocaModo = '<div class="filtros"><button class="' + (F.modo !== "fech" ? "prim" : "") + '" data-exmodo="dia">📅 Por dia</button><button class="' + (F.modo === "fech" ? "prim" : "") + '" data-exmodo="fech">📊 Fechamento mensal (chamados)</button></div>';
+    if (F.modo === "fech") {
+      c.innerHTML = trocaModo + '<div id="fx-fech"></div>';
+      window.AGE_FECH.ver($("#fx-fech"), P);
+      $$("[data-exmodo]", c).forEach(function (b) { b.onclick = function () { F.modo = b.dataset.exmodo; verExecutados(c); }; });
+      return;
+    }
+    c.innerHTML = trocaModo + '<div class="cab-secao"><h2>✅ Serviços executados</h2></div>' +
       '<div class="filtros"><select id="fx-dias" aria-label="Período"><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="365">Último ano</option><option value="">Tudo</option></select>' +
       '<select id="fx-cat" aria-label="Área"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
       '<select id="fx-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
       '<select id="fx-portal" aria-label="Portal"><option value="">Finalizados ou não no portal</option><option value="fin">✅ Finalizados no portal</option><option value="falta">⏳ Falta finalizar no portal</option></select>' +
       '<input id="fx-busca" type="search" placeholder="Buscar loja, cliente ou nº do chamado"></div><div id="fx-res"></div>';
+    $$("[data-exmodo]", c).forEach(function (b) { b.onclick = function () { F.modo = b.dataset.exmodo; verExecutados(c); }; });
     $("#fx-dias").value = F.dias; $("#fx-cat").value = F.cat; $("#fx-func").value = F.func; $("#fx-busca").value = F.busca; $("#fx-portal").value = F.portal || "";
     ["#fx-dias", "#fx-cat", "#fx-func", "#fx-portal"].forEach(function (id) { $(id).onchange = function () { ler(); listar(); }; });
     $("#fx-busca").oninput = function () { ler(); listar(); };
@@ -1958,8 +1971,10 @@
         (rc.arquivos.length ? '<p class="peq">📷 ' + rc.arquivos.length + " foto" + (rc.arquivos.length > 1 ? "s" : "") + " recebida" + (rc.arquivos.length > 1 ? "s" : "") +
           ". Comprovante Pix: toque em 💰. Foto de serviço: compartilhe pelo app do funcionário (<b>AGE Ponto</b>).</p>" : "") +
         '<div class="acoes">' + (rc.arquivos.length || /pix|comprovante|transfer/i.test(rc.texto || "") ? '<button class="prim" id="rc-pix">💰 Registrar pagamento Pix</button>' : "") +
+        (rc.arquivos.length || /nota|cupom|nfc|cnpj|total/i.test(rc.texto || "") ? '<button id="rc-nota">🧾 Registrar nota de compra</button>' : "") +
         (rc.texto ? '<button' + (rc.arquivos.length ? "" : ' class="prim"') + ' id="rc-cx">📋 Colocar na caixa de chamados</button><button id="rc-novo">➕ Novo serviço com este texto</button>' : "") +
         '<button id="rc-copiar">Copiar o texto</button></div>', { titulo: "📥 Recebido pelo compartilhamento" });
+      if ($("#rc-nota", j.el)) $("#rc-nota", j.el).onclick = function () { j.fechar(); location.hash = "#compras"; window.AGE_COMPRAS.receber(rc, P); };
       if ($("#rc-pix", j.el)) $("#rc-pix", j.el).onclick = function () { j.fechar(); location.hash = "#pagamentos"; window.AGE_PAG.receber(rc, P); };
       if ($("#rc-cx", j.el)) $("#rc-cx", j.el).onclick = function () {
         j.fechar(); location.hash = "#servicos"; importarChamado();
@@ -3154,7 +3169,7 @@
     get sb() { return sb; }, S: S, q: q, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
     val: val, nulo: nulo, htmlFoto: htmlFoto, hidratarFotos: hidratarFotos, infoFoto: infoFoto, registrarInfoPonto: registrarInfoPonto,
     opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,
-    rota: rota, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES
+    rota: rota, resumoServ: resumoServ, importarChamado: importarChamado, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES
   };
 
   iniciar();
