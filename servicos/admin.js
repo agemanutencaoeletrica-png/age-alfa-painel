@@ -11,7 +11,7 @@
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["faturamento", "💼 Notas e resultado"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -361,7 +361,8 @@
       q(sb.from("pagamentos").select("*").order("pago_em", { ascending: false })).catch(function (e) { S.erroPag = A.msgErro(e); return null; }),
       q(sb.from("compras").select("*").order("comprado_em", { ascending: false })).catch(function (e) { S.erroCompras = A.msgErro(e); return null; }),
       q(sb.from("fornecedores").select("*").order("nome")).catch(function (e) { S.erroForn = A.msgErro(e); return null; }),
-      q(sb.from("receitas").select("*").order("emitida_em", { ascending: false })).catch(function (e) { S.erroReceitas = A.msgErro(e); return null; })
+      q(sb.from("receitas").select("*").order("emitida_em", { ascending: false })).catch(function (e) { S.erroReceitas = A.msgErro(e); return null; }),
+      q(sb.from("prospects").select("*").order("criado_em", { ascending: false })).catch(function (e) { S.erroProsp = A.msgErro(e); return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -370,6 +371,7 @@
       S.semCompras = !r[10]; S.compras = r[10] || [];
       S.semForn = !r[11]; S.forn = r[11] || [];
       S.semReceitas = !r[12]; S.receitas = r[12] || [];
+      S.semProsp = !r[13]; S.prosp = r[13] || [];
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
     });
   }
@@ -397,11 +399,13 @@
     var novos = S.rel.filter(function (r) { return !r.lido; }).length;
     var aPagar = window.AGE_COMPRAS && S.compras ? window.AGE_COMPRAS.naoQuitadas(S).length : 0;
     var aReceber = window.AGE_FAT ? window.AGE_FAT.aReceber(S).length : 0;
+    var retornos = window.AGE_PROSP && S.prosp ? window.AGE_PROSP.retornarHoje(S).length : 0;
     $("#abas").innerHTML = ABAS.map(function (a) {
       return '<a href="#' + a[0] + '" class="' + (a[0] === atual ? "ativa" : "") + '">' + a[1] +
         (a[0] === "relatorios" && novos ? '<span class="cont">' + novos + "</span>" : "") +
         (a[0] === "compras" && aPagar ? '<span class="cont" title="Notas não quitadas">' + aPagar + "</span>" : "") +
-        (a[0] === "faturamento" && aReceber ? '<span class="cont" style="background:var(--atencao)" title="Notas de serviço a receber">' + aReceber + "</span>" : "") + "</a>";
+        (a[0] === "faturamento" && aReceber ? '<span class="cont" style="background:var(--atencao)" title="Notas de serviço a receber">' + aReceber + "</span>" : "") +
+        (a[0] === "prospeccao" && retornos ? '<span class="cont" style="background:var(--atencao)" title="Empresas para retornar hoje">' + retornos + "</span>" : "") + "</a>";
     }).join("");
     // celular: a barra desliza de lado; a aba aberta fica sempre à vista
     var at = $("#abas a.ativa");
@@ -415,7 +419,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -463,6 +467,7 @@
         ' hoje: ' + daEquipe.slice(0, 5).map(function (s) { var o = porId(S.obras, s.obra_id); return esc((o ? o.cliente : "") + " (" + nomeFunc(s.funcionario_id) + ")"); }).join(", ") +
         '. Veja em <a href="#servicos">Serviços</a>.</div>';
       if (window.AGE_PREF) h += window.AGE_PREF.avisosHoje(S);
+      if (window.AGE_PROSP && S.prosp) h += window.AGE_PROSP.avisoHoje(S);
       h += '<div class="cab-secao"><h2>Equipe hoje</h2><span class="mudo peq">' + A.data(new Date()) + "</span></div>";
       var equipe = S.func.filter(function (f) { return f.ativo || pts.some(function (p) { return p.funcionario_id === f.id; }) || kms.some(function (k) { return k.funcionario_id === f.id; }); });
       if (!equipe.length) h += '<div class="cartao vazio">Cadastre sua equipe na aba <a href="#equipe">Equipe</a>.</div>';
@@ -488,6 +493,7 @@
       if ($("#h-reprov")) $("#h-reprov").onclick = function () { filtroServ.st = "reprovados"; };
       $$("[data-h-prob]", c).forEach(function (d) { d.onclick = function () { abrirServico(d.dataset.hProb); }; });
       if (window.AGE_COMPRAS) window.AGE_COMPRAS.ligarAlerta(c, P, rota);
+      $$("[data-pr-hoje]", c).forEach(function (a) { a.onclick = function () { window.AGE_PROSP.irRetornar(); }; });
       hidratarFotos(c);
     }).catch(function (e) { c.innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
   }
