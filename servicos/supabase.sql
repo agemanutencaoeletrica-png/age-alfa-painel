@@ -319,6 +319,10 @@ alter table public.compras add column if not exists pago boolean not null defaul
 alter table public.compras add column if not exists vencimento date;
 alter table public.compras drop constraint if exists compras_area_check;
 alter table public.compras add constraint compras_area_check check (area in ('eletrica', 'pintura', 'dividir', 'geral'));
+-- não lançar a mesma nota duas vezes: chave de acesso (NF-e/NFC-e) e número da nota
+alter table public.compras add column if not exists chave text;
+alter table public.compras add column if not exists numero_nota text;
+create unique index if not exists compras_chave_idx on public.compras (chave) where chave is not null;
 
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (

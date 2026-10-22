@@ -125,7 +125,50 @@
     else if (/dinheiro|especie/.test(sa)) r.forma = "dinheiro";
     // despesa avulsa (posto, oficina, lanchonete...): categoria sugerida
     r.categoria = categoriaPeloTexto(sa);
+    // chave de acesso da NF-e/NFC-e (44 números, pode vir quebrada em grupos ou linhas): só vale se o dígito verificador conferir
+    var junto = t.replace(/(\d)[ \t]*\n[ \t]*(\d)/g, "$1 $2"), mc2, reC = /\d[\d .]{42,80}\d/g;
+    while (!r.chave && (mc2 = reC.exec(junto))) {
+      var dd = mc2[0].replace(/\D/g, "");
+      for (var k = 0; k + 44 <= dd.length && !r.chave; k++) if (chaveValida(dd.substr(k, 44))) r.chave = dd.substr(k, 44);
+    }
+    if (r.chave) {
+      // a chave traz o CNPJ da loja e o número da nota (mais confiáveis que a leitura do resto da foto)
+      var cj = r.chave.substr(6, 14);
+      r.cnpj = cj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+      r.numero = String(Number(r.chave.substr(25, 9)));
+    } else {
+      var mn = t.match(/\bN(?:[ºo°]|\.|[uú]mero:?)\s*([\d.]{3,15})/i);
+      if (mn) r.numero = String(Number(mn[1].replace(/\D/g, "")));
+    }
     return r;
+  }
+  function chaveValida(c) {
+    if (!/^\d{44}$/.test(c) || !/^(55|65)$/.test(c.substr(20, 2))) return false;   // modelo 55 (NF-e) ou 65 (NFC-e)
+    var soma = 0, peso = 2;
+    for (var i = 42; i >= 0; i--) { soma += Number(c[i]) * peso; peso = peso === 9 ? 2 : peso + 1; }
+    var resto = soma % 11, dv = resto < 2 ? 0 : 11 - resto;
+    return dv === Number(c[43]);
+  }
+  // nota já lançada? Certa: mesma chave de acesso, ou mesmo número de nota da mesma loja. Provável: mesma loja, valor e data.
+  function repetida(x, c0) {
+    var outras = P.S.compras.filter(function (c) { return !c0 || c.id !== c0.id; });
+    var dg = function (v) { return String(v || "").replace(/\D/g, ""); };
+    // nome da loja sem LTDA/ME/EIRELI... ("LIDER TINTAS" = "Lider Tintas LTDA")
+    var nm = function (v) { return semAcento(v).replace(/[^a-z0-9]+/g, " ").replace(/\b(ltda|me|epp|eireli|sa|s a|comercio de|com)\b/g, " ").replace(/\s+/g, " ").trim(); };
+    var mesmaLoja = function (a, b2) { a = nm(a); b2 = nm(b2); return a === b2 || (a.length >= 5 && b2.length >= 5 && (a.indexOf(b2) >= 0 || b2.indexOf(a) >= 0)); };
+    var c1 = x.chave && outras.filter(function (c) { return c.chave === x.chave; })[0];
+    if (c1) return { certa: true, c: c1, motivo: "mesma chave de acesso da nota" };
+    c1 = x.numero_nota && x.cnpj && outras.filter(function (c) { return c.numero_nota === x.numero_nota && dg(c.cnpj) === dg(x.cnpj); })[0];
+    if (c1) return { certa: true, c: c1, motivo: "mesmo número de nota da mesma loja" };
+    c1 = x.valor && x.comprado_em && outras.filter(function (c) {
+      if (c.comprado_em !== x.comprado_em || Math.abs(Number(c.valor) - Number(x.valor)) >= 0.005) return false;
+      return !x.fornecedor || !c.fornecedor || mesmaLoja(c.fornecedor, x.fornecedor) || (x.cnpj && dg(c.cnpj) === dg(x.cnpj));
+    })[0];
+    return c1 ? { certa: false, c: c1, motivo: "mesma loja, mesmo valor e mesma data" } : null;
+  }
+  function textoRepetida(rp) {
+    return "<b>" + (rp.certa ? "⛔ Esta nota já foi lançada" : "⚠️ Parece repetida") + "</b> (" + esc(rp.motivo) + "): " + esc(rp.c.fornecedor || "loja não informada") + " · " +
+      dinheiro(rp.c.valor) + " · " + esc(A.dataSimples(rp.c.comprado_em)) + (rp.certa ? ". Não vou lançar de novo." : ". Se for outra compra igual, toque em salvar de novo.");
   }
   function categoriaPeloTexto(sa) {
     if (/gasolina|etanol|diesel|combustiv|\bposto\b|ipiranga|petrobras|shell|ale combust/.test(sa)) return "combustivel";
@@ -187,6 +230,10 @@
       (op.imagem ? '<img alt="Nota" src="' + URL.createObjectURL(op.imagem) + '" style="max-height:160px;max-width:100%;display:block;margin-bottom:6px;border-radius:6px">' : "") +
       (op.erro ? '<div class="aviso erro">Não consegui ler a nota. Preencha à mão.</div>' : "") +
       (!op.erro && op.imagem && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ Não achei o “TOTAL” com clareza na foto: <b>confira o valor total</b> antes de salvar.</div>' : "") +
+      (function () {
+        var rp0 = !c0 && repetida({ chave: d.chave, numero_nota: d.numero, cnpj: d.cnpj, fornecedor: d.fornecedor, comprado_em: d.data, valor: d.valor }, null);
+        return rp0 ? '<div class="aviso erro" id="cn-rep0">' + textoRepetida(rp0) + "</div>" : "";
+      })() +
       (op.falta ? '<div class="peq mudo">Depois desta: mais ' + op.falta + " nota" + (op.falta > 1 ? "s" : "") + ".</div>" : "") +
       '<div class="filtros" id="cn-tipos"><button type="button" data-tipo="material">🧱 Material de obra</button><button type="button" data-tipo="despesa">⛽ Despesa avulsa</button></div>' +
       '<label for="cn-forn">Onde comprou (loja / posto / fornecedor)</label><input id="cn-forn" list="cn-dl-forn" maxlength="120" placeholder="Ex.: Leroy Merlin, Posto Ipiranga...">' +
@@ -289,6 +336,15 @@
         itens: itens, descricao: $("#cn-obs", el).value.trim() || null, forma_pagamento: $("#cn-forma", el).value, pago: pago,
         vencimento: pago ? null : $("#cn-venc", el).value || null };
       if (!c0 && d.cnpj) dados.cnpj = d.cnpj;
+      if (!c0 && d.chave) dados.chave = d.chave;
+      if (!c0 && d.numero) dados.numero_nota = d.numero;
+      // não lança nota repetida (a "provável" passa se você confirmar tocando em salvar de novo)
+      var rp = repetida(c0 ? Object.assign({}, c0, dados) : dados, c0);
+      if (rp && (rp.certa || b.dataset.confirmou !== "1")) {
+        $("#cn-erro", el).innerHTML = '<div class="aviso erro">' + textoRepetida(rp) + "</div>";
+        if (!rp.certa) { b.dataset.confirmou = "1"; b.textContent = "Salvar mesmo assim (não é repetida)"; }
+        return;
+      }
       A.ocupado(b, true, "Salvando...");
       var pNota = !op.imagem ? Promise.resolve(null) : A.prepararFoto(op.imagem, [], 1600).then(function (bl) {
         var cam = "admin/compras/" + dados.comprado_em + "-" + A.uuid() + ".jpg";
@@ -299,7 +355,10 @@
         return P.q(c0 ? P.sb.from("compras").update(dados).eq("id", c0.id).select().single() : P.sb.from("compras").insert(dados).select().single());
       }).then(function (n) {
         P.trocar(P.S.compras, n); j.fechar();
-        A.avisar("🧾 Salvo: " + (n.fornecedor ? n.fornecedor + " · " : "") + dinheiro(n.valor), "ok");
+        // nota de outro mês: o filtro passa a mostrar desde a data dela (senão parece que não salvou)
+        var pr = periodo();
+        if (filtro.tipo !== "apagar" && (n.comprado_em < pr.de || n.comprado_em >= pr.ate)) { filtro.periodo = "datas"; filtro.de = n.comprado_em.slice(0, 8) + "01"; filtro.ate = ""; }
+        A.avisar("🧾 Salvo: " + (n.fornecedor ? n.fornecedor + " · " : "") + dinheiro(n.valor) + " (" + A.dataSimples(n.comprado_em) + ")", "ok");
         if (location.hash !== "#compras") location.hash = "#compras"; else P.rota();
         if (op.depois) op.depois();
       }).catch(function (e) { A.ocupado(b, false); $("#cn-erro", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
@@ -359,7 +418,7 @@
   function agrupar(cs, chave) {
     var g = {};
     cs.forEach(function (c) {
-      var nome = chave(c), k = semAcento(nome).replace(/[^a-z0-9]+/g, " ").trim();
+      var nome = chave(c), k = semAcento(nome).replace(/[^a-z0-9]+/g, " ").replace(/\b(ltda|me|epp|eireli|sa|s a)\b/g, " ").replace(/\s+/g, " ").trim();
       g[k] = g[k] || { nome: nome, n: 0, total: 0, aPagar: 0, venc: "" }; g[k].n++; g[k].total += Number(c.valor) || 0;
       if (c.pago === false) { g[k].aPagar += Number(c.valor) || 0; if (c.vencimento && (!g[k].venc || c.vencimento < g[k].venc)) g[k].venc = c.vencimento; } });
     return Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return b.total - a.total; });

@@ -294,3 +294,5 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
 Aba **✅ Executados → 📊 Fechamento mensal**: cada chamado concluído no mês com data, chamado, loja, serviço realizado, OS,
 situação no portal e **valor**; total do mês, o que falta finalizar e o que está sem valor. **📋 Colar do portal**: cole as
 páginas de **Ordens de serviço** (valores) e **Finalizados** (data de encerramento) e o app atualiza tudo. 💲 corrige um valor à mão.
+- **Nota repetida não entra:** pela **chave de acesso** (44 números da NF-e/NFC-e, conferida pelo dígito verificador) ou pelo
+  **número da nota + CNPJ** da loja. Mesma loja, valor e data: o app avisa e só salva se você confirmar (outra compra igual).
