@@ -1448,7 +1448,17 @@
     $("#es-rels", el).innerHTML = rels.length ? rels.map(htmlCartaoRel).join("") : '<div class="mudo peq">Nenhum relatório ainda.</div>';
     $$("[data-rel]", el).forEach(function (d) { d.onclick = function () { abrirRelatorio(d.dataset.rel); }; });
 
-    q(sb.from("pontos").select("*").eq("servico_id", id).order("criado_em")).then(function (pts) {
+    // chegada registrada em outro chamado da mesma loja, no mesmo dia, também vale
+    var irmaos = o.loja_id ? S.serv.filter(function (x) { var ox = porId(S.obras, x.obra_id); return x.id !== id && ox && ox.loja_id === o.loja_id; }).map(function (x) { return x.id; }) : [];
+    Promise.all([q(sb.from("pontos").select("*").eq("servico_id", id).order("criado_em")),
+      irmaos.length ? q(sb.from("pontos").select("*").in("servico_id", irmaos).eq("tipo", "chegada").order("criado_em")).catch(function () { return []; }) : Promise.resolve([])
+    ]).then(function (r) {
+      var pts = r[0], dia = function (t) { return A.isoLocal(new Date(t)).slice(0, 10); };
+      var dias = pts.map(function (p) { return dia(p.criado_em); }).concat(rels.map(function (x) { return dia(x.criado_em); }));
+      if (!pts.some(function (p) { return p.tipo === "chegada"; })) {
+        var outra = r[1].filter(function (p) { return dias.indexOf(dia(p.criado_em)) >= 0; })[0];
+        if (outra) { outra = Object.assign({}, outra, { daMesmaLoja: true }); pts = [outra].concat(pts); }
+      }
       pts.forEach(registrarInfoPonto);
       // antes de finalizar no portal: tem prova de que a equipe esteve lá e fez?
       var prova = $("#es-prova", el);
@@ -1458,7 +1468,7 @@
         else prova.innerHTML = "✔ Tem registro de chegada e foto de depois. Pode <b>finalizar o chamado " + esc(o.chamado) + "</b> no app do cliente.";
       }
       $("#es-pontos", el).innerHTML = pts.length ? '<div class="fotos">' + pts.map(function (p) {
-        return htmlFoto(p.foto, A.TIPO_PONTO[p.tipo] + " " + A.data(p.criado_em).slice(0, 5) + " " + A.hora(p.criado_em));
+        return htmlFoto(p.foto, A.TIPO_PONTO[p.tipo] + (p.daMesmaLoja ? " (outro chamado da loja)" : "") + " " + A.data(p.criado_em).slice(0, 5) + " " + A.hora(p.criado_em));
       }).join("") + "</div>" : '<div class="mudo peq">Nenhum registro ainda.</div>';
       hidratarFotos($("#es-pontos", el));
     }).catch(function (e) { $("#es-pontos", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });

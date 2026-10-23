@@ -187,8 +187,17 @@
 
   // etapa: 📐 orçamento (visita para orçar) ou 🔧 serviço (executar). Sem a etapa do painel, vale o que a descrição pede.
   function etapaDe(s) { return s.etapa || (!s.prefeitura && /fazer\s+or[cç]amento|\bor[cç]ar\b|levantamento/i.test(s.descricao || "") ? "orcamento" : "servico"); }
+  // chamados da mesma loja: uma chegada só vale para todos
+  function chaveLoja(s) { return s.loja_id || (s.prefeitura ? "s:" + s.id : "c:" + (s.cliente || "") + "|" + (s.endereco || "")); }
+  function mesmaLoja(s) { return D.servicos.filter(function (x) { return chaveLoja(x) === chaveLoja(s); }); }
+  function chegadaNaLoja(s) {
+    var ids = mesmaLoja(s).map(function (x) { return x.id; });
+    return (D.pontos_hoje || []).filter(function (p) {
+      return p.tipo === "chegada" && (ids.indexOf(p.servico_id) >= 0 || (s.loja_id && p.loja_id === s.loja_id));
+    })[0] || null;
+  }
   function cartaoServico(s) {
-    var h = "";
+    var h = "", cheg = chegadaNaLoja(s);
     h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
       (s.data_prevista ? '<span class="dir mudo peq">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
       (s.prefeitura ? '<div class="aviso" style="margin:8px 0 0">🏛️ <b>' + esc(s.prefeitura) + "</b>" + (s.protocolo ? " · OS/Protocolo <b>" + esc(s.protocolo) + "</b>" : "") +
@@ -203,7 +212,8 @@
       (s.telefone ? '<div class="peq"><a href="tel:' + esc(A.soDigitos(s.telefone)) + '">📞 ' + esc(s.telefone) + "</a></div>" : "") +
       (s.descricao ? '<p style="white-space:pre-wrap;margin:8px 0 0">' + esc(s.descricao) + "</p>" : "") +
       (s.observacoes && !/^Criado por .* pelo app$/.test(s.observacoes) ? '<p class="mudo peq" style="white-space:pre-wrap;margin:6px 0 0">Obs.: ' + esc(s.observacoes) + "</p>" : "") +
-      '<div class="acoes"><button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui</button>' +
+      '<div class="acoes">' + (cheg ? '<span class="selo bom" title="A chegada vale para todos os chamados desta loja">✔ Chegada ' + A.hora(cheg.criado_em) + "</span>" :
+        '<button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui' + (mesmaLoja(s).length > 1 ? " (" + mesmaLoja(s).length + " chamados)" : "") + "</button>") +
       '<button class="peq" data-ponto="servico" data-serv="' + s.id + '">📷 Foto</button>' +
       '<button class="peq" data-relatorio="' + s.id + '">📝 Relatório</button><button class="peq" data-comp="' + s.id + '">📤 Compartilhar</button></div></div>';
     return h;
@@ -348,7 +358,8 @@
       }).then(function (r) {
         if (r.error) throw r.error;
         j.fechar();
-        A.avisar(A.TIPO_PONTO[tipo] + " registrada às " + A.hora(r.data.criado_em), "ok");
+        var sv = servicoPorId($("#fp-serv", el).value), n = tipo === "chegada" && sv ? mesmaLoja(sv).length : 0;
+        A.avisar(A.TIPO_PONTO[tipo] + " registrada às " + A.hora(r.data.criado_em) + (n > 1 ? " · vale para os " + n + " chamados desta loja" : ""), "ok");
         carregar();
       }).catch(function (e) {
         A.ocupado(b, false);

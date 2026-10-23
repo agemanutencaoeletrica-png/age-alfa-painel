@@ -494,7 +494,7 @@ begin
                'observacoes', o.observacoes,
                'prefeitura', pf.nome, 'protocolo', o.protocolo, 'secretaria', o.secretaria,
                'tipo_publico', o.tipo_publico, 'referencia', o.referencia, 'fiscal', o.fiscal,
-               'contrato_id', o.contrato_id,
+               'contrato_id', o.contrato_id, 'loja_id', o.loja_id,
                'tem_fotos_antes', exists (select 1 from public.relatorios r
                                           where r.servico_id = s.id and cardinality(r.fotos_antes) > 0))
              order by s.data_prevista nulls last, s.criado_em)
@@ -514,7 +514,8 @@ begin
     'pontos_hoje', coalesce((
       select jsonb_agg(jsonb_build_object(
                'tipo', p.tipo, 'servico_id', p.servico_id, 'criado_em', p.criado_em,
-               'tem_gps', p.lat is not null)
+               'tem_gps', p.lat is not null,
+               'loja_id', (select o.loja_id from public.servicos s join public.obras o on o.id = s.obra_id where s.id = p.servico_id))
              order by p.criado_em)
       from public.pontos p
       where p.funcionario_id = f.id and p.criado_em >= v_inicio
@@ -613,6 +614,13 @@ begin
 
   if p_servico_id is not null and p_tipo in ('chegada', 'servico') then
     update public.servicos set status = 'em_andamento' where id = p_servico_id and status = 'aberto';
+  end if;
+  -- uma chegada vale para todos os chamados dele na mesma loja (não precisa de uma foto por chamado)
+  if p_servico_id is not null and p_tipo = 'chegada' then
+    update public.servicos s2 set status = 'em_andamento'
+    from public.servicos s join public.obras o on o.id = s.obra_id, public.obras o2
+    where s.id = p_servico_id and o.loja_id is not null and o2.id = s2.obra_id and o2.loja_id = o.loja_id
+      and s2.funcionario_id = f.id and s2.status = 'aberto';
   end if;
 
   -- Chegada com GPS bom numa loja: melhora a localização da loja (para as rotas).
