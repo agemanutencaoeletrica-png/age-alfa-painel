@@ -1051,10 +1051,17 @@
   }
   function gravarCaixa(l) { caixaMem = l; try { localStorage.setItem(CHAVE_CAIXA, JSON.stringify(l)); } catch (e) { /* sem armazenamento: fica só na memória */ } }
   // junta na caixa: mesmo nº = mesmo chamado (completa o que faltava, não duplica)
+  // chamado aberto antes da data de corte (config CHAMADOS_DESDE) e que ainda não está no app: retroativo, não entra
+  function corteChamados() { return (A.CFG && A.CFG.CHAMADOS_DESDE) || ""; }
+  function retroativo(c) {
+    var d = isoDeBR(c.data), corte = corteChamados();
+    return !!(corte && d && d < corte && !S.obras.some(function (o) { return o.chamado === c.numero; }));
+  }
   function juntarNaCaixa(itens) {
-    var cx = lerCaixa().slice(), novos = 0, atual = 0;
+    var cx = lerCaixa().slice().filter(function (c) { return !retroativo(c); }), novos = 0, atual = 0, antigos = 0, listaNovos = [], listaAntigos = [];
     itens.forEach(function (it) {
       if (!/^\d*[1-9]\d*$/.test(String(it.numero || ""))) return;
+      if (retroativo(it)) { antigos++; listaAntigos.push(it); return; }
       var ex = cx.filter(function (c) { return c.numero === it.numero; })[0];
       var limpo = {}; Object.keys(it).forEach(function (k) { if (it[k] !== "" && it[k] !== null && it[k] !== undefined && it[k] !== false) limpo[k] = it[k]; });
       if (ex) {
@@ -1067,10 +1074,10 @@
         if (it.outro === false && it.detalhes) ex.outro = false;
         atual++;
       }
-      else { cx.push(Object.assign({ marcado: null }, limpo)); novos++; }
+      else { var nv = Object.assign({ marcado: null }, limpo); cx.push(nv); novos++; listaNovos.push(nv); }
     });
     gravarCaixa(cx);
-    return { novos: novos, atual: atual };
+    return { novos: novos, atual: atual, antigos: antigos, listaNovos: listaNovos, listaAntigos: listaAntigos };
   }
   // situação do item na caixa: já lançado, ignorado (com motivo) ou pronto
   // palavras que identificam o pedido ("ventiladores" -> "ventil"), sem as que aparecem em quase todo chamado
@@ -1113,9 +1120,11 @@
   function importarChamado() {
     var j = A.janela('<p class="peq mudo" style="margin-top:0">Cole aqui quantas vezes quiser: <b>cada página</b> de <b>Meus chamados</b> ou de <b>Ordens de serviço</b> (selecione a tabela e Ctrl+C) ' +
       "e a tela <b>Detalhes</b> de um chamado (completa a descrição). Tudo vai para a caixa abaixo, sem repetir. Depois confira e lance.</p>" +
+      (corteChamados() ? '<p class="peq mudo" style="margin:0 0 4px">⏭ Só entram chamados abertos a partir de <b>' + esc(A.dataSimples(corteChamados())) + "</b> (os retroativos são ignorados; os que já estão no app continuam sendo atualizados).</p>" : "") +
       '<textarea id="ch-txt" rows="3" placeholder="Cole aqui (Ctrl+V)"></textarea><div id="ch-msg" class="peq" style="margin-top:4px"></div><div id="cx-rev"></div><div id="cx"></div>',
       { titulo: "📋 Chamados do BH", larga: true, aoFechar: function () { if (/^(servicos|executados)$/.test(location.hash.slice(1))) rota(); } });
     var el = j.el;
+    if (lerCaixa().some(retroativo)) gravarCaixa(lerCaixa().filter(function (c) { return !retroativo(c); }));   // retroativos que já estavam na caixa saem
     $("#ch-txt", el).oninput = function () {
       var t = this.value, c, itens = [];
       if (!t.trim()) return;
@@ -1131,8 +1140,17 @@
       if (naoAge.length) gravarCaixa(lerCaixa().filter(function (c) { return !naoAge.some(function (it) { return it.numero === c.numero; }); }));
       var naoAgeLanc = itens.filter(function (it) { return it.outro && it.detalhes && S.obras.some(function (o) { return o.chamado === it.numero; }); });
       var alertas = lerCaixa().filter(function (c) { return itens.some(function (it) { return it.numero === c.numero; }) && problemaPortal(c.portal); });
+      // quais chamados entraram (e quais retroativos ficaram de fora): loja, abertura, nº e serviço, para identificar cada um
+      var tabCh = function (ls, tit) {
+        return ls.length ? '<details open style="margin-top:6px"><summary class="peq"><b>' + tit + " (" + ls.length + ")</b></summary>" +
+          '<div class="tabela-caixa"><table><thead><tr><th>Chamado</th><th>Abertura</th><th>Loja</th><th>Serviço</th></tr></thead><tbody>' +
+          ls.map(function (c) { var l = lojaPorCodigo(c.centro || c.loja); return "<tr><td><b>" + esc(c.numero) + "</b></td><td>" + esc(c.data || "—") + "</td><td>" + esc(l ? nomeLoja(l) : c.centro || c.loja || "—") + '</td><td class="peq">' + esc(String(c.desc || "").replace(/\s+/g, " ").slice(0, 120)) + "</td></tr>"; }).join("") +
+          "</tbody></table></div></details>" : "";
+      };
       $("#ch-msg", el).innerHTML = '<span class="selo bom">✔ ' + (r.novos ? r.novos + " adicionado" + (r.novos > 1 ? "s" : "") : "") + (r.novos && r.atual ? ", " : "") +
         (r.atual ? r.atual + " já estava" + (r.atual > 1 ? "m" : "") + " na caixa (completado" + (r.atual > 1 ? "s" : "") + ")" : "") + "</span> Pode colar a próxima página." +
+        (r.antigos ? ' <span class="selo">⏭ ' + r.antigos + " retroativo" + (r.antigos > 1 ? "s" : "") + " ignorado" + (r.antigos > 1 ? "s" : "") + " (abertos antes de " + esc(A.dataSimples(corteChamados())) + ")</span>" : "") +
+        tabCh(r.listaNovos, "🆕 Adicionados à caixa") + tabCh(r.listaAntigos, "⏭ Retroativos ignorados") +
         naoAgeLanc.map(function (it) {
           return '<div class="aviso erro" style="margin-top:6px">✖ <b>Chamado ' + esc(it.numero) + " já está lançado no app, mas não pertence à AGE</b>" + (it.portal && it.portal.outroPrest ? " (" + esc(it.portal.outroPrest) + ")" : "") + ". O serviço foi cancelado.</div>";
         }).join("") +

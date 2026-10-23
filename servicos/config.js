@@ -12,6 +12,10 @@ window.AGE_CONFIG = {
   // Dica: no Google Maps, toque e segure no local e copie os números que aparecem.
   BASE: null,
 
+  // Chamados do portal (Supermercados BH): só entram no app os abertos a partir desta data (aaaa-mm-dd).
+  // Os mais antigos que já estão no app continuam recebendo as atualizações (finalizado, valor, reprovação).
+  CHAMADOS_DESDE: "2026-10-22",
+
   // Dados que saem no cabeçalho do orçamento impresso / PDF
   EMPRESA: {
     nome: "AGE Elétrica e Pintura",
