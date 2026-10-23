@@ -420,7 +420,7 @@
       A.ocupado(b, true, "Salvando...");
       var f = op.arquivo, ehPdf = f && (/pdf/.test(f.type) || /\.pdf$/i.test(f.name || ""));
       var pArq = !f ? Promise.resolve(null) : (/^image\//.test(f.type) ? A.prepararFoto(f, [], 1800).then(function (bl) { return { bl: bl, ext: "jpg", tipo: "image/jpeg" }; })
-        : Promise.resolve({ bl: f, ext: ehPdf ? "pdf" : "xml", tipo: f.type || (ehPdf ? "application/pdf" : "application/octet-stream") })).then(function (a) {
+        : Promise.resolve({ bl: f, ext: ehPdf ? "pdf" : "xml", tipo: ehPdf ? "application/pdf" : "text/xml" })).then(function (a) {
           var cam = "admin/receitas/" + dados.emitida_em + "-" + A.uuid() + "." + a.ext;
           return P.q(P.sb.storage.from("fotos").upload(cam, a.bl, { contentType: a.tipo })).then(function () { return cam; });
         }).catch(function () { return null; });   // sem o arquivo, a nota é salva do mesmo jeito
