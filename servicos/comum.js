@@ -212,6 +212,7 @@
     window.addEventListener("load", function () {
       navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(function (reg) {
         // procura versão nova ao voltar para o app e a cada 15 minutos (o app instalado fica aberto por dias)
+        if (!reg) return;   // navegador sem service worker liberado
         var procurar = function () { reg.update().catch(function () { /* sem internet */ }); };
         setInterval(procurar, 15 * 60000);
         document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") procurar(); });

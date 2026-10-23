@@ -157,6 +157,8 @@
     });
   }
 
+  // etapa: 📐 orçamento (visita para orçar) ou 🔧 serviço (executar). Sem a etapa do painel, vale o que a descrição pede.
+  function etapaDe(s) { return s.etapa || (!s.prefeitura && /fazer\s+or[cç]amento|\bor[cç]ar\b|levantamento/i.test(s.descricao || "") ? "orcamento" : "servico"); }
   function cartaoServico(s) {
     var h = "";
     h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
@@ -165,6 +167,8 @@
         (s.tipo_publico ? "<br>" + esc(TIPO_PUBLICO[s.tipo_publico] || "") : "") + (s.secretaria ? " · " + esc(s.secretaria) : "") +
         (s.fiscal ? "<br>Fiscal: " + esc(s.fiscal) : "") +
         '<br><span class="peq">Tire fotos de <b>ANTES</b> e de <b>DEPOIS</b> e colha a assinatura do fiscal ao concluir.</span></div>' : "") +
+      (s.prefeitura ? "" : etapaDe(s) === "orcamento" ? '<div class="aviso" style="margin:8px 0 0">📐 <b>ORÇAMENTO</b>: visita para orçar. Tire fotos do local e anote medidas e materiais. <b>Não execute</b> o serviço ainda.</div>' :
+        '<div class="aviso" style="margin:8px 0 0;border-left-color:var(--bom)">🔧 <b>EXECUTAR O SERVIÇO</b>. Para concluir, tire as <b>fotos do serviço realizado</b>.</div>') +
       '<h3 style="margin-top:8px">' + esc(s.cliente) + "</h3>" +
       (s.referencia ? '<div class="peq">🔖 ' + esc(s.referencia) + "</div>" : "") +
       (s.endereco ? '<div class="peq"><a href="' + A.linkEndereco(s.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(s.endereco) + "</a></div>" : "") +
@@ -596,7 +600,7 @@
       $("#fr-mats-r", el).textContent = pref ? "Serviços executados e materiais usados (quantidades)" : "Materiais necessários";
       $("#fr-antes-caixa", el).classList.toggle("oculto", !pref);
       $("#fr-antes-ok", el).classList.toggle("oculto", !(pref && s.tem_fotos_antes));
-      $("#fr-fotos-r", el).textContent = pref ? "🏛️ Fotos DEPOIS (serviço pronto, até 6)" : "Fotos (até 6)";
+      $("#fr-fotos-r", el).textContent = pref ? "🏛️ Fotos DEPOIS (serviço pronto, até 6)" : $("#fr-orc", el) && $("#fr-orc", el).checked ? "📐 Fotos do ORÇAMENTO (local, medidas — até 6)" : "🔧 Fotos do SERVIÇO REALIZADO (até 6)";
       $("#fr-add-foto", el).textContent = pref ? "📷 Fotos de DEPOIS" : "📷 Adicionar fotos";
       $("#fr-assin-tit", el).textContent = pref ? "✍️ Assinatura do fiscal da prefeitura" : "✍️ Assinatura do responsável no local";
       $("#fr-assin-txt", el).textContent = pref ? "Peça ao fiscal da prefeitura para assinar com o dedo." : "Peça ao gerente (ou ao cliente) para assinar com o dedo.";
@@ -695,13 +699,14 @@
       $("#fr-sem-assin-l", el).classList.toggle("oculto", !obrig);
       if (ver) { quadro.ajustar(); if (rolar) $("#fr-assin", el).scrollIntoView({ behavior: "smooth", block: "center" }); }
     }
-    $("#fr-concl", el).onchange = function () { if (this.checked) $("#fr-orc", el).checked = false; mostrarAssin(true); };
-    $("#fr-orc", el).onchange = function () { if (this.checked) { $("#fr-concl", el).checked = false; mostrarAssin(false); } };
+    $("#fr-concl", el).onchange = function () { if (this.checked) $("#fr-orc", el).checked = false; mostrarAssin(true); atualizarListas(); };
+    $("#fr-orc", el).onchange = function () { if (this.checked) { $("#fr-concl", el).checked = false; mostrarAssin(false); } atualizarListas(); };
     // serviço que pede orçamento ("FAZER ORÇAMENTO", "orçar materiais..."): já vem marcado como visita de orçamento
     function sugerirOrc() {
       var sv = servicoPorId($("#fr-serv", el).value);
-      $("#fr-orc", el).checked = !!(sv && !sv.prefeitura && /fazer\s+or[cç]amento|\bor[cç]ar\b|levantamento/i.test(sv.descricao || ""));
+      $("#fr-orc", el).checked = !!(sv && !sv.prefeitura && etapaDe(sv) === "orcamento");
       if ($("#fr-orc", el).checked) $("#fr-concl", el).checked = false;
+      atualizarListas();
     }
     sugerirOrc();
     $("#fr-serv", el).addEventListener("change", function () { sugerirOrc(); mostrarAssin(false); });
@@ -722,6 +727,10 @@
       }
       if (pref && concl && !fotos.length) {
         $("#fr-erro", el).innerHTML = '<div class="aviso erro">OS da prefeitura: falta a foto de <b>DEPOIS</b> (serviço pronto).</div>'; return;
+      }
+      // fechamento só com prova: concluir pede as fotos do serviço realizado
+      if (!pref && concl && !fotos.length) {
+        $("#fr-erro", el).innerHTML = '<div class="aviso erro">Para <b>concluir</b>, tire as <b>fotos do serviço realizado</b>. Se foi só a visita para orçar, marque “Foi só a visita para o orçamento”.</div>'; return;
       }
       var obrig = pedeAssin(), visivel = concl && obrig;
       var semAssin = obrig && $("#fr-sem-assin", el).checked, nomeAssin = $("#fr-assin-nome", el).value.trim();

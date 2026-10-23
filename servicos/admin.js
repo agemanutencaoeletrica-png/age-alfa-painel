@@ -398,7 +398,8 @@
       q(sb.from("compras").select("*").order("comprado_em", { ascending: false })).catch(function (e) { S.erroCompras = A.msgErro(e); return null; }),
       q(sb.from("fornecedores").select("*").order("nome")).catch(function (e) { S.erroForn = A.msgErro(e); return null; }),
       q(sb.from("receitas").select("*").order("emitida_em", { ascending: false })).catch(function (e) { S.erroReceitas = A.msgErro(e); return null; }),
-      q(sb.from("prospects").select("*").order("criado_em", { ascending: false })).catch(function (e) { S.erroProsp = A.msgErro(e); return null; })
+      q(sb.from("prospects").select("*").order("criado_em", { ascending: false })).catch(function (e) { S.erroProsp = A.msgErro(e); return null; }),
+      q(sb.from("servicos").select("etapa").limit(1)).then(function () { return true; }).catch(function () { return false; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -408,6 +409,7 @@
       S.semForn = !r[11]; S.forn = r[11] || [];
       S.semReceitas = !r[12]; S.receitas = r[12] || [];
       S.semProsp = !r[13]; S.prosp = r[13] || [];
+      S.semEtapa = !r[14];   // banco ainda sem a coluna servicos.etapa (rode o bloco do supabase.sql)
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
     });
   }
@@ -545,6 +547,21 @@
     return h;
   }
 
+  // ---------- etapa do serviço: 📐 orçamento (visita para orçar, fotos do local) ou 🔧 serviço (executar; fecha só com foto do serviço feito) ----------
+  var ETAPAS = { orcamento: "📐 Orçamento", servico: "🔧 Serviço" };
+  var RE_ORC = /fazer\s+or[cç]amento|\(\s*fazer\s+or|\bor[cç]ar\b|levantamento|visita\s+(t[eé]cnica|para\s+or)/i;
+  function etapaPelaDescricao(t) { return RE_ORC.test(t || "") ? "orcamento" : "servico"; }
+  function etapaDe(s) { return s.etapa || (s.status === "aguardando" ? "orcamento" : etapaPelaDescricao(s.descricao)); }
+  function seloEtapa(s) {
+    var e = etapaDe(s);
+    return '<span class="selo ' + (e === "orcamento" ? "atencao" : "bom") + '" title="' + (e === "orcamento" ? "Visita para orçamento: fotos do local e medidas" : "Executar o serviço: fecha só com foto do serviço feito") + '">' + ETAPAS[e] + "</span>";
+  }
+  // orçamento aprovado: volta para aberto como serviço a executar (mesmo funcionário, se tiver)
+  function aprovarOrcamento(sid) {
+    var dados = { status: "aberto", concluido_em: null };
+    if (!S.semEtapa) dados.etapa = "servico";
+    return q(sb.from("servicos").update(dados).eq("id", sid).select().single()).then(function (n) { trocar(S.serv, n); A.avisar("✅ Orçamento aprovado: agora é serviço a executar" + (n.funcionario_id ? " (" + nomeFunc(n.funcionario_id) + ")" : " — escolha o funcionário"), "ok"); return n; });
+  }
   function verServicos(c) {
     var F = filtroServ;
     var h = '<div class="cab-secao"><h2>Serviços</h2><span><button id="b-chamado">📋 Chamados BH' + (lerCaixa().length ? " (" + lerCaixa().length + " na caixa)" : "") + '</button> <button class="prim" id="b-novo-serv">+ Novo serviço</button></span></div>' +
@@ -616,7 +633,8 @@
           (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
           (o.telefone || o.email ? '<div class="peq mudo">' + (o.telefone ? "📞 " + esc(o.telefone) + " " : "") + (o.email ? "✉ " + esc(o.email) : "") + "</div>" : "") +
           partes.map(function (s) {
-            return '<div class="parte ' + s.categoria + '" data-serv="' + s.id + '" role="button" tabindex="0"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
+            return '<div class="parte ' + s.categoria + '" data-serv="' + s.id + '" role="button" tabindex="0"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) + (o.prefeitura_id ? "" : seloEtapa(s)) +
+              (s.status === "aguardando" ? '<button class="peq bom" data-aprovar="' + s.id + '" title="O cliente aprovou o orçamento">✅ Aprovado → executar</button>' : "") +
               (s.criado_pelo_funcionario ? '<span class="selo atencao">criado pela equipe</span>' : "") +
               '<span class="peq">' + (s.funcionario_id ? "👷 " + esc(nomeFunc(s.funcionario_id)) : '<span class="selo critico">sem funcionário</span>') + "</span>" +
               (s.pede_assinatura ? '<span class="selo">✍️ pede assinatura</span>' : "") +
@@ -628,6 +646,9 @@
       $$("[data-serv]", l).forEach(function (d) {
         d.onclick = function () { abrirServico(d.dataset.serv); };
         d.onkeydown = function (ev) { if (ev.key === "Enter") abrirServico(d.dataset.serv); };
+      });
+      $$("[data-aprovar]", l).forEach(function (b) {
+        b.onclick = function (ev) { ev.stopPropagation(); A.ocupado(b, true, "..."); aprovarOrcamento(b.dataset.aprovar).then(function () { listar(); }).catch(function (e) { A.ocupado(b, false); falhou(e); }); };
       });
       $$("[data-parte]", l).forEach(function (b) { b.onclick = function () { novoServico(b.dataset.parte); }; });
       $$("[data-obra]", l).forEach(function (b) { b.onclick = function () { editarObra(b.dataset.obra); }; });
@@ -1235,7 +1256,8 @@
             "</td><td>" + esc(c.data || "") + "</td><td>" + (l ? esc(nomeLoja(l)) : esc(c.centro || c.loja || "—")) + '</td><td class="peq">' + esc(String(c.desc || "").slice(0, 70)) +
             "</td><td>" + '<span class="selo ' + a.cor + '">' + esc(a.txt) + "</span>" + (a.dup ? ' <button class="peq bom" data-cx-vinc="' + esc(c.numero) + '">🔗 Vincular a esse serviço</button>' : "") + (c.portal ? " " + seloPortal(c.portal) : c.situacao && !a.ignorar ? ' <span class="peq mudo">' + esc(c.situacao) + "</span>" : "") + "</td></tr>";
         }).join("") + "</tbody></table></div>" +
-        '<label for="cx-cat">Área (para os que não dizem)</label><select id="cx-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select>' +
+        '<div class="duas"><div><label for="cx-cat">Área (para os que não dizem)</label><select id="cx-cat"><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option></select></div>' +
+        (S.semEtapa ? "<div></div>" : '<div><label for="cx-etapa">Etapa (o que o funcionário vai fazer)</label><select id="cx-etapa"><option value="auto">Automático: “fazer orçamento” → 📐 Orçamento; o resto → 🔧 Serviço</option><option value="orcamento">📐 Orçamento (visita para orçar)</option><option value="servico">🔧 Serviço (executar)</option></select></div>') + "</div>" +
         '<p class="peq mudo">Ficam desmarcados os <b>já orçados/feitos</b> e os de <b>outro prestador</b> (marque se quiser lançar). Loja não cadastrada entra com o código do centro; cadastre a loja depois para entrar nas rotas. ' +
         "Os serviços entram sem funcionário: depois, direcione na aba Serviços.</p>" +
         '<div class="acoes">' + botao("cx-lancar") + "</div>";
@@ -1254,7 +1276,7 @@
       });
       var atualizar = function () { atualizarJaLancados(this, cx.filter(function (c, i) { return marcAt(c, av[i]); }), desenhar); };
       ["#cx-lancar-at", "#cx-lancar-topo-at"].forEach(function (id) { if ($(id, el)) $(id, el).onclick = atualizar; });
-      var lancar = function () { lancarCaixa(this, cx.filter(function (c, i) { return marc(c, av[i]); }), $("#cx-cat", el).value, j); };
+      var lancar = function () { lancarCaixa(this, cx.filter(function (c, i) { return marc(c, av[i]); }), $("#cx-cat", el).value, j, false, $("#cx-etapa", el) ? $("#cx-etapa", el).value : null); };
       // finalizados no portal que nunca entraram no app: entram já concluídos (aparecem em Executados, com o valor)
       if ($("#cx-hist", el)) $("#cx-hist", el).onclick = function () {
         lancarCaixa(this, cx.filter(function (c, i) { return av[i].ignorar && /finaliz/i.test(c.situacao || "") && !c.outro; }), $("#cx-cat", el).value, j, true);
@@ -1322,7 +1344,7 @@
       redesenhar();
     }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
-  function lancarCaixa(b, sel, catPadrao, janela, historico) {
+  function lancarCaixa(b, sel, catPadrao, janela, historico, etapaPadrao) {
     sel = sel.filter(function (c) { return /^\d*[1-9]\d*$/.test(String(c.numero || "")); });   // nunca lança "chamado nº 0"
     if (!sel.length) return;
     A.ocupado(b, true, "Lançando...");
@@ -1335,9 +1357,11 @@
       return q(sb.from("servicos").insert(obras.map(function (o) {
         var c = sel.filter(function (x) { return x.numero === o.chamado; })[0];
         var fin = c.portal && /finaliz/i.test((c.portal.status || "") + " " + (c.portal.osSit || "")) || /finaliz/i.test(c.situacao || "");
-        return { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao, status: fin ? "concluido" : "aberto", concluido_em: fin ? ((c.portal && c.portal.finalizado_em) || isoDeBR(c.data) || A.isoLocal(new Date())) + "T12:00:00" : null,
+        var sv = { obra_id: o.id, categoria: c.cat && c.desc ? c.cat : catPadrao, status: fin ? "concluido" : "aberto", concluido_em: fin ? ((c.portal && c.portal.finalizado_em) || isoDeBR(c.data) || A.isoLocal(new Date())) + "T12:00:00" : null,
           descricao: "Chamado nº " + c.numero + (c.data ? " (aberto em " + c.data + ")" : "") + (c.prioridade ? " · prioridade " + c.prioridade : "") + "\n" +
             (c.desc || "Ver a descrição do problema no portal do cliente.") };
+        if (!S.semEtapa && etapaPadrao) sv.etapa = fin ? "servico" : etapaPadrao === "auto" ? etapaPelaDescricao(c.desc) : etapaPadrao;
+        return sv;
       })).select());
     }).then(function (serv) {
       serv.forEach(function (x) { S.serv.unshift(x); });
@@ -1402,13 +1426,14 @@
         (o.portal.reclamacao.por ? " (" + esc(o.portal.reclamacao.por) + ")" : "") + ": “" + esc(o.portal.reclamacao.txt) + "”. Resolva e responda no portal.</div>" : "") +
       (o.chamado && s.status === "concluido" ? '<div id="es-prova" class="aviso" style="margin:6px 0">Serviço concluído: lembre de <b>finalizar o chamado ' + esc(o.chamado) + "</b> no app do cliente.</div>" : "") +
       (s.status === "aguardando" ? '<div class="aviso" style="margin:6px 0">🧾 Visita de orçamento feita: o serviço <b>ainda não foi executado</b>. ' + (o.chamado ? "Lance o orçamento do chamado " + esc(o.chamado) + " no portal. " : "") +
-        "Quando for aprovado, volte a situação para <b>Aberto</b> e escolha o funcionário.</div>" : "") +
+        'Quando o cliente aprovar: <button class="peq bom" id="es-aprovar">✅ Aprovado → executar</button></div>' : "") +
       (o.endereco ? '<div class="peq"><a href="' + A.linkEndereco(o.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(o.endereco) + "</a></div>" : "") +
       '<div class="duas"><div><label for="es-func">Funcionário</label><select id="es-func">' + opcoesFunc(s.categoria, s.funcionario_id) + "</select></div>" +
       '<div><label for="es-data">Data prevista</label><input type="date" id="es-data" value="' + esc(s.data_prevista || "") + '"></div></div>' +
-      '<label for="es-st">Situação</label><select id="es-st">' + Object.keys(A.STATUS).map(function (k) {
+      '<div class="duas"><div><label for="es-st">Situação</label><select id="es-st">' + Object.keys(A.STATUS).map(function (k) {
         return '<option value="' + k + '"' + (k === s.status ? " selected" : "") + ">" + A.STATUS[k] + "</option>";
-      }).join("") + "</select>" +
+      }).join("") + "</select></div>" +
+      (o.prefeitura_id || S.semEtapa ? "<div></div>" : '<div><label for="es-etapa">Etapa (o que o funcionário vai fazer)</label><select id="es-etapa"><option value="orcamento">📐 Orçamento — visita, fotos do local e medidas</option><option value="servico">🔧 Serviço — executar (fecha só com foto do serviço feito)</option></select></div>') + "</div>" +
       '<label for="es-desc">O que fazer</label><textarea id="es-desc" rows="4">' + esc(s.descricao || "") + "</textarea>" +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="es-assin"' + (s.pede_assinatura ? " checked" : "") + '> ✍️ Liberar assinatura do responsável neste serviço <span class="mudo peq">(desligado: o funcionário não vê o quadro de assinatura)</span></label>' +
       '<div class="acoes"><button class="prim" id="es-salvar">Salvar</button><span id="es-zap">' + botaoZap(s) + '</span><button id="es-comp">📤 Compartilhar</button><button class="perigo" id="es-apagar">Apagar parte</button></div>' +
@@ -1416,6 +1441,8 @@
       '<hr class="sep"><h3>Relatórios</h3><div id="es-rels"></div>',
       { titulo: "Serviço de " + A.CATEG[s.categoria].nome, larga: true });
     var el = j.el;
+    if ($("#es-etapa", el)) $("#es-etapa", el).value = etapaDe(s);
+    if ($("#es-aprovar", el)) $("#es-aprovar", el).onclick = function () { aprovarOrcamento(s.id).then(function () { j.fechar(); rota(); abrirServico(s.id); }).catch(falhou); };
 
     var rels = S.rel.filter(function (r) { return r.servico_id === id; });
     $("#es-rels", el).innerHTML = rels.length ? rels.map(htmlCartaoRel).join("") : '<div class="mudo peq">Nenhum relatório ainda.</div>';
@@ -1441,6 +1468,7 @@
       var b = this, st = $("#es-st", el).value;
       var dados = { funcionario_id: nulo($("#es-func", el).value), data_prevista: nulo($("#es-data", el).value), status: st, descricao: nulo(val(el, "#es-desc")),
         pede_assinatura: $("#es-assin", el).checked };
+      if ($("#es-etapa", el)) dados.etapa = $("#es-etapa", el).value;
       // concluido_em = quando terminou o serviço ou a visita de orçamento
       var fim = function (x) { return x === "concluido" || x === "aguardando"; };
       if (fim(st) && st !== s.status) dados.concluido_em = new Date().toISOString();
@@ -1861,7 +1889,7 @@
   function provaFalta(s, pts) {
     var falta = [];
     if (pts && !pts.some(function (p) { return p.tipo === "chegada"; })) falta.push("sem registro de chegada");
-    if (!S.rel.some(function (r) { return r.servico_id === s.id && (r.fotos || []).length; })) falta.push("sem foto de depois no relatório");
+    if (!S.rel.some(function (r) { return r.servico_id === s.id && !r.orcamento && (r.fotos || []).length; })) falta.push("sem foto do serviço realizado (as fotos do orçamento não contam)");
     return falta;
   }
   function dataExecucao(s) {
@@ -1924,18 +1952,23 @@
       $$("[data-exec-comp]", r).forEach(function (b) {
         b.onclick = function () {
           var s = porId(S.serv, b.dataset.execComp), o = porId(S.obras, s.obra_id) || {};
-          compartilharFotos(fotosDoServico(s.id), o.cliente || "Serviço", ((A.CFG.EMPRESA || {}).nome || "AGE") + " — " + (o.cliente || "") + (o.chamado ? " · chamado " + o.chamado : "") + "\n" + resumoServ(s, 160) + "\n" + A.dataSimples(A.isoLocal(dataExecucao(s))), b);
+          var dOrc = !!b.dataset.orc;
+          compartilharFotos(fotosDoServico(s.id, dOrc), (o.cliente || "Serviço") + (dOrc ? " orcamento" : ""), ((A.CFG.EMPRESA || {}).nome || "AGE") + " — " + (dOrc ? "📐 ORÇAMENTO · " : "🔧 SERVIÇO REALIZADO · ") + (o.cliente || "") + (o.chamado ? " · chamado " + o.chamado : "") + "\n" + resumoServ(s, 160) + "\n" + A.dataSimples(A.isoLocal(dataExecucao(s))), b);
         };
       });
       $$("[data-exec-baixar]", r).forEach(function (b) {
-        b.onclick = function () { var s = porId(S.serv, b.dataset.execBaixar), o = porId(S.obras, s.obra_id) || {}; baixarFotos(fotosDoServico(s.id), (o.cliente || "servico") + "-" + A.isoLocal(dataExecucao(s)), b); };
+        b.onclick = function () { var s = porId(S.serv, b.dataset.execBaixar), o = porId(S.obras, s.obra_id) || {}; baixarFotos(fotosDoServico(s.id, !!b.dataset.orc), (o.cliente || "servico") + (b.dataset.orc ? "-orcamento" : "") + "-" + A.isoLocal(dataExecucao(s)), b); };
       });
     }
     function cartaoExecutado(s) {
       var o = porId(S.obras, s.obra_id) || {}, rels = S.rel.filter(function (x) { return x.servico_id === s.id; });
-      var antes = [], depois = [];
-      rels.forEach(function (x) { antes = antes.concat(x.fotos_antes || []); depois = depois.concat(x.fotos || []); });
-      rels.forEach(function (x) { (x.fotos_antes || []).forEach(function (f) { infoFoto[f] = "Foto ANTES · " + esc(o.cliente || "") + " · " + A.dataHora(x.criado_em); }); (x.fotos || []).forEach(function (f) { infoFoto[f] = "Foto · " + esc(o.cliente || "") + " · " + A.dataHora(x.criado_em); }); });
+      // fotos do relatório de ORÇAMENTO (visita para orçar) ficam separadas das do SERVIÇO realizado
+      var antes = [], depois = [], orc = [];
+      rels.forEach(function (x) { if (x.orcamento) orc = orc.concat(x.fotos_antes || [], x.fotos || []); else { antes = antes.concat(x.fotos_antes || []); depois = depois.concat(x.fotos || []); } });
+      rels.forEach(function (x) {
+        (x.fotos_antes || []).concat(x.orcamento ? x.fotos || [] : []).forEach(function (f) { infoFoto[f] = (x.orcamento ? "📐 Foto do ORÇAMENTO · " : "Foto ANTES · ") + esc(o.cliente || "") + " · " + A.dataHora(x.criado_em); });
+        if (!x.orcamento) (x.fotos || []).forEach(function (f) { infoFoto[f] = "🔧 Foto do SERVIÇO · " + esc(o.cliente || "") + " · " + A.dataHora(x.criado_em); });
+      });
       var fotos = antes.slice(0, 3).map(function (f) { return htmlFoto(f, "antes"); }).concat(depois.slice(0, antes.length ? 3 : 6).map(function (f) { return htmlFoto(f, antes.length ? "depois" : ""); }));
       var mais = antes.length + depois.length - fotos.length;
       return '<div class="cartao"><div class="linha"><h3>' + esc(o.cliente || "Serviço") + "</h3>" + seloOS(o) + seloChamado(o) +
@@ -1945,15 +1978,17 @@
           '<span class="selo atencao">finalizar chamado ' + esc(o.chamado) + " no portal</span>") : "") + "</div>" +
         (o.endereco ? '<div class="peq mudo">📍 ' + esc(o.endereco) + "</div>" : "") +
         (s.descricao ? '<div class="peq" style="margin-top:4px">' + esc(resumoServ(s, 160)) + "</div>" : "") +
-        (fotos.length ? '<div class="fotos" style="margin-top:8px">' + fotos.join("") + "</div>" + (mais > 0 ? '<div class="peq mudo">+ ' + mais + " foto" + (mais > 1 ? "s" : "") + " no relatório</div>" : "") :
-          '<div class="peq mudo" style="margin-top:6px">Sem fotos no relatório.</div>') +
+        (orc.length ? '<div class="peq" style="margin-top:8px"><b>📐 Fotos do orçamento</b></div><div class="fotos">' + orc.slice(0, 4).map(function (f) { return htmlFoto(f, "orçamento"); }).join("") + "</div>" : "") +
+        (fotos.length ? (orc.length ? '<div class="peq" style="margin-top:8px"><b>🔧 Fotos do serviço realizado</b></div>' : "") + '<div class="fotos" style="margin-top:' + (orc.length ? 0 : 8) + 'px">' + fotos.join("") + "</div>" + (mais > 0 ? '<div class="peq mudo">+ ' + mais + " foto" + (mais > 1 ? "s" : "") + " no relatório</div>" : "") :
+          '<div class="peq mudo" style="margin-top:6px">' + (orc.length ? "Ainda sem foto do serviço realizado." : "Sem fotos no relatório.") + "</div>") +
         '<div class="acoes">' + (rels.length ? '<button class="peq" data-exec-rel="' + rels[0].id + '">📝 Ver relatório</button>' : "") + '<button class="peq" data-exec-serv="' + s.id + '">Abrir serviço</button>' +
-        (antes.length + depois.length ? '<button class="peq" data-exec-comp="' + s.id + '">📤 Compartilhar fotos (' + (antes.length + depois.length) + ')</button><button class="peq" data-exec-baixar="' + s.id + '">⬇️ Baixar fotos</button>' : "") + "</div></div>";
+        (antes.length + depois.length ? '<button class="peq" data-exec-comp="' + s.id + '">📤 Fotos do serviço (' + (antes.length + depois.length) + ')</button><button class="peq" data-exec-baixar="' + s.id + '">⬇️ Baixar fotos do serviço</button>' : "") +
+        (orc.length ? '<button class="peq" data-exec-comp="' + s.id + '" data-orc="1">📤 Fotos do orçamento (' + orc.length + ')</button><button class="peq" data-exec-baixar="' + s.id + '" data-orc="1">⬇️ Baixar fotos do orçamento</button>' : "") + "</div></div>";
     }
     // fotos do serviço executado: as de antes primeiro, depois as de depois
-    function fotosDoServico(sid) {
+    function fotosDoServico(sid, doOrcamento) {
       var antes = [], depois = [];
-      S.rel.filter(function (x) { return x.servico_id === sid; }).forEach(function (x) { antes = antes.concat(x.fotos_antes || []); depois = depois.concat(x.fotos || []); });
+      S.rel.filter(function (x) { return x.servico_id === sid && !!x.orcamento === !!doOrcamento; }).forEach(function (x) { antes = antes.concat(x.fotos_antes || []); depois = depois.concat(x.fotos || []); });
       return antes.concat(depois);
     }
     listar();
@@ -2866,10 +2901,10 @@
     max = max || 70;
     return (o && o.chamado ? "📋 " + o.chamado + (d ? " · " : "") : "") + (d.length > max ? d.slice(0, max) + "…" : d);
   }
-  function lojasComServico(cat) {
+  function lojasComServico(cat, etapa) {
     var mapa = {};
     S.serv.forEach(function (s) {
-      if (!(s.status === "aberto" || s.status === "em_andamento") || (cat && s.categoria !== cat)) return;
+      if (!(s.status === "aberto" || s.status === "em_andamento") || (cat && s.categoria !== cat) || (etapa && etapaDe(s) !== etapa)) return;
       var o = porId(S.obras, s.obra_id), l = o && o.loja_id ? porId(S.lojas, o.loja_id) : null;
       if (!l) return;
       (mapa[l.id] = mapa[l.id] || { loja: l, servicos: [] }).servicos.push(s);
@@ -2930,9 +2965,11 @@
       var m = $("#rt-modo").value, x = $("#rt-modo-extra");
       if (m === "servicos") {
         x.innerHTML = '<select id="rt-cat" aria-label="Área"><option value="">Elétrica e pintura</option><option value="eletrica">⚡ Só elétrica</option><option value="pintura">🖌️ Só pintura</option></select>' +
-          '<div class="peq mudo" style="margin-top:4px">' + lojasComServico(R.cat).length + " lojas com serviço aberto (serviços ligados a uma loja)</div>";
-        $("#rt-cat").value = R.cat;
+          '<select id="rt-etapa" aria-label="Etapa"><option value="">📐 Orçamentos e 🔧 serviços</option><option value="orcamento">📐 Só orçamentos (visitas para orçar)</option><option value="servico">🔧 Só serviços (executar)</option></select>' +
+          '<div class="peq mudo" style="margin-top:4px">' + lojasComServico(R.cat, R.etapa).length + " lojas com serviço aberto (serviços ligados a uma loja)</div>";
+        $("#rt-cat").value = R.cat; $("#rt-etapa").value = R.etapa || "";
         $("#rt-cat").onchange = function () { R.cat = this.value; extras(); };
+        $("#rt-etapa").onchange = function () { R.etapa = this.value; extras(); };
       } else if (m === "escolher") {
         x.innerHTML = '<button id="rt-esc">✔ Escolher lojas (' + Object.keys(R.escolhidas).length + " escolhidas)</button>";
         $("#rt-esc").onclick = escolherLojas;
@@ -2994,7 +3031,7 @@
     obterPartida().then(function (partida) {
       var lojas;
       if (R.modo === "servicos") {
-        lojas = lojasComServico(R.cat).map(function (x) { return Object.assign({}, x.loja, { servicos: x.servicos }); });
+        lojas = lojasComServico(R.cat, R.etapa).map(function (x) { return Object.assign({}, x.loja, { servicos: x.servicos }); });
         if (!lojas.length) throw new Error("Nenhuma loja com serviço aberto. Ao criar o serviço, escolha a loja no campo “Loja da rede”.");
       } else if (R.modo === "escolher") {
         lojas = Object.keys(R.escolhidas).map(function (id) { return porId(S.lojas, id); }).filter(Boolean);
@@ -3027,7 +3064,7 @@
     return '<li style="margin:6px 0"><div class="linha" style="gap:6px"><span><b>' + esc(nomeLoja(p)) + "</b> " + (NIVEL[p.geo_precisao] <= 2 ? '<span class="selo atencao">local aproximado</span>' : "") +
       (d !== null ? ' <span class="mudo peq">+' + A.numero(d, 1) + " km</span>" : "") + "</span>" + (n ? botoesParada(i, n, dia, nDias) : "") + "</div>" +
       '<div class="peq mudo">' + esc(enderecoLoja(p)) + "</div>" +
-      (p.servicos ? '<div class="peq">' + p.servicos.map(function (s) { return '<div style="display:flex;gap:6px;align-items:center;margin:2px 0">' + A.seloCategoria(s.categoria) + " <span>" + esc(resumoServ(s)) + "</span>" +
+      (p.servicos ? '<div class="peq">' + p.servicos.map(function (s) { return '<div style="display:flex;gap:6px;align-items:center;margin:2px 0;flex-wrap:wrap">' + A.seloCategoria(s.categoria) + seloEtapa(s) + " <span>" + esc(resumoServ(s)) + "</span>" +
         (n ? ' <button class="peq" type="button" data-sfeito="' + s.id + '" title="Marcar este serviço como executado">✔ Já feito</button>' : "") + "</div>"; }).join("") + "</div>" : "") + "</li>";
   }
   // serviço já executado (que ainda estava aberto no app): marca como concluído
@@ -3155,7 +3192,7 @@
     lojasComServico("").forEach(function (x) { abertos[x.loja.id] = x.servicos; });
     r.paradas.forEach(function (p, i) {
       t += (i + 1) + ". " + nomeLoja(p) + "\n   " + enderecoLoja(p) + "\n";
-      (abertos[p.id] || []).forEach(function (s) { t += "   " + A.CATEG[s.categoria].icone + " " + resumoServ(s, 90) + "\n"; });
+      (abertos[p.id] || []).forEach(function (s) { t += "   " + A.CATEG[s.categoria].icone + " " + (etapaDe(s) === "orcamento" ? "📐 ORÇAMENTO (fotos e medidas): " : "🔧 SERVIÇO: ") + resumoServ(s, 90) + "\n"; });
       t += "   " + G.linkNavegar(p) + "\n";
     });
     var links = G.linksGoogle(r.partida && G.temLocal(r.partida) ? r.partida : null, r.paradas, false);

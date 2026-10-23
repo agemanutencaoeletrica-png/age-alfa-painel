@@ -207,6 +207,10 @@ alter table public.relatorios add column if not exists fotos_antes text[] not nu
 alter table public.relatorios add column if not exists orcamento boolean not null default false;
 alter table public.servicos drop constraint if exists servicos_status_check;
 alter table public.servicos add constraint servicos_status_check check (status in ('aberto', 'em_andamento', 'aguardando', 'concluido', 'cancelado'));
+-- etapa: 'orcamento' (visita para orçar: fotos do local) ou 'servico' (executar: fecha só com foto do serviço feito)
+alter table public.servicos add column if not exists etapa text;
+alter table public.servicos drop constraint if exists servicos_etapa_check;
+alter table public.servicos add constraint servicos_etapa_check check (etapa is null or etapa in ('orcamento', 'servico'));
 
 -- Licitações de que a AGE participa (só o dono vê) e documentos de habilitação
 create table if not exists public.licitacoes (
@@ -485,7 +489,7 @@ begin
     'servicos', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id', s.id, 'categoria', s.categoria, 'descricao', s.descricao,
-               'data_prevista', s.data_prevista, 'status', s.status, 'pede_assinatura', s.pede_assinatura,
+               'data_prevista', s.data_prevista, 'status', s.status, 'pede_assinatura', s.pede_assinatura, 'etapa', s.etapa,
                'cliente', o.cliente, 'telefone', o.telefone, 'endereco', o.endereco,
                'observacoes', o.observacoes,
                'prefeitura', pf.nome, 'protocolo', o.protocolo, 'secretaria', o.secretaria,
@@ -667,6 +671,10 @@ begin
     if cardinality(p_fotos) = 0 then
       raise exception 'OS da prefeitura: falta a foto de DEPOIS (serviço pronto).';
     end if;
+  end if;
+  -- fechamento só com prova: para concluir precisa da foto do serviço realizado
+  if coalesce(p_concluido, false) and not coalesce(v_pref, false) and cardinality(p_fotos) = 0 then
+    raise exception 'Para concluir, tire as fotos do serviço realizado.';
   end if;
   p_assinatura := nullif(trim(coalesce(p_assinatura, '')), '');
   if p_assinatura is not null then
