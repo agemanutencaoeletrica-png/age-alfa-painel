@@ -549,7 +549,7 @@
       '<label for="cn-dest">Para onde foi (obra / loja / cliente)</label><input id="cn-dest" list="cn-dl-obras" maxlength="200" placeholder="Digite a loja, o cliente (ex.: DEVA) ou o nº do chamado">' +
       '<datalist id="cn-dl-obras">' + obras.map(function (o) { return '<option value="' + esc(rotuloObra(o)) + '">'; }).join("") + "</datalist>" +
       '<div id="cn-mat"><label for="cn-tipo">Tipo de serviço</label><input id="cn-tipo" list="cn-dl-tipos" maxlength="200"><datalist id="cn-dl-tipos"></datalist>' +
-      '<label>Materiais</label><datalist id="cn-dl-mat"></datalist><div id="cn-itens"></div><button class="peq" type="button" id="cn-mais">+ Material</button> <span class="peq mudo" id="cn-soma"></span></div>' +
+      '<label>Materiais</label><datalist id="cn-dl-mat"></datalist><div id="cn-itens"></div><button type="button" id="cn-mais">➕ Adicionar material</button> <span class="peq mudo" id="cn-soma"></span></div>' +
       '<label for="cn-obs">Observação</label><input id="cn-obs" maxlength="300" placeholder="Ex.: gasolina da semana, troca de óleo, lanche da equipe">' +
       '<div id="cn-erro"></div><div class="acoes"><button class="prim" id="cn-salvar">Salvar</button>' + (c0 ? '<button class="perigo" id="cn-apagar">Apagar</button>' : "") +
       (op.depois && op.falta ? '<button id="cn-pular">Pular esta</button>' : "") + "</div>",
@@ -658,7 +658,18 @@
         (dif ? ' <span class="selo critico">≠ total ' + dinheiro(tv) + ": confira quantidades e valores</span>" : tv > 0 && !falta ? ' <span class="selo bom">✔ bate com o total</span>' : "") : "";
     }
     $("#cn-valor", el).addEventListener("input", somar);
-    $("#cn-mais", el).onclick = function () { it.push({ un: "un", area: area === "pintura" ? "pintura" : "eletrica" }); desenharItens(); };
+    $("#cn-itens", el).addEventListener("keydown", function (ev) {
+      if (ev.key !== "Enter" || !ev.target.matches("input")) return;
+      ev.preventDefault();
+      var n = Number(ev.target.closest("[data-li]").dataset.li);
+      if (n === it.length - 1) { it.push({ un: "un", area: area === "pintura" ? "pintura" : "eletrica" }); desenharItens(); }
+      var prox = $('[data-li="' + (n + 1) + '"] [data-c="item"]', el);
+      if (prox) prox.focus();
+    });
+    $("#cn-mais", el).onclick = function () {
+      it.push({ un: "un", area: area === "pintura" ? "pintura" : "eletrica" }); desenharItens();
+      var u = $('[data-li="' + (it.length - 1) + '"] [data-c="item"]', el); if (u) u.focus();
+    };
     if (!it.length) it.push({ un: "un" });
     marcarTipo();
     $("#cn-forn", el).addEventListener("change", listaMateriais);
@@ -698,6 +709,12 @@
       var erro = !(valor > 0) ? "Informe o valor total" + (tipo === "despesa" ? "." : " (ou o valor dos materiais).") : !$("#cn-data", el).value ? "Informe a data." :
         area === "dividir" && !itens.some(function (x) { return x.valor; }) ? "Para dividir entre elétrica e pintura, informe o valor de cada material." : "";
       if (erro) { $("#cn-erro", el).innerHTML = '<div class="aviso erro">' + erro + "</div>"; return; }
+      // lançamento à mão pela metade: confirma antes de gravar (um clique no Salvar sem querer não grava a nota incompleta)
+      if (aMao && tipo !== "despesa" && itens.length) {
+        var totalDig = A.lerNumero($("#cn-valor", el).value);
+        if (!totalDig && !A.confirmar("O Valor total está vazio: vou salvar com a soma dos materiais, " + dinheiro(soma) + ".\nJá colocou todos os materiais da nota?")) return;
+        if (totalDig && soma > 0 && soma < totalDig - 0.05 && !A.confirmar("Os materiais somam " + dinheiro(soma) + " e o total da nota é " + dinheiro(totalDig) + " (faltam " + dinheiro(totalDig - soma) + ").\nSalvar assim mesmo?")) return;
+      }
       var ob = obraPorRotulo($("#cn-dest", el).value);
       var dados = { comprado_em: $("#cn-data", el).value, valor: valor, fornecedor: $("#cn-forn", el).value.trim() || null, area: area, tipo: tipo,
         categoria: tipo === "despesa" ? $("#cn-cat", el).value : null, veiculo_id: tipo === "despesa" && $("#cn-veic", el) ? $("#cn-veic", el).value || null : null,
@@ -1060,7 +1077,7 @@
   function situacao(c) {
     if (!c.vencimento) return { txt: "não quitada · sem vencimento", cor: "atencao", ordem: 2 };
     var d = diasPara(c.vencimento);
-    if (d < 0) return { txt: "VENCIDA há " + (-d) + (d === -1 ? " dia" : " dias"), cor: "critico", ordem: 0, urgente: true };
+    if (d < 0) return { txt: "VENCIDA há " + (-d) + (d === -1 ? " dia" : " dias") + " (venceu " + A.dataSimples(c.vencimento) + ")", cor: "critico", ordem: 0, urgente: true };
     if (d === 0) return { txt: "vence HOJE", cor: "critico", ordem: 0, urgente: true };
     if (d <= 3) return { txt: "vence em " + d + (d === 1 ? " dia" : " dias"), cor: "atencao", ordem: 1, urgente: true };
     return { txt: "vence " + A.dataSimples(c.vencimento), cor: "atencao", ordem: 3 };
