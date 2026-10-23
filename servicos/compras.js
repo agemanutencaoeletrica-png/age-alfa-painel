@@ -285,7 +285,8 @@
   }
   function textoRepetida(rp) {
     return "<b>" + (rp.certa ? "⛔ Esta nota já foi lançada" : "⚠️ Parece repetida") + "</b> (" + esc(rp.motivo) + "): " + esc(rp.c.fornecedor || "loja não informada") + " · " +
-      dinheiro(rp.c.valor) + " · " + esc(A.dataSimples(rp.c.comprado_em)) + (rp.certa ? ". Não vou lançar de novo." : ". Se for outra compra igual, toque em salvar de novo.");
+      dinheiro(rp.c.valor) + " · " + esc(A.dataSimples(rp.c.comprado_em)) + (rp.certa ? ". Não vou lançar de novo." : ". Se for outra compra igual, toque em salvar de novo.") +
+      '<div class="acoes" style="margin-top:6px"><button type="button" class="peq" data-cp-rep="' + esc(rp.c.id) + '">📂 Abrir a nota já lançada</button></div>';
   }
   function categoriaPeloTexto(sa) {
     if (/gasolina|etanol|diesel|combustiv|\bposto\b|ipiranga|petrobras|shell|ale combust/.test(sa)) return "combustivel";
@@ -499,6 +500,15 @@
       (op.depois && op.falta ? '<button id="cn-pular">Pular esta</button>' : "") + "</div>",
       { titulo: c0 ? "🧾 Compra / despesa" : "🧾 Nova compra / despesa", larga: true, fixa: true });
     var el = j.el;
+    // nota repetida: abre a que já está lançada (e a lista passa a mostrar o mês dela) para comparar os valores
+    el.addEventListener("click", function (ev) {
+      var bt = ev.target.closest("[data-cp-rep]"); if (!bt) return;
+      var c = P.porId(P.S.compras, bt.dataset.cpRep); if (!c) return;
+      j.fechar();
+      filtro.periodo = "datas"; filtro.de = String(c.comprado_em).slice(0, 8) + "01"; filtro.ate = ""; filtro.tipo = ""; filtro.area = "";
+      if (location.hash !== "#compras") location.hash = "#compras"; else P.rota();
+      formulario({ compra: c });
+    });
     $("#cn-data", el).value = c0 ? c0.comprado_em : d.data || A.isoLocal(new Date());
     $("#cn-valor", el).value = num2(c0 ? c0.valor : d.valor);
     $("#cn-forn", el).value = c0 ? c0.fornecedor || "" : d.fornecedor || "";
