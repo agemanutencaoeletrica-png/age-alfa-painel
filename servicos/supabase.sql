@@ -366,6 +366,12 @@ create table if not exists public.receitas (
   criado_em     timestamptz not null default now()
 );
 create index if not exists receitas_data_idx on public.receitas (emitida_em);
+-- valor bruto, impostos retidos na nota (ISS, INSS, IR, PIS, COFINS, CSLL), imposto da empresa (DAS/Simples) e CNPJ do tomador.
+-- valor = líquido recebido (bruto − retenções); ficou para a empresa = líquido − imposto da empresa
+alter table public.receitas add column if not exists valor_bruto     numeric(12,2);
+alter table public.receitas add column if not exists retencoes       jsonb not null default '{}'::jsonb;
+alter table public.receitas add column if not exists imposto_empresa numeric(12,2);
+alter table public.receitas add column if not exists tomador_cnpj    text;
 alter table public.pagamentos add column if not exists obra_id uuid references public.obras (id) on delete set null;
 alter table public.pagamentos add column if not exists destino text;
 
