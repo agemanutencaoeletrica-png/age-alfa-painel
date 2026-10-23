@@ -306,8 +306,38 @@
     escolherZap(a.href);
   }, true);
 
+  // ZIP (ex.: "Exportar conversa"/várias fotos do WhatsApp): abre e devolve as fotos, PDFs e XMLs de dentro; os outros arquivos passam direto
+  var JSZIP = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js", zipPronto = null;
+  function ehZip(f) { return /zip/i.test(f.type || "") || /\.zip$/i.test(f.name || ""); }
+  function carregarZip() {
+    if (window.JSZip) return Promise.resolve(window.JSZip);
+    if (!zipPronto) zipPronto = new Promise(function (ok, falha) {
+      var sc = document.createElement("script"); sc.src = JSZIP;
+      sc.onload = function () { if (window.JSZip) ok(window.JSZip); else { zipPronto = null; falha(new Error("Não consegui abrir o ZIP.")); } };
+      sc.onerror = function () { zipPronto = null; sc.remove(); falha(new Error("Sem internet para abrir o ZIP. Tente de novo.")); };
+      document.head.appendChild(sc);
+    });
+    return zipPronto;
+  }
+  var TIPOS_ZIP = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", heic: "image/heic", pdf: "application/pdf", xml: "text/xml" };
+  function abrirZips(arquivos) {
+    var fs = Array.prototype.slice.call(arquivos || []);
+    if (!fs.some(ehZip)) return Promise.resolve(fs);
+    return carregarZip().then(function (JSZip) {
+      return Promise.all(fs.map(function (f) {
+        if (!ehZip(f)) return [f];
+        return JSZip.loadAsync(f).then(function (z) {
+          var nomes = Object.keys(z.files).filter(function (n) { var e = n.split(".").pop().toLowerCase(); return !z.files[n].dir && !/(^|\/)(__MACOSX|\.)/.test(n) && TIPOS_ZIP[e]; }).sort();
+          return Promise.all(nomes.map(function (n) {
+            return z.files[n].async("blob").then(function (b) { var e = n.split(".").pop().toLowerCase(); return new File([b], n.split("/").pop(), { type: TIPOS_ZIP[e] }); });
+          }));
+        });
+      })).then(function (ls) { return [].concat.apply([], ls); });
+    });
+  }
+
   window.AGE = {
-    ligarInstalar: ligarInstalar,
+    ligarInstalar: ligarInstalar, abrirZips: abrirZips, ehZip: ehZip,
     CFG: CFG, CATEG: CATEG, AREA: AREA, STATUS: STATUS, TIPO_PONTO: TIPO_PONTO,
     esc: esc, $: $, $$: $$, data: data, hora: hora, dataHora: dataHora, dataSimples: dataSimples, isoLocal: isoLocal,
     inicioDia: inicioDia, duracao: duracao, dinheiro: dinheiro, numero: numero, lerNumero: lerNumero, soDigitos: soDigitos,

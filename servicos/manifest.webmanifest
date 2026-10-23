@@ -44,7 +44,9 @@
             "application/pdf",
             "text/xml",
             "application/xml",
-            ".xml"
+            ".xml",
+            "application/zip",
+            ".zip"
           ]
         }
       ]

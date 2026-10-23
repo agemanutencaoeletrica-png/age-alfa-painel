@@ -2102,6 +2102,9 @@
   // o que chegou pelo "Compartilhar → AGE Painel" do Android
   function abrirRecebido() {
     A.lerRecebido().then(function (rc) {
+      // ZIP compartilhado (várias fotos do WhatsApp): abre antes de perguntar o que fazer
+      return rc && rc.arquivos && rc.arquivos.some(A.ehZip) ? A.abrirZips(rc.arquivos).then(function (fs) { rc.arquivos = fs; return rc; }).catch(function (e) { A.avisar(A.msgErro(e), "erro"); return rc; }) : rc;
+    }).then(function (rc) {
       if (!rc || (!rc.texto && !rc.arquivos.length)) return;
       var j = A.janela((rc.texto ? '<div class="cartao peq" style="white-space:pre-wrap;max-height:220px;overflow:auto">' + esc(rc.texto.slice(0, 3000)) + "</div>" : "") +
         (rc.arquivos.length ? '<p class="peq">📷 ' + rc.arquivos.length + " foto" + (rc.arquivos.length > 1 ? "s" : "") + " recebida" + (rc.arquivos.length > 1 ? "s" : "") +

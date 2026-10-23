@@ -11,7 +11,13 @@
   var AREAS_D = { geral: "Geral", eletrica: "⚡ Elétrica", pintura: "🖌️ Pintura" };
   var CATS = { combustivel: "⛽ Combustível", veiculo: "🔧 Manutenção de veículo", alimentacao: "🍔 Lanche / alimentação", pedagio: "🅿️ Pedágio / estacionamento",
     ferramentas: "🛠️ Ferramentas / EPI", outros: "📦 Outros" };
-  var FORMAS = { pix: "Pix", dinheiro: "Dinheiro", cartao: "Cartão", boleto: "Boleto / a prazo", outro: "Outro" };
+  var FORMAS = { pix: "Pix", dinheiro: "Dinheiro", cartao: "Cartão", boleto: "Boleto / a prazo", fiado: "📒 Fiado / confiança", outro: "Outro" };
+  // fiado (nota de confiança, ex.: Depósito do Braga): paga no começo do mês seguinte ao da compra
+  var DIA_FIADO = 5;
+  function vencimentoFiado(dataCompra) {
+    var d = dataCompra ? new Date(dataCompra + "T12:00:00") : new Date();
+    return A.isoLocal(new Date(d.getFullYear(), d.getMonth() + 1, DIA_FIADO));
+  }
   var TIPOS = {
     eletrica: ["Instalação de tomadas e interruptores", "Troca de disjuntor", "Montagem de quadro de distribuição", "Instalação de iluminação",
       "Passagem de fiação", "Manutenção corretiva", "Instalação de ventilador", "Aterramento", "Padrão de entrada"],
@@ -104,7 +110,7 @@
       var mr = forte.test(f0) && f0.match(/[A-ZÀ-Ú0-9&.' -]*?\b(?:LTDA|EIRELI|EPP|S\.A\.|S\/A|ME)\b\.?/i);
       // sujeira antes do nome na foto ("Bugs. Na Rodol Ltda"): sai palavra terminada em pontuação e pedaço de 2 letras
       var wf = (mr ? mr[0] : f0).replace(/\s+/g, " ").trim().split(" ");
-      while (wf.length > 2 && (/[.:;,!]$/.test(wf[0]) || /^[A-ZÀ-Ú][a-zà-ú]$/.test(wf[0]) || /^[a-zà-ú]{1,3}$/.test(wf[0]))) wf.shift();
+      while (wf.length > 2 && (/[.:;,!]$/.test(wf[0]) || /^[A-ZÀ-Ú][a-zà-ú]$/.test(wf[0]) || /^[a-zà-ú]{1,3}$/.test(wf[0]) || /^[A-ZÀ-Ú]{1,2}$/.test(wf[0]))) wf.shift();
       r.fornecedor = wf.join(" ").replace(/\s+(?:N[º°o.]?\s*\d|\d{4}\b).*$/i, "").replace(/[\s-]+$/, "").slice(0, 120);
       if (!/[A-Za-zÀ-ú]{3,}/.test(r.fornecedor)) delete r.fornecedor;
     }
@@ -135,6 +141,11 @@
       if (ns.length < 2 || !(ns[0] > 0) || !(ns[1] > 0)) return;
       var qtd = ns[0], unit = ns[1], tot = null;
       for (var k = 2; k < ns.length && tot === null; k++) if (Math.abs(ns[k] - qtd * unit) < 0.05) tot = ns[k];
+      // a quantidade sumiu e o 1º número é o unitário: "43,21 172,84" = 4 × 43,21 (o total é múltiplo exato do unitário)
+      if (tot === null && Math.round(qtd * 100) % 100 !== 0) {
+        var razao = unit / qtd;
+        if (razao >= 1 && razao <= 999 && Math.abs(razao - Math.round(razao)) < 0.005) { tot = unit; unit = qtd; qtd = Math.round(razao); }
+      }
       if (tot === null) tot = Math.round(qtd * unit * 100) / 100;
       r.itens.push({ item: md[1].replace(/\s+/g, " ").trim().slice(0, 120), qtd: qtd, un: mu[1].toLowerCase().replace("und", "un"), unit: unit, valor: tot });
       ls[i] = "";
@@ -202,6 +213,10 @@
       if (palavras(desc) < 2 || CAB.test(desc)) return;
       var qtd = ns[0], unit = ns[1], tot = null;
       for (var k = 2; k < ns.length && tot === null; k++) if (Math.abs(ns[k] - qtd * unit) < 0.05) tot = ns[k];
+      if (tot === null && Math.round(qtd * 100) % 100 !== 0) {   // "4 43,21 172,84": a quantidade sem vírgula ficou de fora
+        var rz = unit / qtd;
+        if (rz >= 1 && rz <= 999 && Math.abs(rz - Math.round(rz)) < 0.005) { tot = unit; unit = qtd; qtd = Math.round(rz); }
+      }
       if (tot === null) tot = Math.round(qtd * unit * 100) / 100;
       r.itens.push({ item: desc.slice(0, 120), qtd: qtd, un: mu[2].toLowerCase().replace(/und|unid/, "un").replace("mt", "m"), unit: unit, valor: tot });
     });
@@ -230,6 +245,8 @@
       if (!v1.length && ls[i + 1]) v1 = pos(valoresT(ls[i + 1]));
       if (v1.length) vProd = v1[v1.length - 1];
     });
+    if (vProd && somaIt > vProd * 1.02 + 0.05) { r.itensSuspeitos = true; somaIt = 0; }   // material lido errado: vale o total impresso
+    if (vProd) r.vProd = vProd;
     var piso = Math.max(somaIt, vProd * 0.9);
     // total na mesma linha do rótulo e repetido na nota ("TOTAL 219,68" e "Crédito 2x R$ 219,68"): é ele; o material é que foi lido errado
     var repete = r.valor && valoresT(t).filter(function (v) { return Math.abs(v - r.valor) < 0.005; }).length >= 2;
@@ -308,6 +325,41 @@
     delete r.numeroDaChave;
     return r;
   }
+  // lista colada (tabela da conversa, WhatsApp, planilha): "10 | Fita crepe larga | 13,50 | 135,00", "10 Fita crepe 13,50 135,00",
+  // "2 un Selador Eucatex 18L 99,00" — e a data e o total, se vierem junto ("18/09/2026, total R$ 685,80")
+  function lerLista(texto) {
+    var r = { itens: [] }, din = /\d{1,3}(?:\.\d{3})*,\d{2}(?!\d)|\d+\.\d{2}(?![\d,])/g;
+    var num = function (v) { return /,/.test(v) ? A.lerNumero(v) : Number(v); };
+    String(texto || "").split(/\r?\n/).forEach(function (l0) {
+      var l = l0.replace(/\*\*|__|`/g, "").replace(/R\$\s*/gi, "").trim();
+      if (!l || /^[|:\-\s]+$/.test(l)) return;
+      var md = l.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+      if (md && !r.data) { var ano = md[3].length === 2 ? "20" + md[3] : md[3]; r.data = ano + "-" + ("0" + md[2]).slice(-2) + "-" + ("0" + md[1]).slice(-2); }
+      var mt = l.match(/total[^\d]{0,20}(\d{1,3}(?:\.\d{3})*,\d{2})/i);
+      if (mt && l.indexOf("|") < 0 && (md || !/^\W*\d/.test(l))) { r.valor = A.lerNumero(mt[1]); return; }
+      var cel = l.indexOf("|") >= 0 ? l.split("|").map(function (x) { return x.trim(); }).filter(Boolean) : l.indexOf("\t") >= 0 ? l.split("\t").map(function (x) { return x.trim(); }).filter(Boolean) : null;
+      var qtd, desc, vals, un = "un";
+      if (cel && cel.length >= 3) {
+        if (/^(qtd|quant|qde|material|descri)/i.test(cel[0])) return;   // cabeçalho
+        if (!/^\d+(?:[.,]\d+)?$/.test(cel[0])) return;
+        qtd = num(cel[0]); desc = cel.filter(function (x, i) { return i > 0 && /[A-Za-zÀ-ú]{2,}/.test(x); })[0] || "";
+        vals = cel.slice(1).filter(function (x) { return /^\d{1,3}(?:\.\d{3})*,\d{2}$|^\d+\.\d{2}$/.test(x); }).map(num);
+      } else {
+        var m = l.match(/^\W*(\d+(?:[.,]\d{1,3})?)\s*(?:x\s+)?(un|und|pç|pc|m|kg|l|cx|rolo|rolos|galão|galao|gl|lata|lt|balde|par)?\.?\s+(.+)$/i);
+        if (!m) return;
+        qtd = num(m[1]); if (m[2]) un = m[2].toLowerCase().replace(/^und$|^pc$/, "un").replace(/^galao$|^gl$/, "galão").replace(/^rolos$/, "rolo").replace(/^lt$/, "lata");
+        var resto = m[3]; vals = (resto.match(din) || []).map(num);
+        desc = resto.replace(din, " ").replace(/[|–—=:]+/g, " ").replace(/\s+/g, " ").trim();
+      }
+      desc = String(desc || "").replace(/\s+/g, " ").trim();
+      if (!(qtd > 0) || qtd > 9999 || !/[A-Za-zÀ-ú]{2,}/.test(desc)) return;
+      var unit = vals.length ? vals[0] : null, tot = vals.length > 1 ? vals[vals.length - 1] : null;
+      if (unit && !tot) tot = Math.round(qtd * unit * 100) / 100;
+      if (tot && !unit) unit = Math.round(tot / qtd * 100) / 100;
+      r.itens.push({ item: desc.slice(0, 120), qtd: qtd, un: un, unit: unit, valor: tot });
+    });
+    return r;
+  }
   function cnpjOk(c) {
     c = String(c || "").replace(/\D/g, "");
     if (c.length !== 14 || /^(\d)\1+$/.test(c)) return false;
@@ -367,6 +419,7 @@
   function corrigeTotal(d) {
     var soma = Math.round(somaItens(d) * 100) / 100;
     if (!soma || (d.itens || []).length < 2 || d.totalFirme || incompletos(d)) return;   // soma sem todos os preços não é o total
+    if (d.vProd && d.valor && Math.abs(d.valor - d.vProd) < 0.05 && d.valor >= soma - 0.05) return;   // bate com o "TOTAL DOS PRODUTOS" impresso: faltou ler material
     var umItem = d.itens.some(function (x) { return Math.abs((Number(x.valor) || 0) - d.valor) < 0.05; });
     if (!d.valor || d.valorIncerto || umItem || d.valor < soma * 0.95) { d.valor = soma; d.valorIncerto = true; d.valorSoma = true; }
   }
@@ -444,7 +497,16 @@
   function receber(rc, ctx) {
     P = ctx;
     if (P.S.semCompras) { A.avisar("Rode de novo o supabase.sql no Supabase para usar as compras.", "erro"); return; }
-    var fila = (rc.arquivos || []).slice(0, 10);
+    if ((rc.arquivos || []).some(A.ehZip)) {
+      A.avisar("📦 Abrindo o ZIP...", "");
+      A.abrirZips(rc.arquivos).then(function (fs) {
+        if (!fs.length) { A.avisar("O ZIP não tem fotos, PDF nem XML de nota.", "erro"); return; }
+        receber(Object.assign({}, rc, { arquivos: fs }), ctx);
+      }).catch(function (e) { A.avisar(A.msgErro(e), "erro"); });
+      return;
+    }
+    var fila = (rc.arquivos || []).slice(0, 20);
+    if ((rc.arquivos || []).length > 20) A.avisar("Vou ler as 20 primeiras notas; as outras mande depois.", "");
     if (!fila.length) { var dt = rc.texto ? lerNota(rc.texto) : {}; completarLoja(dt).then(function () { formulario({ texto: dt, bruto: rc.texto || "", tipo: rc.tipo }); }); return; }
     var j = A.janela('<div class="peq" id="cn-st">📖 Lendo a nota... (a 1ª vez demora um pouco)</div>', { titulo: "🧾 Nota" });
     var lidas = [];
@@ -530,6 +592,7 @@
         var rp0 = !c0 && repetida({ chave: d.chave, numero_nota: d.numero, cnpj: d.cnpj, fornecedor: d.fornecedor, comprado_em: d.data, valor: d.valor }, null);
         return rp0 ? '<div class="aviso erro" id="cn-rep0">' + textoRepetida(rp0) + "</div>" : "";
       })() +
+      (!c0 && d.itensSuspeitos ? '<div class="aviso">⚠️ Os materiais lidos da foto somam <b>mais que o total da nota</b>: algum foi lido errado. Usei o total impresso na nota — <b>confira os materiais</b>.</div>' : "") +
       (!c0 && op.imagem && !op.erro && d.semData ? '<div class="aviso">⚠️ Não achei a <b>data da compra</b> na foto: confira a data antes de salvar.</div>' : "") +
       (!c0 && d.dataCorrigida ? '<div class="aviso">⚠️ O ano da data saiu errado na foto (ex.: 2020): usei o ano atual. <b>Confira a data</b>.</div>' : "") +
       (op.falta ? '<div class="peq mudo">Depois desta: mais ' + op.falta + " nota" + (op.falta > 1 ? "s" : "") + ".</div>" : "") +
@@ -549,7 +612,7 @@
       '<label for="cn-dest">Para onde foi (obra / loja / cliente)</label><input id="cn-dest" list="cn-dl-obras" maxlength="200" placeholder="Digite a loja, o cliente (ex.: DEVA) ou o nº do chamado">' +
       '<datalist id="cn-dl-obras">' + obras.map(function (o) { return '<option value="' + esc(rotuloObra(o)) + '">'; }).join("") + "</datalist>" +
       '<div id="cn-mat"><label for="cn-tipo">Tipo de serviço</label><input id="cn-tipo" list="cn-dl-tipos" maxlength="200"><datalist id="cn-dl-tipos"></datalist>' +
-      '<label>Materiais</label><datalist id="cn-dl-mat"></datalist><div id="cn-itens"></div><button type="button" id="cn-mais">➕ Adicionar material</button> <span class="peq mudo" id="cn-soma"></span></div>' +
+      '<label>Materiais</label><datalist id="cn-dl-mat"></datalist><div id="cn-itens"></div><button type="button" id="cn-mais">➕ Adicionar material</button> <button type="button" id="cn-colar">📋 Colar lista</button> <span class="peq mudo" id="cn-soma"></span></div>' +
       '<label for="cn-obs">Observação</label><input id="cn-obs" maxlength="300" placeholder="Ex.: gasolina da semana, troca de óleo, lanche da equipe">' +
       '<div id="cn-erro"></div><div class="acoes"><button class="prim" id="cn-salvar">Salvar</button>' + (c0 ? '<button class="perigo" id="cn-apagar">Apagar</button>' : "") +
       (op.depois && op.falta ? '<button id="cn-pular">Pular esta</button>' : "") + "</div>",
@@ -582,7 +645,24 @@
     if ($("#cn-veic", el) && c0) $("#cn-veic", el).value = c0.veiculo_id || "";
     function verPago() { $("#cn-venc-c", el).classList.toggle("oculto", $("#cn-pago", el).checked); }
     $("#cn-pago", el).onchange = verPago;
-    $("#cn-forma", el).onchange = function () { if (this.value === "boleto") { $("#cn-pago", el).checked = false; verPago(); } };
+    var vencAuto = false;
+    // escolheu fiado: a pagar, vencendo no começo do mês seguinte ao da compra (você pode mudar a data)
+    function porFiado() {
+      $("#cn-pago", el).checked = false; verPago();
+      $("#cn-venc", el).value = vencimentoFiado($("#cn-data", el).value); vencAuto = true;
+    }
+    $("#cn-forma", el).onchange = function () {
+      if (this.value === "boleto") { $("#cn-pago", el).checked = false; verPago(); }
+      if (this.value === "fiado") porFiado();
+    };
+    $("#cn-data", el).addEventListener("change", function () { if ($("#cn-forma", el).value === "fiado" && vencAuto) $("#cn-venc", el).value = vencimentoFiado(this.value); });
+    $("#cn-venc", el).addEventListener("input", function () { vencAuto = false; });
+    // loja em que você compra fiado: a nota nova já vem como fiado
+    if (aMao) $("#cn-forn", el).addEventListener("change", function () {
+      var nm = semAcento(this.value).trim();
+      var ult = P.S.compras.filter(function (c) { return semAcento(c.fornecedor || "").trim() === nm; }).sort(function (a, b) { return String(b.comprado_em).localeCompare(String(a.comprado_em)); })[0];
+      if (ult && ult.forma_pagamento === "fiado" && $("#cn-forma", el).value !== "fiado") { $("#cn-forma", el).value = "fiado"; porFiado(); }
+    });
     verPago();
     function marcarTipo() {
       $$("[data-tipo]", el).forEach(function (b) { b.className = b.dataset.tipo === tipo ? "prim" : ""; });
@@ -665,6 +745,40 @@
       if (n === it.length - 1) { it.push({ un: "un", area: area === "pintura" ? "pintura" : "eletrica" }); desenharItens(); }
       var prox = $('[data-li="' + (n + 1) + '"] [data-c="item"]', el);
       if (prox) prox.focus();
+    });
+    // colar a lista de materiais de uma vez (o que já foi digitado fica; linhas vazias saem)
+    function aplicarLista(L) {
+      if (!L.itens.length) return false;
+      it = it.filter(function (x) { return String(x.item || "").trim() || x.valor; }).concat(L.itens.map(function (x) { return Object.assign({ area: area === "pintura" ? "pintura" : "eletrica" }, x); }));
+      if (L.data && (aMao || !$("#cn-data", el).value)) $("#cn-data", el).value = L.data;
+      if (L.valor && !A.lerNumero($("#cn-valor", el).value)) $("#cn-valor", el).value = num2(L.valor);
+      desenharItens();
+      el.dispatchEvent(new Event("input"));   // guarda no rascunho
+      A.avisar("📋 " + L.itens.length + (L.itens.length === 1 ? " material colado" : " materiais colados") + (L.data ? " · data " + A.dataSimples(L.data) : "") + (L.valor ? " · total " + dinheiro(L.valor) : ""), "ok");
+      return true;
+    }
+    $("#cn-colar", el).onclick = function () {
+      var jc = A.janela('<p class="peq mudo" style="margin-top:0">Cole aqui a lista (da conversa, do WhatsApp ou de uma planilha): uma linha por material, com a <b>quantidade</b>, o <b>nome</b>, o <b>unitário</b> e o <b>total</b>. Se vier a data e o “total”, eles também entram.</p>' +
+        '<textarea id="cl-txt" rows="10" placeholder="10 | Fita crepe larga | 13,50 | 135,00&#10;1 | Rolo mangueira | 113,50 | 113,50&#10;2 Estilete 7,50 15,00"></textarea><div id="cl-prev" class="peq"></div>' +
+        '<div class="acoes"><button class="prim" id="cl-ok">Preencher</button></div>', { titulo: "📋 Colar lista de materiais" });
+      var mostrar = function () {
+        var L = lerLista($("#cl-txt", jc.el).value), s2 = L.itens.reduce(function (t, x) { return t + (Number(x.valor) || 0); }, 0);
+        $("#cl-prev", jc.el).innerHTML = L.itens.length ? "✔ " + L.itens.length + " materiais · soma " + dinheiro(s2) + (L.valor ? " · total da nota " + dinheiro(L.valor) + (Math.abs(s2 - L.valor) >= 0.05 ? ' <span class="selo atencao">soma ≠ total</span>' : ' <span class="selo bom">bate</span>') : "") + (L.data ? " · data " + esc(A.dataSimples(L.data)) : "") : "";
+      };
+      $("#cl-txt", jc.el).oninput = mostrar;
+      if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(function (t) { if (t && lerLista(t).itens.length && !$("#cl-txt", jc.el).value) { $("#cl-txt", jc.el).value = t; mostrar(); } }).catch(function () { /* sem permissão: você cola com Ctrl+V */ });
+      $("#cl-txt", jc.el).focus();
+      $("#cl-ok", jc.el).onclick = function () {
+        if (!aplicarLista(lerLista($("#cl-txt", jc.el).value))) { $("#cl-prev", jc.el).innerHTML = '<span class="selo critico">Não achei materiais: cada linha precisa ter a quantidade, o nome e o valor.</span>'; return; }
+        jc.fechar();
+      };
+    };
+    // colou várias linhas direto no campo "Material": vira a lista
+    $("#cn-itens", el).addEventListener("paste", function (ev) {
+      var t = (ev.clipboardData || window.clipboardData).getData("text");
+      if (!/\n/.test(t)) return;
+      var L = lerLista(t);
+      if (L.itens.length >= 2) { ev.preventDefault(); aplicarLista(L); }
     });
     $("#cn-mais", el).onclick = function () {
       it.push({ un: "un", area: area === "pintura" ? "pintura" : "eletrica" }); desenharItens();
@@ -840,7 +954,7 @@
     }
     var desp = filtro.tipo === "despesa";
     c.innerHTML = '<div class="cab-secao"><h2>🧾 Compras e despesas</h2><span><button class="prim" id="cp-nota">📷 Nota / cupom</button> <button id="cp-mao">➕ ' + (desp ? "Despesa avulsa" : "Lançar à mão") + '</button> <button id="cp-reler" title="Ler de novo as fotos das notas já lançadas com a leitura nova">🔄 Atualizar antigas</button></span></div>' +
-      '<input type="file" id="cp-arq" accept="image/*,application/pdf,.xml,text/xml,application/xml" multiple class="oculto">' +
+      '<input type="file" id="cp-arq" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml,.zip,application/zip" multiple class="oculto">' +
       '<div class="filtros" id="cp-tipos">' + [["", "Tudo"], ["material", "🧱 Material de obra"], ["despesa", "⛽ Despesas avulsas"], ["apagar", "💳 A pagar"], ["precos", "📊 Comparar preços"], ["fornec", "🏪 Fornecedores"]].map(function (x) {
         return '<button class="' + (filtro.tipo === x[0] ? "prim" : "") + '" data-ctipo="' + x[0] + '">' + x[1] + "</button>";
       }).join("") + "</div>" +
@@ -1097,7 +1211,7 @@
       ns.slice(0, 12).map(function (c) {
         var st = situacao(c);
         return '<div class="peq" style="margin:4px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="selo ' + st.cor + '">' + esc(st.txt) + "</span> <b>" + esc(c.fornecedor || "Loja não informada") + "</b> · " +
-          dinheiro(c.valor) + ' <span class="mudo">(compra ' + esc(A.dataSimples(c.comprado_em)) + (FORMAS[c.forma_pagamento] ? " · " + esc(FORMAS[c.forma_pagamento]) : "") + ')</span> <button class="peq" data-quitar="' + c.id + '">✔ Quitei</button></div>';
+          dinheiro(c.valor) + ' <span class="mudo">(compra ' + esc(A.dataSimples(c.comprado_em)) + (FORMAS[c.forma_pagamento] ? " · " + esc(FORMAS[c.forma_pagamento]) : "") + ')</span> <button class="peq" data-quitar="' + c.id + '">✔ Quitei</button> <button class="peq" data-cp-edq="' + c.id + '">✏️ Editar</button></div>';
       }).join("") + (ns.length > 12 ? '<div class="peq mudo">… e mais ' + (ns.length - 12) + ' em <a href="#compras" data-ver-apagar>💳 A pagar</a>.</div>' : "") +
       '<div class="mudo peq" style="margin-top:6px">Toque em ✔ Quitei quando pagar (ou mande o comprovante: o app reconhece a nota e marca como paga).</div></div>';
   }
@@ -1120,6 +1234,8 @@
         }).catch(function (e) { A.ocupado(b, false); P.falhou(e); });
       };
     });
+    // lançou errado (data, vencimento, valor, materiais): abre a nota para corrigir
+    $$("[data-cp-edq]", el).forEach(function (b) { b.onclick = function () { var c = P.porId(P.S.compras, b.dataset.cpEdq); if (c) formulario({ compra: c }); }; });
     $$("[data-ver-apagar]", el).forEach(function (a) { a.onclick = function () { filtro.tipo = "apagar"; }; });
   }
   // comprovante de pagamento (Pix/boleto) que bate com uma nota não quitada: mesmo valor e a loja parecida (ou a única com esse valor)
