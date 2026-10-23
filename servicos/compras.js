@@ -105,7 +105,8 @@
       // sujeira antes do nome na foto ("Bugs. Na Rodol Ltda"): sai palavra terminada em pontuação e pedaço de 2 letras
       var wf = (mr ? mr[0] : f0).replace(/\s+/g, " ").trim().split(" ");
       while (wf.length > 2 && (/[.:;,!]$/.test(wf[0]) || /^[A-ZÀ-Ú][a-zà-ú]$/.test(wf[0]) || /^[a-zà-ú]{1,3}$/.test(wf[0]))) wf.shift();
-      r.fornecedor = wf.join(" ").slice(0, 120);
+      r.fornecedor = wf.join(" ").replace(/\s+(?:N[º°o.]?\s*\d|\d{4}\b).*$/i, "").replace(/[\s-]+$/, "").slice(0, 120);
+      if (!/[A-Za-zÀ-ú]{3,}/.test(r.fornecedor)) delete r.fornecedor;
     }
     // CNPJ da loja (válido e que não é o da AGE, que aparece como destinatário), telefone e e-mail da loja
     if (window.AGE_FORN) {
@@ -246,7 +247,53 @@
     var junto = t.replace(/(\d)[ \t]*\n[ \t]*(\d)/g, "$1 $2"), mc2, reC = /\d[\d .]{42,80}\d/g;
     while (!r.chave && (mc2 = reC.exec(junto))) {
       var dd = mc2[0].replace(/\D/g, "");
-      for (var k = 0; k + 44 <= dd.length && !r.chave; k++) if (chaveValida(dd.substr(k, 44))) r.chave = dd.substr(k, 44);
+      for (var k = 0; k + 44 <= dd.length && !r.chave; k++) if (chaveValida(dd.substr(k, 44)) && cnpjOk(dd.substr(k + 6, 14))) r.chave = dd.substr(k, 44);
+    }
+    // um número da chave saiu errado na foto (8 lido como 0...): tenta trocar um dígito de cada vez; só vale se a chave
+    // corrigida conferir E trouxer o CNPJ de uma loja que você já usa (assim não inventa chave)
+    if (!r.chave && P && P.S) {
+      var conhecidos = {};
+      [].concat(P.S.compras || [], P.S.forn || []).forEach(function (x) { var c0 = String(x.cnpj || "").replace(/\D/g, ""); if (c0.length === 14) conhecidos[c0] = 1; });
+      var achadas = {}, reC2 = /\d[\d .]{42,80}\d/g, mc3;
+      while ((mc3 = reC2.exec(junto))) {
+        var d3 = mc3[0].replace(/\D/g, "");
+        for (var k3 = 0; k3 + 44 <= d3.length; k3++) {
+          var base3 = d3.substr(k3, 44);
+          if (!/^(1[1-7]|2[1-9]|3[1-35]|4[1-3]|5[0-3])/.test(base3)) continue;   // começa pelo código do estado
+          for (var p3 = 0; p3 < 44; p3++) for (var g3 = 0; g3 <= 9; g3++) {
+            if (String(g3) === base3[p3]) continue;
+            var c3 = base3.slice(0, p3) + g3 + base3.slice(p3 + 1);
+            if (conhecidos[c3.substr(6, 14)] && chaveValida(c3)) achadas[c3] = 1;
+          }
+        }
+      }
+      var lista3 = Object.keys(achadas);
+      // várias trocas possíveis: fica a que bate com o número da nota e o mês/ano da data lidos na foto
+      if (lista3.length > 1) {
+        var mnum = t.match(/\bN(?:[ºo°]|\.|[uú]mero:?)\s*([\d.]{3,15})/i), num3 = mnum ? Number(mnum[1].replace(/\D/g, "")) : null;
+        var aamm = r.data ? r.data.slice(2, 4) + r.data.slice(5, 7) : null;
+        lista3 = lista3.filter(function (c3) { return (!num3 || Number(c3.substr(25, 9)) === num3) && (!aamm || c3.substr(2, 4) === aamm); });
+      }
+      if (lista3.length === 1) { r.chave = lista3[0]; r.chaveCorrigida = true; }
+      // a chave tem mais de um número errado: não grava a chave, mas o CNPJ dentro dela a 1 número de uma loja conhecida identifica a loja
+      if (!r.chave) {
+        var reC4 = /\d[\d .]{42,80}\d/g, mc4, perto = null;
+        while (!perto && (mc4 = reC4.exec(junto))) {
+          var d4c = mc4[0].replace(/\D/g, "");
+          for (var k5 = 0; k5 + 44 <= d4c.length && !perto; k5++) {
+            var ch5 = d4c.substr(k5, 44);
+            if (!/^(1[1-7]|2[1-9]|3[1-35]|4[1-3]|5[0-3])/.test(ch5) || !/^(55|65)$/.test(ch5.substr(20, 2))) continue;
+            var cj5 = ch5.substr(6, 14);
+            Object.keys(conhecidos).forEach(function (kc) {
+              if (perto) return;
+              var dif = 0; for (var z = 0; z < 14; z++) if (kc[z] !== cj5[z]) dif++;
+              if (dif <= 1) perto = { cnpj: kc, numero: String(Number(ch5.substr(25, 9))) };
+            });
+          }
+        }
+        if (perto && !(r.cnpj && cnpjOk(r.cnpj))) r.cnpj = perto.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+        if (perto) r.numeroDaChave = perto.numero;
+      }
     }
     if (r.chave) {
       // a chave traz o CNPJ da loja e o número da nota (mais confiáveis que a leitura do resto da foto)
@@ -256,8 +303,16 @@
     } else {
       var mn = t.match(/\bN(?:[ºo°]|\.|[uú]mero:?)\s*([\d.]{3,15})/i);
       if (mn) r.numero = String(Number(mn[1].replace(/\D/g, "")));
+      else if (r.numeroDaChave) r.numero = r.numeroDaChave;
     }
+    delete r.numeroDaChave;
     return r;
+  }
+  function cnpjOk(c) {
+    c = String(c || "").replace(/\D/g, "");
+    if (c.length !== 14 || /^(\d)\1+$/.test(c)) return false;
+    var dv = function (n) { var s = 0, p = n - 7; for (var i = 0; i < n; i++) { s += Number(c[i]) * p--; if (p < 2) p = 9; } var r = s % 11; return r < 2 ? 0 : 11 - r; };
+    return dv(12) === Number(c[12]) && dv(13) === Number(c[13]);
   }
   function chaveValida(c) {
     if (!/^\d{44}$/.test(c) || !/^(55|65)$/.test(c.substr(20, 2))) return false;   // modelo 55 (NF-e) ou 65 (NFC-e)
