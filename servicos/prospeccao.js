@@ -54,7 +54,7 @@
     var ls = P.S.prosp, cont = function (f) { return ls.filter(f).length; };
     var contatados = cont(function (x) { return x.situacao !== "a_contatar"; }), fechou = cont(function (x) { return x.situacao === "fechou"; });
     var orc = cont(function (x) { return x.situacao === "orcamento" || x.situacao === "fechou"; }), ret = retornarHoje(P.S).length;
-    c.innerHTML = '<div class="cab-secao"><h2>🎯 Prospecção</h2><span><button class="prim" id="pr-novo">➕ Nova empresa</button> <button id="pr-colar">📋 Colar lista</button> <button id="pr-msg">✏️ Mensagem</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>🎯 Prospecção</h2><span><button class="prim" id="pr-novo">➕ Nova empresa</button> <button id="pr-maps">📍 Colar do Maps</button> <button id="pr-colar">📋 Colar lista</button> <button id="pr-msg">✏️ Mensagem</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Anote as empresas que você achar (Google Maps, lista de CNPJ, indicação). O WhatsApp abre com a mensagem pronta, <b>uma empresa por vez</b> — o app marca como contatado e lembra de retornar em ' + DIAS_RETORNO + " dias.</p>" +
       '<div class="grade">' +
       '<div class="ladrilho" style="border-left:4px solid var(--prim)"><div class="r">🆕 A contatar</div><div class="v">' + cont(function (x) { return x.situacao === "a_contatar"; }) + "</div></div>" +
@@ -74,6 +74,7 @@
     var mudou = function () { if (P.atualizarAbas) P.atualizarAbas(); ver(c, P); };
     $("#pr-novo").onclick = function () { editar(null, mudou); };
     $("#pr-colar").onclick = function () { colar(mudou); };
+    $("#pr-maps").onclick = function () { editar(null, mudou, true); };
     $("#pr-msg").onclick = function () { editarMsg(); };
     listar();
     function listar() {
@@ -156,10 +157,36 @@
     var t = dig(tel).slice(-8), n = semAcento(nome).replace(/[^a-z0-9]+/g, " ").trim();
     return P.S.prosp.filter(function (x) { return x.id !== id && ((t.length === 8 && dig(x.telefone + " " + x.whatsapp).indexOf(t) >= 0) || (n && semAcento(x.nome).replace(/[^a-z0-9]+/g, " ").trim() === n)); })[0] || null;
   }
-  function editar(x0, mudou) {
+  // texto copiado do painel da empresa no Google Maps (nome, nota, categoria, endereço, site, telefone, plus code...)
+  var LIXO_MAPS = /^(claim this business|reivindicar|your maps history|seu hist[oó]rico|add a label|adicionar (um )?marcador|rotas?|directions|salvar|save|perto|nearby|enviar para|send to|compartilhar|share|ligar|call|website|site|aberto|open|fechado|closed|fecha|abre|opens|closes|hor[aá]rio|sugerir|suggest|vis[aã]o geral|overview|avalia|reviews?|sobre|about|fotos?|photos?|identifica|menu|pedidos?|\(?\d+\)?$|\d[,.]\d$|[\d,.]+\s*[★⭐]|[★⭐])/i;
+  function lerMaps(t) {
+    var ls = String(t || "").split(/\r?\n/).map(function (l) { return l.replace(/^[\s•·]+|[\s•·]+$/g, ""); }).filter(Boolean), r = {}, resto = [];
+    ls.forEach(function (l) {
+      var mE = l.match(/^(.*?)\s+-\s+(.*?),\s*([^,]+?)\s*-\s*([A-Z]{2})(?:,\s*(\d{5}-?\d{3}))?\s*$/);
+      if (!r.endereco && mE) { r.endereco = mE[1]; r.bairro = mE[2]; r.cidade = mE[3]; return; }
+      var mC = l.match(/^(.*?),\s*([^,]+?)\s*-\s*([A-Z]{2})(?:,\s*(\d{5}-?\d{3}))?\s*$/);
+      if (!r.endereco && mC && /\d/.test(mC[1])) { r.endereco = mC[1]; r.cidade = mC[2]; return; }
+      if (!r.telefone && /^\+?(55\s?)?\(?\d{2}\)?\s?\d{4,5}[\s.-]?\d{4}$/.test(l)) { r.telefone = l.replace(/^\+?55\s?/, ""); return; }
+      if (!r.site && /^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(l) && !/@/.test(l)) { r.site = l.replace(/^https?:\/\//, "").replace(/\/$/, ""); return; }
+      if (/^[23456789CFGHJMPQRVWX]{4}\+[23456789CFGHJMPQRVWX]{2,3}\b/i.test(l)) return;   // plus code ("2R49+V5 Betim")
+      if (LIXO_MAPS.test(l)) return;
+      resto.push(l);
+    });
+    // 1ª linha que sobra = nome; a seguinte (curta) costuma ser a categoria ("Fabricante de autopeças")
+    if (resto[0]) r.nome = resto[0].slice(0, 160);
+    var cat = semAcento(resto.slice(0, 3).join(" "));
+    if (!r.nome && r.site) r.nome = r.site.replace(/^www\./, "").split(".")[0].replace(/^./, function (c) { return c.toUpperCase(); });
+    r.tipo = /fabric|industri|metal|usina|siderur|autopec|fabrica|plastic|quimic/.test(cat + " " + (r.bairro ? semAcento(r.bairro) : "")) ? "industria" : /transport|logistic|armaz|galpao|distribui|cd /.test(cat) ? "transportadora" :
+      /supermerc|atacad|mercado|hipermerc/.test(cat) ? "supermercado" : /condomin|administradora/.test(cat) ? "condominio" : /escola|hospital|clinica|prefeitura|secretaria/.test(cat) ? "escola" : "";
+    if (!r.tipo && /industrial/i.test(r.bairro || "")) r.tipo = "industria";   // "Distrito Industrial"
+    return r;
+  }
+  function editar(x0, mudou, abrirMaps) {
     var x = x0 || {};
     var sel = function (id, op, v) { return '<select id="' + id + '">' + Object.keys(op).map(function (k) { return '<option value="' + k + '"' + (k === v ? " selected" : "") + ">" + op[k] + "</option>"; }).join("") + "</select>"; };
-    var j = A.janela('<label for="pf-nome">Empresa</label><input id="pf-nome" maxlength="160" value="' + esc(x.nome || "") + '" placeholder="Ex.: Transportadora Exemplo">' +
+    var j = A.janela((x0 ? "" : '<details id="pf-maps" class="cartao" style="margin:0 0 8px;padding:8px 10px"' + (abrirMaps ? " open" : "") + '><summary><b>📍 Colar do Google Maps</b> <span class="peq mudo">copie o painel da empresa no Maps e cole aqui: o app separa endereço, cidade, telefone e site</span></summary>' +
+      '<textarea id="pf-maps-t" rows="5" style="width:100%;margin-top:6px" placeholder="Av. Fausto Ribeiro da Silva, 1280 - Distrito Industrial Bandeirinhas, Betim - MG, 32657-000&#10;plascar.com.br&#10;(31) 3211-6300"></textarea><div id="pf-maps-st" class="peq"></div></details>') +
+      '<label for="pf-nome">Empresa</label><input id="pf-nome" maxlength="160" value="' + esc(x.nome || "") + '" placeholder="Ex.: Transportadora Exemplo">' +
       '<div class="duas"><div><label for="pf-tipo">Tipo</label>' + sel("pf-tipo", TIPOS, x.tipo || "galpao") + '</div><div><label for="pf-origem">Onde achou</label>' + sel("pf-origem", ORIGENS, x.origem || "maps") + "</div></div>" +
       '<div class="duas"><div><label for="pf-contato">Pessoa de contato</label><input id="pf-contato" maxlength="120" value="' + esc(x.contato || "") + '" placeholder="Ex.: gerente de manutenção"></div>' +
       '<div><label for="pf-tel">Telefone</label><input id="pf-tel" inputmode="tel" maxlength="40" value="' + esc(x.telefone || "") + '"></div></div>' +
@@ -171,6 +198,19 @@
       '<div id="pf-erro"></div><div class="acoes"><button class="prim" id="pf-salvar">Salvar</button>' + (x0 ? '<button class="perigo" id="pf-apagar">Apagar</button>' : "") + "</div>",
       { titulo: x0 ? "🎯 " + x.nome : "🎯 Nova empresa", larga: true });
     var el = j.el;
+    if ($("#pf-maps-t", el)) {
+      if (abrirMaps) setTimeout(function () { $("#pf-maps-t", el).focus(); }, 50);
+      $("#pf-maps-t", el).oninput = function () {
+        var m = lerMaps(this.value), ok = [];
+        [["#pf-nome", "nome", "nome"], ["#pf-tel", "telefone", "telefone"], ["#pf-end", "endereco", "endereço"], ["#pf-bairro", "bairro", "bairro"], ["#pf-cidade", "cidade", "cidade"]].forEach(function (c) {
+          if (m[c[1]] && !$(c[0], el).value.trim()) { $(c[0], el).value = m[c[1]]; ok.push(c[2]); }
+        });
+        if (m.site && $("#pf-obs", el).value.indexOf(m.site) < 0) { $("#pf-obs", el).value = ("🌐 " + m.site + " " + $("#pf-obs", el).value).trim(); ok.push("site"); }
+        if (m.tipo) $("#pf-tipo", el).value = m.tipo;
+        $("#pf-origem", el).value = "maps";
+        $("#pf-maps-st", el).innerHTML = ok.length ? "✔ Preenchi: <b>" + ok.join(", ") + "</b>." + (!$("#pf-nome", el).value.trim() ? " Falta o <b>nome da empresa</b> (copie também o título do Maps ou digite)." : " Confira e salve.") : "Não reconheci os dados: confira o texto colado.";
+      };
+    }
     $("#pf-salvar", el).onclick = function () {
       var b = this, v = function (id) { return $(id, el).value.trim() || null; };
       var dados = { nome: v("#pf-nome"), tipo: $("#pf-tipo", el).value, origem: $("#pf-origem", el).value, contato: v("#pf-contato"), telefone: v("#pf-tel"), whatsapp: v("#pf-zap"),
@@ -230,6 +270,6 @@
     return n ? '<div class="aviso" style="margin-bottom:12px">🎯 <b>' + n + (n === 1 ? " empresa" : " empresas") + "</b> para retornar hoje na prospecção. Veja em <a href=\"#prospeccao\" data-pr-hoje>🎯 Prospecção</a>.</div>" : "";
   }
 
-  window.AGE_PROSP = { ver: ver, retornarHoje: retornarHoje, avisoHoje: avisoHoje, lerLista: lerLista, montarMsg: montarMsg,
+  window.AGE_PROSP = { ver: ver, retornarHoje: retornarHoje, avisoHoje: avisoHoje, lerLista: lerLista, lerMaps: lerMaps, montarMsg: montarMsg,
     irRetornar: function () { filtro.sit = "retornar"; } };
 })();
