@@ -365,6 +365,29 @@ create index if not exists receitas_data_idx on public.receitas (emitida_em);
 alter table public.pagamentos add column if not exists obra_id uuid references public.obras (id) on delete set null;
 alter table public.pagamentos add column if not exists destino text;
 
+-- Prospecção: empresas que podem virar clientes (Google Maps, lista de CNPJ, indicação), com a situação, o retorno e o histórico dos contatos
+create table if not exists public.prospects (
+  id            uuid primary key default gen_random_uuid(),
+  nome          text not null,
+  tipo          text,                         -- galpao, industria, transportadora, supermercado, condominio, comercio, escola, outro
+  origem        text,                         -- maps, cnpj, indicacao, visita, site, outro
+  contato       text,                         -- pessoa
+  telefone      text,
+  whatsapp      text,
+  email         text,
+  bairro        text,
+  cidade        text,
+  endereco      text,
+  obs           text,
+  situacao      text not null default 'a_contatar' check (situacao in ('a_contatar', 'contatado', 'orcamento', 'fechou', 'nao_quer')),
+  retorno_em    date,                         -- quando falar de novo
+  contatado_em  timestamptz,
+  historico     jsonb not null default '[]'::jsonb,   -- [{em, txt}]
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create index if not exists prospects_retorno_idx on public.prospects (retorno_em);
+
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
   id             uuid primary key default gen_random_uuid(),
@@ -429,7 +452,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
