@@ -1077,7 +1077,7 @@
   function situacao(c) {
     if (!c.vencimento) return { txt: "não quitada · sem vencimento", cor: "atencao", ordem: 2 };
     var d = diasPara(c.vencimento);
-    if (d < 0) return { txt: "VENCIDA há " + (-d) + (d === -1 ? " dia" : " dias"), cor: "critico", ordem: 0, urgente: true };
+    if (d < 0) return { txt: "VENCIDA há " + (-d) + (d === -1 ? " dia" : " dias") + " (venceu " + A.dataSimples(c.vencimento) + ")", cor: "critico", ordem: 0, urgente: true };
     if (d === 0) return { txt: "vence HOJE", cor: "critico", ordem: 0, urgente: true };
     if (d <= 3) return { txt: "vence em " + d + (d === 1 ? " dia" : " dias"), cor: "atencao", ordem: 1, urgente: true };
     return { txt: "vence " + A.dataSimples(c.vencimento), cor: "atencao", ordem: 3 };
