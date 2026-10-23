@@ -546,6 +546,23 @@ begin
              order by k.criado_em)
       from public.km_registros k
       where k.funcionario_id = f.id and k.criado_em >= v_inicio
+    ), '[]'::jsonb),
+    -- materiais já digitados pela equipe (último ano, fora prefeitura): viram sugestão na lista
+    'materiais_usados', coalesce((
+      select jsonb_agg(jsonb_build_object('categoria', x.categoria, 'item', x.item, 'un', x.un) order by x.n desc)
+      from (
+        select s.categoria, min(trim(e ->> 'item')) as item,
+               mode() within group (order by e ->> 'un') as un, count(*) as n
+        from public.relatorios r
+        join public.servicos s on s.id = r.servico_id
+        join public.obras o on o.id = s.obra_id
+        cross join lateral jsonb_array_elements(case when jsonb_typeof(r.materiais) = 'array' then r.materiais else '[]'::jsonb end) e
+        where r.criado_em >= now() - interval '1 year' and o.prefeitura_id is null
+          and jsonb_typeof(e) = 'object' and length(trim(coalesce(e ->> 'item', ''))) between 2 and 120
+        group by s.categoria, lower(trim(e ->> 'item'))
+        order by count(*) desc
+        limit 400
+      ) x
     ), '[]'::jsonb)
   );
 end $$;

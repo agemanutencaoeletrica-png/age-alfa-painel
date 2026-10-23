@@ -22,6 +22,34 @@
       "Thinner", "Aguarrás", "Bandeja"]
   };
   var UNIDADES = ["un", "m", "m²", "rolo", "L", "galão", "lata", "balde", "kg", "cx", "pç", "par"];
+
+  // Materiais que a equipe digita e não estão na lista: ficam guardados neste aparelho na hora
+  // e voltam do banco para todos (materiais_usados), aparecendo como sugestão nas próximas vezes
+  function chaveMats(c) { return "age_mats_" + c; }
+  function matsLocais(c) {
+    try { var l = JSON.parse(localStorage.getItem(chaveMats(c)) || "[]"); return Array.isArray(l) ? l : []; }
+    catch (e) { return []; }
+  }
+  function guardarMat(c, item, un) {
+    item = (item || "").trim();
+    if (item.length < 2 || item.length > 120) return;
+    var l = matsLocais(c).filter(function (m) { return m && m.item && m.item.toLowerCase() !== item.toLowerCase(); });
+    l.unshift({ item: item, un: un || "" });
+    try { localStorage.setItem(chaveMats(c), JSON.stringify(l.slice(0, 300))); } catch (e) { /* sem armazenamento */ }
+  }
+  function materiaisDe(c) {
+    var vistos = {}, lista = [];
+    function por(item, un) {
+      var k = (item || "").trim().toLowerCase();
+      if (!k || vistos[k]) return;
+      vistos[k] = 1;
+      lista.push({ item: item.trim(), un: un || "" });
+    }
+    MATERIAIS[c].forEach(function (t) { por(t, ""); });
+    matsLocais(c).forEach(function (m) { if (m) por(m.item, m.un); });
+    (D.materiais_usados || []).forEach(function (m) { if (m && m.categoria === c) por(m.item, m.un); });
+    return lista;
+  }
   var TIPO_PUBLICO = { predio: "Prédio público", iluminacao: "Iluminação pública", obra: "Obra / reforma" };
 
   function lerToken() {
@@ -596,7 +624,7 @@
       $("#fr-tipos", el).innerHTML = TIPOS_SERVICO[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
       $("#fr-dl-mat", el).innerHTML = itensContrato(s).map(function (t) {
         return '<option value="' + esc(t.descricao) + '">' + esc((t.codigo ? t.codigo + " · " : "") + (t.un || "")) + "</option>";
-      }).join("") + MATERIAIS[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
+      }).join("") + materiaisDe(c).map(function (m) { return '<option value="' + esc(m.item) + '">'; }).join("");
       $("#fr-mats-r", el).textContent = pref ? "Serviços executados e materiais usados (quantidades)" : "Materiais necessários";
       $("#fr-antes-caixa", el).classList.toggle("oculto", !pref);
       $("#fr-antes-ok", el).classList.toggle("oculto", !(pref && s.tem_fotos_antes));
@@ -613,13 +641,31 @@
     }
     function ligarUnidade(d) {
       var inp = $(".m-item", d);
+      var sel = $(".m-un", d);
+      function aprender() {
+        var s = servicoPorId($("#fr-serv", el).value);
+        if (s && s.prefeitura) return;
+        var c = s ? s.categoria : "eletrica", v = inp.value.trim();
+        if (!v) return;
+        var igual = materiaisDe(c).filter(function (m) { return m.item.toLowerCase() === v.toLowerCase(); })[0];
+        guardarMat(c, igual ? igual.item : v, sel.value);
+        if (!igual) atualizarListas();
+      }
+      sel.onchange = aprender;
       inp.onchange = function () {
-        var it = itensContrato(servicoPorId($("#fr-serv", el).value)).filter(function (t) { return t.descricao === inp.value.trim(); })[0];
-        var sel = $(".m-un", d);
+        var s = servicoPorId($("#fr-serv", el).value);
+        var it = itensContrato(s).filter(function (t) { return t.descricao === inp.value.trim(); })[0];
+        if (!it && !(s && s.prefeitura)) {
+          // material já usado antes: a unidade vem junto
+          var v = inp.value.trim().toLowerCase();
+          it = materiaisDe(s ? s.categoria : "eletrica").filter(function (m) { return m.un && m.item.toLowerCase() === v; })[0];
+          if (it) it = { un: it.un };
+        }
         if (it && it.un) {
           if (!Array.prototype.some.call(sel.options, function (o) { return o.value === it.un; })) sel.insertAdjacentHTML("beforeend", "<option>" + esc(it.un) + "</option>");
           sel.value = it.un;
         }
+        aprender();
       };
     }
 
