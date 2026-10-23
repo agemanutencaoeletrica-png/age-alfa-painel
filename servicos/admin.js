@@ -2957,7 +2957,15 @@
     return '<li style="margin:6px 0"><div class="linha" style="gap:6px"><span><b>' + esc(nomeLoja(p)) + "</b> " + (NIVEL[p.geo_precisao] <= 2 ? '<span class="selo atencao">local aproximado</span>' : "") +
       (d !== null ? ' <span class="mudo peq">+' + A.numero(d, 1) + " km</span>" : "") + "</span>" + (n ? botoesParada(i, n, dia, nDias) : "") + "</div>" +
       '<div class="peq mudo">' + esc(enderecoLoja(p)) + "</div>" +
-      (p.servicos ? '<div class="peq">' + p.servicos.map(function (s) { return A.seloCategoria(s.categoria) + " " + esc(resumoServ(s)); }).join("<br>") + "</div>" : "") + "</li>";
+      (p.servicos ? '<div class="peq">' + p.servicos.map(function (s) { return '<div style="display:flex;gap:6px;align-items:center;margin:2px 0">' + A.seloCategoria(s.categoria) + " <span>" + esc(resumoServ(s)) + "</span>" +
+        (n ? ' <button class="peq" type="button" data-sfeito="' + s.id + '" title="Marcar este serviço como executado">✔ Já feito</button>' : "") + "</div>"; }).join("") + "</div>" : "") + "</li>";
+  }
+  // serviço já executado (que ainda estava aberto no app): marca como concluído
+  function marcarFeito(sid) {
+    var sv = porId(S.serv, sid);
+    if (!sv || !A.confirmar("Marcar como EXECUTADO: " + resumoServ(sv, 80) + "?")) return Promise.resolve(null);
+    return q(sb.from("servicos").update({ status: "concluido", concluido_em: new Date().toISOString() }).eq("id", sid).select().single())
+      .then(function (n) { trocar(S.serv, n); A.avisar("✅ Serviço marcado como executado", "ok"); return n; });
   }
 
   function desenharResultado() {
@@ -2997,6 +3005,19 @@
     });
     $$("[data-prm]", c).forEach(function (b) {
       b.onclick = function () { var a = b.dataset.prm.split(":").map(Number), p = P.dias[a[0]].paradas.splice(a[1], 1)[0]; A.avisar("✕ " + nomeLoja(p) + " saiu da rota", "ok"); depois(); };
+    });
+    // ✔ Já feito: o serviço sai da rota; a loja sem mais nada aberto sai junto
+    $$("[data-sfeito]", c).forEach(function (b) {
+      b.onclick = function () {
+        marcarFeito(b.dataset.sfeito).then(function (n) {
+          if (!n) return;
+          P.dias.forEach(function (d) {
+            d.paradas.forEach(function (p) { if (p.servicos) p.servicos = p.servicos.filter(function (x) { return x.id !== n.id; }); });
+            d.paradas = d.paradas.filter(function (p) { return !p.servicos || p.servicos.length; });
+          });
+          depois();
+        }).catch(falhou);
+      };
     });
     $$("[data-pdia]", c).forEach(function (s2) {
       s2.onchange = function () {
@@ -3099,11 +3120,14 @@
     var el = j.el;
     function desenhar() {
       $("#ep-lista", el).innerHTML = ps.length ? '<ol style="padding-left:22px;margin:6px 0">' + ps.map(function (p, k) {
+        var abertos = (lojasComServico("").filter(function (x) { return x.loja.id === p.loja_id; })[0] || {}).servicos || [];
         return '<li style="margin:6px 0"><div class="linha" style="gap:6px"><span><b>' + esc(nomeLoja(p)) + "</b>" + (paradaFeita(p, r) ? ' <span class="selo bom">✔ feita</span>' : "") + "</span>" + botoesParada(k, ps.length, null, 1) + "</div>" +
-          '<div class="peq mudo">' + esc(enderecoLoja(p)) + "</div></li>";
+          '<div class="peq mudo">' + esc(enderecoLoja(p)) + "</div>" +
+          abertos.map(function (sv) { return '<div class="peq" style="display:flex;gap:6px;align-items:center;margin:2px 0">' + A.seloCategoria(sv.categoria) + " <span>" + esc(resumoServ(sv)) + '</span> <button class="peq" type="button" data-sfeito="' + sv.id + '">✔ Já feito</button></div>'; }).join("") + "</li>";
       }).join("") + '</ol><div class="peq mudo">≈ ' + A.numero(G.comprimento(partida, ps.filter(G.temLocal), false) * G.FATOR_ESTRADA, 0) + " km</div>" : '<div class="aviso">Sem paradas: para apagar a rota inteira, use “Apagar” na lista.</div>';
       $$("[data-pmv]", el).forEach(function (b) { b.onclick = function () { var a = b.dataset.pmv.split(":"), i = Number(a[1]), k = i + Number(a[2]); if (k < 0 || k >= ps.length) return; var t = ps[i]; ps[i] = ps[k]; ps[k] = t; desenhar(); }; });
       $$("[data-prm]", el).forEach(function (b) { b.onclick = function () { ps.splice(Number(b.dataset.prm.split(":")[1]), 1); desenhar(); }; });
+      $$("[data-sfeito]", el).forEach(function (b) { b.onclick = function () { marcarFeito(b.dataset.sfeito).then(function (n) { if (n) { desenhar(); desenharSalvas(); } }).catch(falhou); }; });
       $("#ep-ok", el).disabled = !ps.length;
     }
     desenhar();
