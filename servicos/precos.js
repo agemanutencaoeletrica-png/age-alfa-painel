@@ -33,7 +33,8 @@
     if (filtro.grupo && grupos.indexOf(filtro.grupo) < 0) filtro.grupo = "";
     var faltam = ls.filter(function (x) { return preco(x) === null; }).length;
     c.innerHTML = '<div class="cab-secao"><h2>💲 Tabela de preços</h2><span><button class="prim" id="pc-novo">➕ Novo serviço</button>' +
-      (base ? ' <button id="pc-base">📥 Carregar ' + (filtro.cat === "pintura" ? "tabela ABRAPP 2026" : "lista de serviços elétricos") + "</button>" : "") + "</span></div>" +
+      (base ? ' <button id="pc-base">📥 Carregar ' + (filtro.cat === "pintura" ? "tabela ABRAPP 2026" : "lista de serviços elétricos") + "</button>" : "") +
+      ' <button id="pc-ch">📊 O que os chamados pedem</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Preço da <b>mão de obra</b> de cada serviço. Acrescente e edite à vontade. No <b>orçamento</b>, ao escrever o item, o serviço aparece como sugestão já com a unidade e o preço.</p>' +
       '<div class="filtros">' + Object.keys(CATS).map(function (k) {
         return '<button class="' + (filtro.cat === k ? "prim" : "") + '" data-pccat="' + k + '">' + CATS[k] + " (" + daCat(k).length + ")</button>";
@@ -51,6 +52,7 @@
     var mudou = function () { ver(c, P); };
     $("#pc-novo").onclick = function () { editar(null, mudou); };
     if ($("#pc-base")) $("#pc-base").onclick = function () { carregarBase(filtro.cat, this, mudou); };
+    $("#pc-ch").onclick = function () { verChamados(filtro.cat, mudou); };
     listar();
 
     function listar() {
@@ -99,9 +101,9 @@
       .catch(function (e) { A.ocupado(botao, false); P.falhou(e); mudou(); });
   }
 
-  function editar(x, mudou) {
+  function editar(x, mudou, inicial) {
     var novo = !x;
-    x = x || { categoria: filtro.cat, grupo: filtro.grupo || "", descricao: "", un: "un", valor: null, valor_min: null, valor_max: null, obs: "" };
+    x = x || Object.assign({ categoria: filtro.cat, grupo: filtro.grupo || "", descricao: "", un: "un", valor: null, valor_min: null, valor_max: null, obs: "" }, inicial || {});
     var grupos = []; lista().forEach(function (y) { if (y.grupo && grupos.indexOf(y.grupo) < 0) grupos.push(y.grupo); });
     var uns = P.UNIDADES.concat(["km"]); if (x.un && uns.indexOf(x.un) < 0) uns.push(x.un);
     var j = A.janela(
@@ -148,6 +150,100 @@
       if (!A.confirmar("Apagar “" + x.descricao + "” da tabela de preços?")) return;
       P.q(P.sb.from("precos").delete().eq("id", x.id)).then(function () { P.tirar(P.S.precos, x.id); j.fechar(); mudou(); }).catch(P.falhou);
     };
+  }
+
+  // ---------------- o que os chamados pedem ----------------
+  // Lê a descrição de cada chamado (serviços do painel) e conta os tipos de serviço pedidos.
+  // Um chamado pode pedir mais de um tipo (ex.: "tomada e cabeamento para as máquinas").
+  // [nome, regra na descrição, palavra para achar o preço na tabela, grupo e unidade para criar o preço]
+  var TIPOS_CH = {
+    eletrica: [
+      ["Ventiladores", /ventilador/, "ventilador", "Equipamentos", "un"],
+      ["Tomadas (instalar / acrescentar / trocar)", /tomada/, "tomada", "Tomadas e interruptores", "un"],
+      ["Interruptores", /interruptor/, "interruptor", "Tomadas e interruptores", "un"],
+      ["Luminárias e lâmpadas (queimadas, novas)", /lumin[aá]ri|l[aâ]mpada|ilumina|refletor|plafon|\bled\b|spot/, "lumin", "Iluminação", "un"],
+      ["Reator / driver", /reator|driver/, "reator", "Iluminação", "un"],
+      ["Iluminação de emergência", /emerg[eê]ncia/, "emerg", "Iluminação", "un"],
+      ["Sensor / fotocélula / relé", /sensor|fotoc[eé]lula|\brel[eé]\b|timer|temporizador/, "sensor", "Iluminação", "un"],
+      ["Disjuntor / quadro elétrico", /disjuntor|quadro|\bdr\b|\bdps\b|barramento/, "quadro", "Quadros e proteção", "un"],
+      ["Cabeamento / fiação / circuito", /cabeamento|cabiamento|\bcabos?\b|fia[cç][aã]o|\bfios?\b|circuito/, "circuito", "Circuitos e cabos", "m"],
+      ["Infra (eletroduto, eletrocalha, canaleta)", /eletroduto|eletrocalha|perfilado|canaleta|tubula[cç]|\btubo/, "infra", "Infraestrutura", "m"],
+      ["Falta de energia / curto / disjuntor desarmando", /curto|sem energia|falta de energia|queda de energia|desarm|\bpane\b|n[aã]o liga|parou de funcionar|faisca|fa[ií]sca|queimad[oa] (o|a) (fio|cabo)|cheiro de queimado|oscila/, "curto", "Serviços gerais", "un"],
+      ["Portão eletrônico / automático", /port[aã]o (eletr|autom)|motor do port/, "port", "Equipamentos", "un"],
+      ["Chuveiro", /chuveiro/, "chuveiro", "Equipamentos", "un"],
+      ["Ar-condicionado", /ar[\s-]*condicionado|\bsplit\b/, "ar-condicionado", "Equipamentos", "un"],
+      ["Exaustor / coifa", /exaust|coifa/, "exaustor", "Equipamentos", "un"],
+      ["Ligação de máquina / equipamento (balcão, freezer, forno...)", /m[aá]quina|balc[aã]o|freezer|geladeira|c[aâ]mara fria|forno|motor|bomba|equipamento|empilhadeira|carregador/, "ligação", "Equipamentos", "un"],
+      ["Letreiro / fachada", /letreiro|fachada|placa luminosa|luminoso/, "letreiro", "Iluminação", "un"],
+      ["Padrão / medidor / entrada de energia", /padr[aã]o|medidor|cemig|entrada de energia|transformador/, "padrão", "Entrada e aterramento", "un"],
+      ["Aterramento / para-raios", /aterramento|spda|para[\s-]*raio/, "aterramento", "Entrada e aterramento", "un"],
+      ["Câmeras / rede / interfone", /c[aâ]mera|cftv|\brede\b|internet|l[oó]gica|interfone|campainha|alarme/, "rede", "Circuitos e cabos", "un"]
+    ],
+    pintura: [
+      ["Demarcação / faixas / sinalização de piso", /demarca|faixa|zebrad|sinaliza|\bvagas?\b|\bpare\b|seta/, "demarca", "Piso e demarcação", "m"],
+      ["Pintura de piso", /piso|ch[aã]o|epóxi|epoxi/, "piso", "Piso e demarcação", "m²"],
+      ["Pintura de parede / teto / muro", /parede|teto|muro|forro|alvenaria|fachada|sala|banheiro|deposito|dep[oó]sito/, "látex", "Alvenarias e paredes", "m²"],
+      ["Portão / grade / estrutura metálica", /port[aã]o|grade|corrim[aã]o|guarda[\s-]*corpo|estrutura|met[aá]lic|ferro|pilar|coluna|porta[\s-]*palete|prateleira|g[oô]ndola/, "esmalte", "Esmaltes, verniz e epóxi", "m²"],
+      ["Porta / janela", /\bportas?\b(?![\s-]*palete)|janela|batente/, "porta", "Madeira e metal – imobiliário (manutenção leve)", "un"],
+      ["Massa / reparo / trinca / infiltração", /massa|reboco|trinca|fissura|rachadura|infiltra|mofo|umidade|descascad|reparo|retoque/, "massa", "Massas e preenchimentos", "m²"],
+      ["Textura / grafiato", /textura|grafiato/, "textura", "Texturas", "m²"],
+      ["Telhado / calha", /telhado|telha|calha|rufo/, "calha", "Serviços diversos", "m"],
+      ["Impermeabilização", /impermeabiliza|manta|laje/, "impermeabil", "Impermeabilização", "m²"]
+    ]
+  };
+  function verChamados(cat, mudou) {
+    var S = P.S, tipos = TIPOS_CH[cat];
+    var ls = (S.serv || []).filter(function (sv) {
+      var o = P.porId(S.obras || [], sv.obra_id);
+      return sv.categoria === cat && o && !o.prefeitura_id && (sv.descricao || "").trim();
+    });
+    var res = tipos.map(function (t) { return { t: t, ch: [] }; }), fora = [];
+    ls.forEach(function (sv) {
+      var d = semAcento(sv.descricao).replace(/\s+/g, " "), achou = false;
+      // ignora o "(fazer orçamento)" do começo para não confundir com o tipo do serviço
+      res.forEach(function (r) { if (r.t[1].test(d)) { r.ch.push(sv); achou = true; } });
+      if (!achou) fora.push(sv);
+    });
+    res = res.filter(function (r) { return r.ch.length; }).sort(function (a, b) { return b.ch.length - a.ch.length; });
+    var precosCat = daCat(cat);
+    function precoDo(t) { var k = semAcento(t[2]); return precosCat.filter(function (x) { return semAcento(x.descricao).indexOf(k) >= 0; }); }
+    function obraDe(sv) { return P.porId(S.obras || [], sv.obra_id) || {}; }
+    // valor da OS no portal do cliente quando o chamado só pede um tipo de serviço (referência do que já foi cobrado)
+    function cobrado(r) {
+      var vs = r.ch.filter(function (sv) { var o = obraDe(sv); return o.portal && Number(o.portal.valor) > 0 && res.filter(function (x) { return x.ch.indexOf(sv) >= 0; }).length === 1; })
+        .map(function (sv) { return Number(obraDe(sv).portal.valor); });
+      if (!vs.length) return "";
+      var med = vs.reduce(function (a, b) { return a + b; }, 0) / vs.length;
+      return '<div class="peq">💼 Valor da OS no portal (' + vs.length + " chamado" + (vs.length > 1 ? "s" : "") + "): média <b>" + A.dinheiro(med) + "</b>" +
+        (vs.length > 1 ? " · de " + A.dinheiro(Math.min.apply(null, vs)) + " a " + A.dinheiro(Math.max.apply(null, vs)) : "") + "</div>";
+    }
+    function exemplo(sv) {
+      var o = obraDe(sv);
+      return '<li class="peq">' + esc((o.chamado ? "nº " + o.chamado + " · " : "") + (o.cliente || "") + (sv.criado_em ? " · " + A.dataSimples(String(sv.criado_em).slice(0, 10)) : "")) + ": <i>" + esc(String(sv.descricao).slice(0, 160)) + "</i></li>";
+    }
+    var j = A.janela(
+      '<p class="mudo peq" style="margin-top:0">O app leu a descrição de <b>' + ls.length + " chamado(s)</b> de " + (cat === "pintura" ? "pintura" : "elétrica") +
+      " e separou pelo tipo de serviço pedido (um chamado pode entrar em mais de um tipo). Ao lado, o preço que está na sua tabela — os que faltam você cria com um toque.</p>" +
+      (ls.length ? "" : '<div class="aviso">Nenhum chamado de ' + (cat === "pintura" ? "pintura" : "elétrica") + " com descrição no painel.</div>") +
+      res.map(function (r, n) {
+        var pcs = precoDo(r.t), comValor = pcs.filter(function (x) { return preco(x) !== null; });
+        return '<div class="cartao"><div class="linha"><h3 style="margin:0">' + esc(r.t[0]) + '</h3><span class="selo">' + r.ch.length + " chamado" + (r.ch.length > 1 ? "s" : "") + "</span>" +
+          (comValor.length ? '<span class="selo bom">💲 ' + comValor.slice(0, 2).map(function (x) { return esc(x.descricao) + " " + A.dinheiro(preco(x)) + "/" + esc(x.un); }).join(" · ") + (comValor.length > 2 ? " +" + (comValor.length - 2) : "") + "</span>" :
+            '<span class="selo atencao">' + (pcs.length ? "na tabela, mas sem preço" : "sem preço na tabela") + "</span>") + "</div>" +
+          cobrado(r) + "<ul style=\"margin:6px 0 0;padding-left:18px\">" + r.ch.slice(0, 3).map(exemplo).join("") + "</ul>" +
+          (r.ch.length > 3 ? '<details><summary class="peq">ver os outros ' + (r.ch.length - 3) + '</summary><ul style="margin:4px 0 0;padding-left:18px">' + r.ch.slice(3, 60).map(exemplo).join("") + "</ul></details>" : "") +
+          '<div class="acoes"><button class="peq" data-ch-criar="' + n + '">➕ Criar preço para “' + esc(r.t[0].split(" (")[0]) + "”</button></div></div>";
+      }).join("") +
+      (fora.length ? '<div class="cartao"><h3 style="margin:0">Outros (' + fora.length + ')</h3><p class="peq mudo">Chamados que não se encaixaram nos tipos acima — confira se algum serviço merece entrar na tabela.</p><ul style="margin:6px 0 0;padding-left:18px">' +
+        fora.slice(0, 80).map(exemplo).join("") + "</ul></div>" : ""),
+      { titulo: "📊 O que os chamados pedem — " + (cat === "pintura" ? "pintura" : "elétrica"), larga: true });
+    $$("[data-ch-criar]", j.el).forEach(function (b) {
+      b.onclick = function () {
+        var t = res[Number(b.dataset.chCriar)].t;
+        j.fechar();
+        editar(null, mudou, { categoria: cat, grupo: t[3], descricao: t[0].split(" (")[0], un: t[4] });
+      };
+    });
   }
 
   // ---------------- para o orçamento ----------------
