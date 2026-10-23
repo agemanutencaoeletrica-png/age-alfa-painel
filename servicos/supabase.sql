@@ -392,6 +392,24 @@ create table if not exists public.prospects (
 );
 create index if not exists prospects_retorno_idx on public.prospects (retorno_em);
 
+-- 💲 Tabela de preços dos serviços (elétrica e pintura): o dono acrescenta e edita; aparece como sugestão nos orçamentos
+create table if not exists public.precos (
+  id            uuid primary key default gen_random_uuid(),
+  categoria     text not null check (categoria in ('eletrica', 'pintura')),
+  grupo         text,                         -- ex.: Tomadas e interruptores, Alvenarias e paredes
+  descricao     text not null,
+  un            text not null default 'un',
+  valor         numeric(12, 2),               -- preço usado no orçamento (vazio = a definir)
+  valor_min     numeric(12, 2),               -- faixa de referência (ex.: tabela ABRAPP)
+  valor_max     numeric(12, 2),
+  obs           text,
+  fonte         text,                         -- AGE, ABRAPP 2026...
+  ativo         boolean not null default true,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create index if not exists precos_cat_idx on public.precos (categoria, grupo);
+
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
   id             uuid primary key default gen_random_uuid(),
@@ -456,7 +474,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

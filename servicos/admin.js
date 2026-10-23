@@ -11,7 +11,7 @@
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -399,7 +399,8 @@
       q(sb.from("fornecedores").select("*").order("nome")).catch(function (e) { S.erroForn = A.msgErro(e); return null; }),
       q(sb.from("receitas").select("*").order("emitida_em", { ascending: false })).catch(function (e) { S.erroReceitas = A.msgErro(e); return null; }),
       q(sb.from("prospects").select("*").order("criado_em", { ascending: false })).catch(function (e) { S.erroProsp = A.msgErro(e); return null; }),
-      q(sb.from("servicos").select("etapa").limit(1)).then(function () { return true; }).catch(function () { return false; })
+      q(sb.from("servicos").select("etapa").limit(1)).then(function () { return true; }).catch(function () { return false; }),
+      q(sb.from("precos").select("*").order("descricao")).catch(function (e) { S.erroPrecos = A.msgErro(e); return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -410,6 +411,7 @@
       S.semReceitas = !r[12]; S.receitas = r[12] || [];
       S.semProsp = !r[13]; S.prosp = r[13] || [];
       S.semEtapa = !r[14];   // banco ainda sem a coluna servicos.etapa (rode o bloco do supabase.sql)
+      S.semPrecos = !r[15]; S.precos = r[15] || [];
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
     });
   }
@@ -457,7 +459,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -2174,7 +2176,7 @@
       '<div class="duas"><div><label for="eo2-tel">WhatsApp do cliente</label><input id="eo2-tel" type="tel" maxlength="40"></div><div><label for="eo2-email">E-mail do cliente</label><input id="eo2-email" type="email" maxlength="200"></div></div>' +
       '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><select id="eo2-cat"><option value="">—</option>' +
       Object.keys(CAT_ORC).map(function (k) { return '<option value="' + k + '">' + CAT_ORC[k] + "</option>"; }).join("") + "</select></div></div>" +
-      '<h3 style="margin-top:14px">Itens</h3><div id="eo2-itens"></div>' +
+      '<h3 style="margin-top:14px">Itens</h3><div id="eo2-itens"></div><datalist id="eo2-dl-precos"></datalist>' +
       '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button><button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
       '<div class="cartao" style="margin-top:10px" id="eo2-totais"></div>' +
@@ -2196,7 +2198,7 @@
     function desenharItens() {
       $("#eo2-itens", el).innerHTML = M.itens.map(function (i, n) {
         return '<div class="item-orc" data-i="' + n + '"><div class="l1"><select class="i-tipo" aria-label="Tipo"><option value="material">Material</option><option value="servico">Mão de obra</option></select>' +
-          '<input class="i-desc" maxlength="300" placeholder="Descrição" aria-label="Descrição"></div>' +
+          '<input class="i-desc" list="eo2-dl-precos" maxlength="300" placeholder="Descrição (os serviços da 💲 tabela de preços aparecem aqui)" aria-label="Descrição"></div>' +
           '<div class="l2"><label>Qtd<input class="i-qtd" inputmode="decimal"></label>' +
           '<label>Un<select class="i-un">' + UNIDADES.concat(UNIDADES.indexOf(i.un) < 0 && i.un ? [i.un] : []).map(function (u) { return "<option>" + esc(u) + "</option>"; }).join("") + "</select></label>" +
           '<label>Valor un. (R$)<input class="i-valor" inputmode="decimal"></label><div class="i-sub forte"></div>' +
@@ -2206,14 +2208,27 @@
         var i = M.itens[Number(tr.dataset.i)];
         $(".i-tipo", tr).value = i.tipo; $(".i-desc", tr).value = i.descricao; $(".i-qtd", tr).value = A.numero(i.qtd, 3);
         $(".i-un", tr).value = i.un; $(".i-valor", tr).value = i.valor ? A.numero(i.valor) : "";
-        tr.oninput = tr.onchange = function () {
+        tr.oninput = tr.onchange = function (ev) {
           i.tipo = $(".i-tipo", tr).value; i.descricao = $(".i-desc", tr).value; i.qtd = A.lerNumero($(".i-qtd", tr).value);
           i.un = $(".i-un", tr).value; i.valor = A.lerNumero($(".i-valor", tr).value);
+          // serviço escolhido da 💲 tabela de preços: vira mão de obra e traz a unidade e o preço
+          var pc = ev && ev.target && ev.target.classList.contains("i-desc") && window.AGE_PRECOS ? window.AGE_PRECOS.acharServico(S, M.categoria, i.descricao) : null;
+          if (pc) {
+            i.tipo = "servico"; i.descricao = pc.descricao; i.un = pc.un || i.un;
+            if (pc.valor !== null && pc.valor !== undefined && !i.valor) i.valor = Number(pc.valor);
+            desenharItens(); return;
+          }
           totais();
         };
         $(".i-tirar", tr).onclick = function () { M.itens.splice(Number(tr.dataset.i), 1); desenharItens(); };
       });
       totais();
+    }
+    function listaPrecos() {
+      if (!window.AGE_PRECOS) return;
+      $("#eo2-dl-precos", el).innerHTML = window.AGE_PRECOS.paraOrcamento(S, $("#eo2-cat", el).value).map(function (x) {
+        return '<option value="' + esc(x.descricao) + '">' + esc((x.un || "") + (x.valor !== null && x.valor !== undefined ? " · " + A.dinheiro(Number(x.valor)) : " · a definir")) + "</option>";
+      }).join("");
     }
     function lerCampos() {
       M.cliente = val(el, "#eo2-cli"); M.telefone = val(el, "#eo2-tel"); M.email = val(el, "#eo2-email"); M.endereco = val(el, "#eo2-end"); M.categoria = $("#eo2-cat", el).value;
@@ -2230,6 +2245,7 @@
         '<div class="linha forte" style="font-size:18px;margin-top:4px"><span>Total</span><span class="dir">' + A.dinheiro(t.total) + "</span></div>";
     }
     $("#eo2-desc", el).oninput = totais;
+    $("#eo2-cat", el).addEventListener("change", listaPrecos); listaPrecos();
     $("#eo2-mais-mat", el).onclick = function () { M.itens.push({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }); desenharItens(); focarUltimo(); };
     $("#eo2-mais-serv", el).onclick = function () { M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 }); desenharItens(); focarUltimo(); };
     function focarUltimo() { var x = $$(".i-desc", el); if (x.length) x[x.length - 1].focus(); }
