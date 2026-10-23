@@ -2943,12 +2943,29 @@
     }).catch(function (e) { A.ocupado(b, false); falhou(e); });
   }
 
-  function htmlParada(p, i, ant) {
+  // botões para mudar a ordem, tirar ou passar a parada para outro dia (dia = índice no plano; null nas rotas salvas)
+  function botoesParada(i, n, dia, nDias) {
+    return '<span class="dir" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:nowrap">' +
+      '<button class="peq" type="button" data-pmv="' + (dia === null ? "" : dia) + ":" + i + ':-1" title="Subir"' + (i ? "" : " disabled") + ">⬆️</button>" +
+      '<button class="peq" type="button" data-pmv="' + (dia === null ? "" : dia) + ":" + i + ':1" title="Descer"' + (i < n - 1 ? "" : " disabled") + ">⬇️</button>" +
+      (nDias > 1 ? '<select class="peq" style="width:auto;min-height:34px;padding:4px 6px;font-size:13px" data-pdia="' + dia + ":" + i + '" title="Passar para outro dia"><option value="">→ dia</option>' +
+        Array.apply(null, { length: nDias }).map(function (x, k) { return k === dia ? "" : '<option value="' + k + '">Dia ' + (k + 1) + "</option>"; }).join("") + "</select>" : "") +
+      '<button class="peq perigo" type="button" data-prm="' + (dia === null ? "" : dia) + ":" + i + '" title="Tirar da rota">✕</button></span>';
+  }
+  function htmlParada(p, i, ant, dia, n, nDias) {
     var d = ant ? G.km(ant, p) * G.FATOR_ESTRADA : null;
-    return '<li style="margin:6px 0"><b>' + esc(nomeLoja(p)) + "</b> " + (NIVEL[p.geo_precisao] <= 2 ? '<span class="selo atencao">local aproximado</span>' : "") +
-      (d !== null ? ' <span class="mudo peq">+' + A.numero(d, 1) + " km</span>" : "") +
+    return '<li style="margin:6px 0"><div class="linha" style="gap:6px"><span><b>' + esc(nomeLoja(p)) + "</b> " + (NIVEL[p.geo_precisao] <= 2 ? '<span class="selo atencao">local aproximado</span>' : "") +
+      (d !== null ? ' <span class="mudo peq">+' + A.numero(d, 1) + " km</span>" : "") + "</span>" + (n ? botoesParada(i, n, dia, nDias) : "") + "</div>" +
       '<div class="peq mudo">' + esc(enderecoLoja(p)) + "</div>" +
-      (p.servicos ? '<div class="peq">' + p.servicos.map(function (s) { return A.seloCategoria(s.categoria) + " " + esc(resumoServ(s)); }).join("<br>") + "</div>" : "") + "</li>";
+      (p.servicos ? '<div class="peq">' + p.servicos.map(function (s) { return '<div style="display:flex;gap:6px;align-items:center;margin:2px 0">' + A.seloCategoria(s.categoria) + " <span>" + esc(resumoServ(s)) + "</span>" +
+        (n ? ' <button class="peq" type="button" data-sfeito="' + s.id + '" title="Marcar este serviço como executado">✔ Já feito</button>' : "") + "</div>"; }).join("") + "</div>" : "") + "</li>";
+  }
+  // serviço já executado (que ainda estava aberto no app): marca como concluído
+  function marcarFeito(sid) {
+    var sv = porId(S.serv, sid);
+    if (!sv || !A.confirmar("Marcar como EXECUTADO: " + resumoServ(sv, 80) + "?")) return Promise.resolve(null);
+    return q(sb.from("servicos").update({ status: "concluido", concluido_em: new Date().toISOString() }).eq("id", sid).select().single())
+      .then(function (n) { trocar(S.serv, n); A.avisar("✅ Serviço marcado como executado", "ok"); return n; });
   }
 
   function desenharResultado() {
@@ -2968,13 +2985,47 @@
       h += '<div class="cartao" style="border-left:5px solid ' + CORES_DIA[i % CORES_DIA.length] + '"><div class="linha"><h3>Dia ' + (i + 1) + "</h3>" +
         '<span class="mudo peq">' + d.paradas.length + " paradas · ≈ " + A.numero(d.kmEstrada, 0) + " km</span></div>" +
         (R.origem ? '<div class="peq mudo" style="margin-top:4px">Saída: ' + esc(R.origem.nome) + "</div>" : "") +
-        '<ol style="padding-left:22px;margin:6px 0">' + d.paradas.map(function (p, k) { return htmlParada(p, k, k ? d.paradas[k - 1] : R.origem); }).join("") + "</ol>" +
+        '<ol style="padding-left:22px;margin:6px 0">' + d.paradas.map(function (p, k) { return htmlParada(p, k, k ? d.paradas[k - 1] : R.origem, i, d.paradas.length, P.dias.length); }).join("") + "</ol>" +
+        (d.paradas.length ? "" : '<div class="peq mudo">Sem paradas neste dia.</div>') +
         '<div class="acoes">' + links.map(function (u, k) {
           return '<a class="botao" target="_blank" rel="noopener" href="' + esc(u) + '">🗺 Google Maps' + (links.length > 1 ? " (parte " + (k + 1) + ")" : "") + "</a>";
         }).join("") + '<button class="prim" data-salvar-dia="' + i + '">💾 Salvar / enviar ao funcionário</button></div></div>';
     });
     c.innerHTML = h;
     $$("[data-salvar-dia]", c).forEach(function (b) { b.onclick = function () { salvarRota(Number(b.dataset.salvarDia)); }; });
+    // mudar a ordem, tirar ou passar para outro dia: recalcula os km e redesenha (mapa e links do Google Maps acompanham)
+    var recalc = function (d) { d.km = G.comprimento(R.origem, d.paradas, R.voltar); d.kmEstrada = d.km * G.FATOR_ESTRADA; };
+    var depois = function () { P.dias.forEach(recalc); P.dias = P.dias.filter(function (d) { return d.paradas.length; }); desenharResultado(); };
+    $$("[data-pmv]", c).forEach(function (b) {
+      b.onclick = function () {
+        var a = b.dataset.pmv.split(":").map(Number), ps = P.dias[a[0]].paradas, k = a[1] + a[2];
+        if (k < 0 || k >= ps.length) return;
+        var t = ps[a[1]]; ps[a[1]] = ps[k]; ps[k] = t; depois();
+      };
+    });
+    $$("[data-prm]", c).forEach(function (b) {
+      b.onclick = function () { var a = b.dataset.prm.split(":").map(Number), p = P.dias[a[0]].paradas.splice(a[1], 1)[0]; A.avisar("✕ " + nomeLoja(p) + " saiu da rota", "ok"); depois(); };
+    });
+    // ✔ Já feito: o serviço sai da rota; a loja sem mais nada aberto sai junto
+    $$("[data-sfeito]", c).forEach(function (b) {
+      b.onclick = function () {
+        marcarFeito(b.dataset.sfeito).then(function (n) {
+          if (!n) return;
+          P.dias.forEach(function (d) {
+            d.paradas.forEach(function (p) { if (p.servicos) p.servicos = p.servicos.filter(function (x) { return x.id !== n.id; }); });
+            d.paradas = d.paradas.filter(function (p) { return !p.servicos || p.servicos.length; });
+          });
+          depois();
+        }).catch(falhou);
+      };
+    });
+    $$("[data-pdia]", c).forEach(function (s2) {
+      s2.onchange = function () {
+        if (this.value === "") return;
+        var a = s2.dataset.pdia.split(":").map(Number), p = P.dias[a[0]].paradas.splice(a[1], 1)[0];
+        P.dias[Number(this.value)].paradas.push(p); A.avisar(nomeLoja(p) + " → dia " + (Number(this.value) + 1), "ok"); depois();
+      };
+    });
     desenharMapa($("#rt-mapa"), P.dias, R.origem);
   }
 
@@ -3062,6 +3113,35 @@
       }).catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
   }
+  // rota salva: mudar a ordem ou tirar paradas (o funcionário vê a ordem nova no app)
+  function editarParadas(r) {
+    var ps = (r.paradas || []).slice(), partida = r.partida && G.temLocal(r.partida) ? r.partida : null;
+    var j = A.janela('<div id="ep-lista"></div><div class="acoes"><button class="prim" id="ep-ok">💾 Salvar ordem</button></div>', { titulo: "✏️ " + r.nome, larga: true });
+    var el = j.el;
+    function desenhar() {
+      $("#ep-lista", el).innerHTML = ps.length ? '<ol style="padding-left:22px;margin:6px 0">' + ps.map(function (p, k) {
+        var abertos = (lojasComServico("").filter(function (x) { return x.loja.id === p.loja_id; })[0] || {}).servicos || [];
+        return '<li style="margin:6px 0"><div class="linha" style="gap:6px"><span><b>' + esc(nomeLoja(p)) + "</b>" + (paradaFeita(p, r) ? ' <span class="selo bom">✔ feita</span>' : "") + "</span>" + botoesParada(k, ps.length, null, 1) + "</div>" +
+          '<div class="peq mudo">' + esc(enderecoLoja(p)) + "</div>" +
+          abertos.map(function (sv) { return '<div class="peq" style="display:flex;gap:6px;align-items:center;margin:2px 0">' + A.seloCategoria(sv.categoria) + " <span>" + esc(resumoServ(sv)) + '</span> <button class="peq" type="button" data-sfeito="' + sv.id + '">✔ Já feito</button></div>'; }).join("") + "</li>";
+      }).join("") + '</ol><div class="peq mudo">≈ ' + A.numero(G.comprimento(partida, ps.filter(G.temLocal), false) * G.FATOR_ESTRADA, 0) + " km</div>" : '<div class="aviso">Sem paradas: para apagar a rota inteira, use “Apagar” na lista.</div>';
+      $$("[data-pmv]", el).forEach(function (b) { b.onclick = function () { var a = b.dataset.pmv.split(":"), i = Number(a[1]), k = i + Number(a[2]); if (k < 0 || k >= ps.length) return; var t = ps[i]; ps[i] = ps[k]; ps[k] = t; desenhar(); }; });
+      $$("[data-prm]", el).forEach(function (b) { b.onclick = function () { ps.splice(Number(b.dataset.prm.split(":")[1]), 1); desenhar(); }; });
+      $$("[data-sfeito]", el).forEach(function (b) { b.onclick = function () { marcarFeito(b.dataset.sfeito).then(function (n) { if (n) { desenhar(); desenharSalvas(); } }).catch(falhou); }; });
+      $("#ep-ok", el).disabled = !ps.length;
+    }
+    desenhar();
+    $("#ep-ok", el).onclick = function () {
+      var b = this; A.ocupado(b, true, "Salvando...");
+      q(sb.from("rotas").update({ paradas: ps, km: Math.round(G.comprimento(partida, ps.filter(G.temLocal), false) * G.FATOR_ESTRADA * 10) / 10 }).eq("id", r.id).select().single())
+        .then(function (n) {
+          trocar(S.rotas, n); j.fechar(); desenharSalvas(); A.avisar("Rota atualizada", "ok");
+          var f = porId(S.func, n.funcionario_id);
+          if (f && f.telefone) A.janela("<p>A ordem nova já aparece no app de " + esc(f.nome) + '. Quer avisar pelo WhatsApp?</p><div class="acoes"><a class="botao zap" target="_blank" rel="noopener" href="' +
+            esc(A.linkZap(f.telefone, msgRota(n))) + '">📲 Enviar a rota atualizada</a></div>', { titulo: "Rota atualizada" });
+        }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+    };
+  }
   // loja da rota já atendida: serviço dela concluído depois que a rota foi criada e nada mais aberto
   function paradaFeita(p, r) {
     if (!p.loja_id) return false;
@@ -3089,12 +3169,13 @@
         (feitas ? ' <span class="mudo">(as feitas saíram do app do funcionário e estão em <a href="#executados">✅ Executados</a>)</span>' : "") + "</div>" +
         '<div class="acoes">' + links.map(function (u, k) { return '<a class="botao peq" target="_blank" rel="noopener" href="' + esc(u) + '">🗺 Google Maps' + (links.length > 1 ? " " + (k + 1) : "") + "</a>"; }).join("") +
         (f && f.telefone ? '<a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgRota(r))) + '">📲 WhatsApp</a>' : "") +
-        '<button class="peq" data-rota-comp="' + r.id + '">📤 Compartilhar</button>' +
+        '<button class="peq" data-rota-comp="' + r.id + '">📤 Compartilhar</button><button class="peq" data-rota-ed="' + r.id + '">✏️ Editar paradas</button>' +
         '<button class="peq perigo" data-apagar-rota="' + r.id + '">Apagar</button></div></div>';
     }).join("");
     $$("[data-rota-comp]", c).forEach(function (b) {
       b.onclick = function () { var r = porId(S.rotas, b.dataset.rotaComp); if (r) A.compartilhar({ titulo: r.nome, texto: msgRota(r, true) }); };
     });
+    $$("[data-rota-ed]", c).forEach(function (b) { b.onclick = function () { editarParadas(porId(S.rotas, b.dataset.rotaEd)); }; });
     $$("[data-apagar-rota]", c).forEach(function (b) {
       b.onclick = function () {
         if (!A.confirmar("Apagar esta rota?")) return;
