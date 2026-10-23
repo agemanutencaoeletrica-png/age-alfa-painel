@@ -411,8 +411,28 @@
   // ---------------- formulário (nova ou editar) ----------------
   function rotuloObra(o) { return o.cliente + (o.chamado ? " · chamado " + o.chamado : ""); }
   function obraPorRotulo(t) { t = String(t || "").trim(); return P.S.obras.filter(function (o) { return rotuloObra(o) === t; })[0] || null; }
+  // materiais já comprados: o último preço pago (de preferência na mesma loja) e a unidade
+  function materiaisComprados(loja) {
+    var nm = function (v) { return semAcento(v).replace(/[^a-z0-9]+/g, " ").trim(); }, l = nm(loja), m = {};
+    P.S.compras.slice().sort(function (a, b) { return String(a.comprado_em).localeCompare(String(b.comprado_em)); }).forEach(function (c) {
+      (c.itens || []).forEach(function (x) {
+        var k = nm(x.item), unit = Number(x.unit) || (Number(x.qtd) > 0 && Number(x.valor) > 0 ? Math.round(x.valor / x.qtd * 100) / 100 : 0);
+        if (!k || !(unit > 0)) return;
+        var y = { item: String(x.item).trim(), un: x.un || "un", unit: unit, data: c.comprado_em, loja: c.fornecedor || "" };
+        // a compra mais nova vale; a da mesma loja vale mais que a de outra
+        if (!m[k] || !l || nm(c.fornecedor) === l || nm(m[k].loja) !== l) m[k] = y;
+      });
+    });
+    return m;
+  }
+  // rascunho do lançamento à mão: guardado neste aparelho enquanto você digita (internet caiu, janela fechou...)
+  var CHAVE_RASC = "age_rascunho_compra";
+  function lerRascunho() { try { var r = JSON.parse(localStorage.getItem(CHAVE_RASC) || "null"); return r && Date.now() - r.em < 14 * 864e5 ? r : null; } catch (e) { return null; } }
+  function apagarRascunho() { try { localStorage.removeItem(CHAVE_RASC); } catch (e) { /* sem armazenamento */ } }
+
   function formulario(op) {
     var c0 = op.compra || null, d = op.texto || {};
+    var aMao = !c0 && !op.imagem && !op.texto, rasc = aMao ? lerRascunho() : null;
     if (!c0 && d.cnpj && !d.loja) {   // loja já conhecida pelo CNPJ da nota
       var dg = d.cnpj.replace(/\D/g, ""), ant = P.S.compras.filter(function (x) { return x.cnpj && x.cnpj.replace(/\D/g, "") === dg && x.fornecedor; })[0];
       if (ant) d.fornecedor = ant.fornecedor;
@@ -443,6 +463,9 @@
     var obras = P.S.obras.slice().sort(function (a, b) { return String(b.criado_em).localeCompare(String(a.criado_em)); }).slice(0, 400);
     var veics = (P.S.veic || []).filter(function (v) { return v.ativo !== false; });
     var j = A.janela(
+      (rasc ? '<div class="aviso" id="cn-rasc">📝 Você tem um lançamento <b>não salvo</b> de ' + esc(A.dataHora(new Date(rasc.em))) +
+        (rasc.campos["cn-forn"] ? " · " + esc(rasc.campos["cn-forn"]) : "") + " · " + (rasc.it || []).filter(function (x) { return x.item; }).length + " material(is)" +
+        '<div class="peq">Escolha antes de digitar: enquanto este aviso estiver aqui, o que você digitar agora não fica guardado.</div><div class="acoes" style="margin-top:6px"><button class="prim peq" id="cn-rasc-ok">↩️ Continuar de onde parei</button><button class="peq" id="cn-rasc-x">Descartar</button></div></div>' : "") +
       (op.imagem ? '<img alt="Nota" src="' + URL.createObjectURL(op.imagem) + '" style="max-height:160px;max-width:100%;display:block;margin-bottom:6px;border-radius:6px">' : "") +
       (op.erro ? '<div class="aviso erro">Não consegui ler a nota. Preencha à mão.</div>' : "") +
       (!c0 && op.imagem && !op.erro && !d.valor && !(d.itens || []).length ? '<div class="aviso">✍️ Parece nota <b>escrita à mão</b> (ou foto ilegível): o app só lê texto impresso. Preencha a data, o valor e os materiais à mão — a foto fica guardada junto.</div>' : "") +
@@ -470,7 +493,7 @@
       '<label for="cn-dest">Para onde foi (obra / loja / cliente)</label><input id="cn-dest" list="cn-dl-obras" maxlength="200" placeholder="Digite a loja, o cliente (ex.: DEVA) ou o nº do chamado">' +
       '<datalist id="cn-dl-obras">' + obras.map(function (o) { return '<option value="' + esc(rotuloObra(o)) + '">'; }).join("") + "</datalist>" +
       '<div id="cn-mat"><label for="cn-tipo">Tipo de serviço</label><input id="cn-tipo" list="cn-dl-tipos" maxlength="200"><datalist id="cn-dl-tipos"></datalist>' +
-      '<label>Materiais</label><div id="cn-itens"></div><button class="peq" type="button" id="cn-mais">+ Material</button> <span class="peq mudo" id="cn-soma"></span></div>' +
+      '<label>Materiais</label><datalist id="cn-dl-mat"></datalist><div id="cn-itens"></div><button class="peq" type="button" id="cn-mais">+ Material</button> <span class="peq mudo" id="cn-soma"></span></div>' +
       '<label for="cn-obs">Observação</label><input id="cn-obs" maxlength="300" placeholder="Ex.: gasolina da semana, troca de óleo, lanche da equipe">' +
       '<div id="cn-erro"></div><div class="acoes"><button class="prim" id="cn-salvar">Salvar</button>' + (c0 ? '<button class="perigo" id="cn-apagar">Apagar</button>' : "") +
       (op.depois && op.falta ? '<button id="cn-pular">Pular esta</button>' : "") + "</div>",
@@ -513,10 +536,17 @@
       $("#cn-dl-tipos", el).innerHTML = tipos.map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
       desenharItens();
     }
+    function listaMateriais() {
+      var m = materiaisComprados($("#cn-forn", el).value);
+      $("#cn-dl-mat", el).innerHTML = Object.keys(m).sort().slice(0, 600).map(function (k) {
+        var y = m[k]; return '<option value="' + esc(y.item) + '">' + esc(y.un + " · " + dinheiro(y.unit) + (y.loja ? " · " + y.loja : "")) + "</option>";
+      }).join("");
+    }
     function desenharItens() {
+      listaMateriais();
       $("#cn-itens", el).innerHTML = it.map(function (x, i) {
         return '<div class="linha" style="gap:4px;flex-wrap:wrap;margin:3px 0" data-li="' + i + '">' +
-          '<input data-c="item" placeholder="Material" value="' + esc(x.item || "") + '" style="flex:3 1 160px">' +
+          '<input data-c="item" list="cn-dl-mat" placeholder="Material" value="' + esc(x.item || "") + '" style="flex:3 1 160px">' +
           '<input data-c="qtd" inputmode="decimal" placeholder="Qtd" value="' + esc(x.qtd ? A.numero(x.qtd) : "") + '" style="flex:0 1 60px">' +
           '<select data-c="un" style="flex:0 1 70px">' + UN.map(function (u) { return '<option' + ((x.un || "un") === u ? " selected" : "") + ">" + u + "</option>"; }).join("") + "</select>" +
           '<input data-c="unit" inputmode="decimal" placeholder="Unit. R$" title="Valor unitário" value="' + esc(num2(x.unit)) + '" style="flex:0 1 80px">' +
@@ -530,6 +560,19 @@
           inp.oninput = inp.onchange = function () {
             var k = inp.dataset.c;
             x[k] = k === "qtd" || k === "valor" || k === "unit" ? A.lerNumero(inp.value) : inp.value;
+            // material já comprado antes: a unidade e o último preço pago entram sozinhos (se o preço ainda está vazio)
+            if (k === "item" && !(x.unit > 0) && !(x.valor > 0)) {
+              var ant = materiaisComprados($("#cn-forn", el).value)[semAcento(inp.value).replace(/[^a-z0-9]+/g, " ").trim()];
+              if (ant) {
+                x.un = ant.un; x.unit = ant.unit;
+                var su = $('[data-c="un"]', l);
+                if (su && !Array.prototype.some.call(su.options, function (o) { return o.value === ant.un; })) su.insertAdjacentHTML("beforeend", "<option>" + esc(ant.un) + "</option>");
+                if (su) su.value = ant.un;
+                $('[data-c="unit"]', l).value = num2(ant.unit);
+                if (x.qtd > 0) { x.valor = Math.round(x.qtd * x.unit * 100) / 100; $('[data-c="valor"]', l).value = num2(x.valor); }
+                inp.title = "Último preço: " + dinheiro(ant.unit) + " em " + A.dataSimples(ant.data) + (ant.loja ? " (" + ant.loja + ")" : "");
+              }
+            }
             // quantidade × unitário = total (e o unitário sai do total, se for ele que você digitou)
             if ((k === "qtd" || k === "unit") && x.qtd > 0 && x.unit > 0) { x.valor = Math.round(x.qtd * x.unit * 100) / 100; $('[data-c="valor"]', l).value = num2(x.valor); }
             else if (k === "valor" && x.qtd > 0 && x.valor > 0) { x.unit = Math.round(x.valor / x.qtd * 100) / 100; $('[data-c="unit"]', l).value = num2(x.unit); }
@@ -553,6 +596,27 @@
     $("#cn-mais", el).onclick = function () { it.push({ un: "un", area: area === "pintura" ? "pintura" : "eletrica" }); desenharItens(); };
     if (!it.length) it.push({ un: "un" });
     marcarTipo();
+    $("#cn-forn", el).addEventListener("change", listaMateriais);
+    var CAMPOS = ["cn-forn", "cn-data", "cn-valor", "cn-forma", "cn-pago", "cn-venc", "cn-cat", "cn-dest", "cn-tipo", "cn-obs"];
+    if (aMao) {
+      var guardar = function () {
+        if ($("#cn-rasc", el)) return;   // ainda não escolheu continuar/descartar o rascunho antigo: não apaga ele
+        var campos = {};
+        CAMPOS.forEach(function (id) { var e = $("#" + id, el); if (e) campos[id] = e.type === "checkbox" ? e.checked : e.value; });
+        var temAlgo = campos["cn-forn"] || campos["cn-valor"] || campos["cn-obs"] || it.some(function (x) { return x.item || x.valor; });
+        try { if (temAlgo) localStorage.setItem(CHAVE_RASC, JSON.stringify({ em: Date.now(), tipo: tipo, area: area, it: it, campos: campos })); } catch (e) { /* sem armazenamento */ }
+      };
+      el.addEventListener("input", guardar); el.addEventListener("change", guardar); el.addEventListener("click", function (ev) { if (ev.target.closest("[data-tipo],[data-area],[data-rm],#cn-mais")) setTimeout(guardar, 0); });
+    }
+    if (rasc) {
+      $("#cn-rasc-ok", el).onclick = function () {
+        CAMPOS.forEach(function (id) { var e = $("#" + id, el); if (e && rasc.campos[id] !== undefined) { if (e.type === "checkbox") e.checked = !!rasc.campos[id]; else e.value = rasc.campos[id]; } });
+        verPago(); tipo = rasc.tipo || tipo; area = rasc.area || area;
+        it = (rasc.it || []).map(function (x) { return Object.assign({}, x); }); if (!it.length) it.push({ un: "un" });
+        marcarTipo(); $("#cn-rasc", el).remove(); A.avisar("↩️ Lançamento recuperado", "ok");
+      };
+      $("#cn-rasc-x", el).onclick = function () { if (!A.confirmar("Descartar o lançamento não salvo?")) return; apagarRascunho(); $("#cn-rasc", el).remove(); };
+    }
     if ($("#cn-pular", el)) $("#cn-pular", el).onclick = function () { j.fechar(); op.depois(); };
     if ($("#cn-apagar", el)) $("#cn-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar este lançamento?")) return;
@@ -603,6 +667,7 @@
         return c0 && c0.pago === false && n.pago ? quitar(n.id, P).catch(function () { return n; }) : n;
       }).then(function (n) {
         P.trocar(P.S.compras, n); j.fechar();
+        if (aMao) apagarRascunho();
         // nota de outro mês: o filtro passa a mostrar desde a data dela (senão parece que não salvou)
         var pr = periodo();
         if (filtro.tipo !== "apagar" && (n.comprado_em < pr.de || n.comprado_em >= pr.ate)) { filtro.periodo = "datas"; filtro.de = n.comprado_em.slice(0, 8) + "01"; filtro.ate = ""; }

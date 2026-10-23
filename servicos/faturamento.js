@@ -12,6 +12,24 @@
   function num2(v) { return v || v === 0 ? Number(v).toFixed(2).replace(".", ",") : ""; }
   function semAcento(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
   function norm(t) { return semAcento(t).replace(/\(.*?\)/g, " ").replace(/[^a-z0-9]+/g, " ").replace(/\b(ltda|me|epp|eireli|sa|s a)\b/g, " ").replace(/\s+/g, " ").trim(); }
+  function dig(t) { return String(t || "").replace(/\D/g, ""); }
+  function fmtCnpj(t) { var d = dig(t); return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : d.length === 11 ? d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : String(t || ""); }
+
+  // ---------------- valores da nota: bruto, impostos e o que ficou ----------------
+  // retenções que o tomador desconta na nota (ele paga ao governo) e o imposto que a AGE paga (DAS / Simples Nacional)
+  var RET = [["iss", "ISS retido"], ["inss", "INSS"], ["ir", "IR"], ["pis", "PIS"], ["cofins", "COFINS"], ["csll", "CSLL"], ["outras", "Outras retenções"]];
+  var CHAVE_ALIQ = "age_aliq_imposto";
+  function aliqGuardada() { try { return localStorage.getItem(CHAVE_ALIQ) || ""; } catch (e) { return ""; } }
+  // valor (coluna) = líquido recebido; notas antigas sem bruto: bruto = líquido
+  function contas(n) {
+    var r = n.retencoes || {}, ret = RET.reduce(function (t, x) { return t + (Number(r[x[0]]) || 0); }, 0);
+    var liq = Number(n.valor) || 0, bruto = Number(n.valor_bruto) || liq + ret, emp = Number(n.imposto_empresa) || 0;
+    return { bruto: bruto, ret: ret, liq: liq, emp: emp, imp: ret + emp, ficou: liq - emp };
+  }
+  function soma(ns) { return ns.reduce(function (t, n) { var c = contas(n); t.bruto += c.bruto; t.ret += c.ret; t.liq += c.liq; t.emp += c.emp; t.imp += c.imp; t.ficou += c.ficou; if (!n.recebido) t.areceber += c.liq; return t; }, { bruto: 0, ret: 0, liq: 0, emp: 0, imp: 0, ficou: 0, areceber: 0 }); }
+  // empresa (tomador) da nota: pelo CNPJ, senão pelo nome
+  function empresaDe(n) { return n.cliente || rotuloDe(n) || "Sem empresa"; }
+  function chaveEmpresa(n) { var d = dig(n.tomador_cnpj); return d.length >= 11 ? "c:" + d : "n:" + norm(empresaDe(n)); }
 
   // ---------------- obra / cliente (centro de custo) ----------------
   function rotuloObra(o) { return o.cliente + (o.chamado ? " · chamado " + o.chamado : ""); }
@@ -34,10 +52,17 @@
     var t = String(texto || "").replace(/\r/g, ""), r = {};
     if (/<\s*(?:\w+:)?(?:CompNfse|Nfse|InfNfse|ValorServicos)\b/i.test(t)) {   // XML (padrão ABRASF)
       var tag = function (n) { var m = t.match(new RegExp("<\\s*(?:\\w+:)?" + n + "\\b[^>]*>([^<]*)<", "i")); return m ? m[1].trim() : ""; };
-      r.valor = Number(tag("ValorLiquidoNfse") || tag("ValorServicos")) || null;
+      r.bruto = Number(tag("ValorServicos") || tag("vServ")) || null;
+      r.valor = Number(tag("ValorLiquidoNfse") || tag("vLiq")) || r.bruto;
+      var nx = function (n) { return Number(tag(n)) || 0; };
+      var issRet = tag("IssRetido") === "1" || tag("tpRetISSQN") === "2";
+      r.retencoes = { iss: nx("ValorIssRetido") || (issRet ? nx("ValorIss") || nx("vISSQN") : 0), inss: nx("ValorInss") || nx("vRetCP"), ir: nx("ValorIr") || nx("vRetIRRF"),
+        pis: nx("ValorPis"), cofins: nx("ValorCofins"), csll: nx("ValorCsll") || nx("vRetCSLL") };
+      var mc = t.match(/<\s*(?:\w+:)?(?:Tomador|TomadorServico|toma)\b[\s\S]*?<\s*(?:\w+:)?(?:Cnpj|CNPJ|Cpf|CPF)\b[^>]*>(\d{11,14})</i);
+      if (mc) r.cnpj = mc[1];
       r.numero = tag("Numero") ? String(Number(tag("Numero")) || tag("Numero")) : "";
       r.data = (tag("DataEmissao") || tag("DataEmissaoRps")).slice(0, 10);
-      var mt = t.match(/<\s*(?:\w+:)?(?:Tomador|TomadorServico)\b[\s\S]*?<\s*(?:\w+:)?RazaoSocial\b[^>]*>([^<]*)</i);
+      var mt = t.match(/<\s*(?:\w+:)?(?:Tomador|TomadorServico|toma)\b[\s\S]*?<\s*(?:\w+:)?(?:RazaoSocial|xNome)\b[^>]*>([^<]*)</i);
       r.tomador = mt ? mt[1].trim() : "";
       r.descricao = tag("Discriminacao").slice(0, 300);
       return r;
@@ -64,13 +89,43 @@
     var iT = -1;
     for (var i = 0; i < ls.length; i++) if (/tomador/i.test(ls[i])) { iT = i; break; }
     if (iT >= 0) for (var k = iT; k < Math.min(ls.length, iT + 6) && !r.tomador; k++) {
-      var x2 = ls[k].replace(/.*?(?:raz[aã]o\s+social|nome(?:\s*\/\s*raz[aã]o\s+social)?)\s*:?\s*/i, k === iT && !/raz[aã]o|nome/i.test(ls[k]) ? "\u0000" : "");
+      var x2 = ls[k].replace(/.*?(?:raz[aã]o\s+social|nome(?:\s*\/\s*(?:raz[aã]o\s+social|nome\s+empresarial))?|nome\s+empresarial)\s*:?\s*/i, k === iT && !/raz[aã]o|nome/i.test(ls[k]) ? "\u0000" : "");
       if (x2.indexOf("\u0000") >= 0) continue;
       x2 = x2.replace(/\b(cpf|cnpj|inscri|endere|munic|telefone|e-?mail)\b.*$/i, "").trim();
       if (/[A-Za-zÀ-ú]{3,}\s+[A-Za-zÀ-ú]{2,}/.test(x2) && !/tomador|prestador/i.test(x2)) r.tomador = x2.slice(0, 120);
     }
     var mdesc = t.match(/discrimina[cç][aã]o\s+(?:dos\s+)?servi[cç]os?\s*:?\s*\n?([^\n]{5,300})/i);
     if (mdesc) r.descricao = mdesc[1].trim();
+    // CNPJ do tomador: o primeiro depois de "TOMADOR" (fora o da própria AGE)
+    var meu = dig((A.CFG.EMPRESA || {}).documento), reC = /\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2}/g;
+    if (iT >= 0) for (var c2 = iT; c2 < Math.min(ls.length, iT + 9) && !r.cnpj; c2++) (ls[c2].match(reC) || []).forEach(function (x) { if (!r.cnpj && dig(x) !== meu) r.cnpj = dig(x); });
+    // valor bruto (dos serviços) e líquido
+    var valsTodos = function (x) { return (String(x).match(/\d{1,3}(?:\.\d{3})*,\d{2}(?![\d\/])/g) || []).map(A.lerNumero); };
+    var depoisDe = function (re) {
+      for (var i2 = 0; i2 < ls.length; i2++) {
+        var m2 = ls[i2].match(re); if (!m2) continue;
+        var v2 = valsTodos(ls[i2].slice(m2.index + m2[0].length)).filter(function (n) { return n > 0; });
+        if (!v2.length && ls[i2 + 1]) v2 = valsTodos(ls[i2 + 1]).filter(function (n) { return n > 0; });
+        if (v2.length) return v2[0];
+      }
+      return null;
+    };
+    r.bruto = depoisDe(/valor\s+(?:total\s+)?(?:bruto|d[oa]s?\s+servi[cç]os?|do\s+servi[cç]o)/i);
+    var liq = depoisDe(/valor\s+l[ií]quido/i);
+    if (liq) { r.valor = liq; r.valorIncerto = false; }
+    // retenções: "INSS 0,00" na mesma linha, ou os rótulos numa linha e os valores na de baixo (na mesma ordem)
+    var defs = [["inss", /\b(?:inss|ret\.?\s*cp|cp(?:\s+retid[oa])?|contribui[cç][aã]o\s+previdenci[aá]ria)\b/i], ["ir", /\b(?:irrf|ir(?:pj)?)\b(?!\s*isento)/i], ["pis", /\bpis(?:\/pasep)?\b/i],
+      ["cofins", /\bcofins\b/i], ["csll", /\bcsll\b/i], ["iss", /\biss(?:qn)?\s+retido\b|reten[cç][aã]o\s+(?:do\s+)?iss/i]];
+    var ret = {};
+    ls.forEach(function (x, i) {
+      var achados = defs.map(function (d) { var m3 = x.match(d[1]); return m3 ? { k: d[0], pos: m3.index, fim: m3.index + m3[0].length } : null; }).filter(Boolean).sort(function (a, b) { return a.pos - b.pos; });
+      if (!achados.length) return;
+      var vl = valsTodos(x);
+      if (achados.length > 1 && !vl.length && ls[i + 1]) { vl = valsTodos(ls[i + 1]); if (vl.length === achados.length) achados.forEach(function (a, n) { if (ret[a.k] === undefined) ret[a.k] = vl[n]; }); return; }
+      if (achados.length === 1) { var v3 = valsTodos(x.slice(achados[0].fim)); if (v3.length && ret[achados[0].k] === undefined) ret[achados[0].k] = v3[0]; return; }
+      if (vl.length === achados.length) achados.forEach(function (a, n) { if (ret[a.k] === undefined) ret[a.k] = vl[n]; });
+    });
+    r.retencoes = ret;
     return r;
   }
   // tomador da nota -> obra/cliente já usado (pela 1ª palavra forte do nome: "DEVA VEICULOS LTDA" -> "DEVA IVECO (contagem)")
@@ -97,11 +152,11 @@
       return;
     }
     c.innerHTML = '<div class="cab-secao"><h2>💼 Notas e resultado</h2><span><button class="prim" id="ft-arq-b">📷 Nota de serviço</button> <button id="ft-mao">➕ Lançar à mão</button></span></div>' +
-      '<input type="file" id="ft-arq" accept="image/*,application/pdf,.xml,text/xml,application/xml" class="oculto">' +
+      '<input type="file" id="ft-arq" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" class="oculto">' +
       '<p class="mudo peq" style="margin-top:-4px">Lance a nota fiscal de serviço que você emitiu (foto, PDF ou XML da prefeitura). Em <b>Resultado por obra</b>: o que entrou menos material, mão de obra e despesas avulsas.</p>' +
-      '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["resultado", "📊 Resultado por obra"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
+      '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
       '<div class="filtros"><select id="ft-per" aria-label="Período"><option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="ano">Este ano</option><option value="tudo">Tudo</option></select>' +
-      (filtro.aba === "notas" ? '<select id="ft-sit" aria-label="Situação"><option value="">Todas</option><option value="areceber">⏳ A receber</option><option value="recebido">✅ Recebidas</option></select>' : "") +
+      (filtro.aba !== "resultado" ? '<select id="ft-sit" aria-label="Situação"><option value="">Todas</option><option value="areceber">⏳ A receber</option><option value="recebido">✅ Recebidas</option></select>' : "") +
       '<input type="search" id="ft-busca" placeholder="Buscar cliente, obra, nº da nota..."></div><div id="ft-res"></div>';
     $("#ft-per").value = filtro.periodo; if ($("#ft-sit")) $("#ft-sit").value = filtro.sit; $("#ft-busca").value = filtro.busca;
     $$("[data-ftaba]", c).forEach(function (b) { b.onclick = function () { filtro.aba = b.dataset.ftaba; ver(c, P); }; });
@@ -113,27 +168,47 @@
     $("#ft-mao").onclick = function () { formulario({}, function () { ver(c, P); }); };
     if (P.atualizarAbas) P.atualizarAbas();
     desenhar();
-    function desenhar() { if (filtro.aba === "resultado") resultado($("#ft-res"), function () { ver(c, P); }); else notas($("#ft-res"), function () { ver(c, P); }); }
+    function desenhar() {
+      var r = $("#ft-res"), m = function () { ver(c, P); };
+      if (filtro.aba === "resultado") resultado(r, m); else if (filtro.aba === "empresas") empresas(r, m, c); else notas(r, m);
+    }
   }
-  function notas(r, mudou) {
+  function notasFiltradas() {
     var pr = periodo(), b = semAcento(filtro.busca);
-    var ns = P.S.receitas.filter(function (n) {
+    return P.S.receitas.filter(function (n) {
       if (n.emitida_em < pr.de || n.emitida_em >= pr.ate) return false;
       if (filtro.sit === "areceber" && n.recebido) return false;
       if (filtro.sit === "recebido" && !n.recebido) return false;
-      return !b || semAcento([rotuloDe(n), n.cliente, n.numero_nota, n.descricao].join(" ")).indexOf(b) >= 0;
+      return !b || semAcento([rotuloDe(n), n.cliente, n.numero_nota, n.descricao, n.tomador_cnpj].join(" ")).indexOf(b) >= 0 || (dig(b).length >= 4 && dig(n.tomador_cnpj).indexOf(dig(b)) >= 0);
     }).sort(function (a, c) { return c.emitida_em.localeCompare(a.emitida_em); });
-    var tot = ns.reduce(function (t, n) { return t + Number(n.valor); }, 0), rec = ns.filter(function (n) { return n.recebido; }).reduce(function (t, n) { return t + Number(n.valor); }, 0);
-    r.innerHTML = '<div class="grade"><div class="ladrilho" style="border-left:4px solid var(--prim)"><div class="r">Notas emitidas</div><div class="v" style="font-size:1.3em">' + dinheiro(tot) + '</div><div class="d">' + ns.length + " nota" + (ns.length === 1 ? "" : "s") + "</div></div>" +
-      '<div class="ladrilho" style="border-left:4px solid var(--bom)"><div class="r">✅ Recebido</div><div class="v" style="font-size:1.3em">' + dinheiro(rec) + "</div></div>" +
-      '<div class="ladrilho" style="border-left:4px solid var(--critico)"><div class="r">⏳ A receber</div><div class="v" style="font-size:1.3em">' + dinheiro(tot - rec) + "</div></div></div>" +
-      (ns.length ? '<div class="tabela-caixa"><table><thead><tr><th>Emissão</th><th>Nº</th><th>Cliente / obra</th><th>Serviço</th><th>Situação</th><th class="num">Valor</th><th></th></tr></thead><tbody>' +
+  }
+  function ladrilhos(T, qtd) {
+    return '<div class="grade"><div class="ladrilho" style="border-left:4px solid var(--prim)"><div class="r">Valor bruto emitido</div><div class="v" style="font-size:1.3em">' + dinheiro(T.bruto) + '</div><div class="d">' + qtd + " nota" + (qtd === 1 ? "" : "s") + "</div></div>" +
+      '<div class="ladrilho" style="border-left:4px solid var(--critico)"><div class="r">Impostos</div><div class="v" style="font-size:1.3em">' + dinheiro(T.imp) + '</div><div class="d">retidos ' + dinheiro(T.ret) + " · da empresa " + dinheiro(T.emp) + "</div></div>" +
+      '<div class="ladrilho" style="border-left:4px solid var(--bom)"><div class="r">💰 Ficou para a empresa</div><div class="v" style="font-size:1.3em">' + dinheiro(T.ficou) + '</div><div class="d">' + (T.bruto ? pct(T.ficou / T.bruto * 100) + " do bruto" : "") + "</div></div>" +
+      '<div class="ladrilho" style="border-left:4px solid var(--atencao)"><div class="r">⏳ A receber</div><div class="v" style="font-size:1.3em">' + dinheiro(T.areceber) + "</div></div></div>";
+  }
+  function botoesExportar() {
+    return '<div class="acoes"><button id="ft-n-pdf">📄 Relatório PDF</button><button id="ft-n-csv">⬇ Planilha (CSV)</button></div>';
+  }
+  function ligarExportar(r, ns) {
+    if ($("#ft-n-pdf", r)) $("#ft-n-pdf", r).onclick = function () { pdfNotas(ns, this); };
+    if ($("#ft-n-csv", r)) $("#ft-n-csv", r).onclick = function () { csvNotas(ns); };
+  }
+  function notas(r, mudou) {
+    var ns = notasFiltradas(), T = soma(ns);
+    r.innerHTML = ladrilhos(T, ns.length) +
+      (ns.length ? '<div class="tabela-caixa"><table><thead><tr><th>Emissão</th><th>Nº</th><th>Empresa / obra</th><th class="num">Bruto</th><th class="num">Impostos</th><th class="num">Ficou</th><th>Situação</th><th></th></tr></thead><tbody>' +
         ns.map(function (n) {
-          return "<tr><td>" + esc(A.dataSimples(n.emitida_em)) + "</td><td>" + esc(n.numero_nota || "—") + "</td><td><b>" + esc(rotuloDe(n) || n.cliente || "—") + "</b>" + (n.cliente && n.cliente !== rotuloDe(n) ? '<div class="peq mudo">' + esc(n.cliente) + "</div>" : "") +
-            '</td><td class="peq">' + esc(String(n.descricao || "").slice(0, 120)) + "</td><td>" +
+          var c = contas(n);
+          return "<tr><td>" + esc(A.dataSimples(n.emitida_em)) + "</td><td>" + esc(n.numero_nota || "—") + "</td><td><b>" + esc(empresaDe(n)) + "</b>" +
+            (n.tomador_cnpj ? '<div class="peq mudo">' + esc(fmtCnpj(n.tomador_cnpj)) + "</div>" : "") +
+            (rotuloDe(n) && rotuloDe(n) !== empresaDe(n) ? '<div class="peq mudo">📍 ' + esc(rotuloDe(n)) + "</div>" : "") +
+            (n.descricao ? '<div class="peq mudo">' + esc(String(n.descricao).slice(0, 90)) + "</div>" : "") +
+            '</td><td class="num">' + dinheiro(c.bruto) + '</td><td class="num">' + (c.imp ? dinheiro(c.imp) : '<span class="mudo">—</span>') + '</td><td class="num"><b>' + dinheiro(c.ficou) + "</b></td><td>" +
             (n.recebido ? '<span class="selo bom">✅ recebido' + (n.recebido_em ? " " + esc(A.dataSimples(n.recebido_em)) : "") + "</span>" : '<span class="selo atencao">⏳ a receber</span> <button class="peq" data-ft-rec="' + n.id + '">✔ Recebi</button>') +
-            '</td><td class="num"><b>' + dinheiro(n.valor) + "</b></td><td>" + (n.arquivo ? '<button class="peq" data-ft-arq="' + n.id + '">🧾</button> ' : "") + '<button class="peq" data-ft-ed="' + n.id + '">Editar</button></td></tr>';
-        }).join("") + '<tr><td colspan="5"><b>Total</b></td><td class="num"><b>' + dinheiro(tot) + "</b></td><td></td></tr></tbody></table></div>"
+            "</td><td>" + (n.arquivo ? '<button class="peq" data-ft-arq="' + n.id + '">🧾</button> ' : "") + '<button class="peq" data-ft-ed="' + n.id + '">Editar</button></td></tr>';
+        }).join("") + '<tr><td colspan="3"><b>Total</b></td><td class="num"><b>' + dinheiro(T.bruto) + '</b></td><td class="num"><b>' + dinheiro(T.imp) + '</b></td><td class="num"><b>' + dinheiro(T.ficou) + "</b></td><td></td><td></td></tr></tbody></table></div>" + botoesExportar()
         : '<div class="cartao vazio">Nenhuma nota de serviço neste período. Toque em 📷 Nota de serviço ou ➕ Lançar à mão.</div>');
     $$("[data-ft-ed]", r).forEach(function (bt) { bt.onclick = function () { formulario({ nota: P.porId(P.S.receitas, bt.dataset.ftEd) }, mudou); }; });
     $$("[data-ft-rec]", r).forEach(function (bt) {
@@ -143,6 +218,102 @@
       };
     });
     $$("[data-ft-arq]", r).forEach(function (bt) { bt.onclick = function () { abrirArquivo(P.porId(P.S.receitas, bt.dataset.ftArq).arquivo); }; });
+    ligarExportar(r, ns);
+  }
+  // ---------------- por empresa (tomador): soma tudo automático ----------------
+  function porEmpresa(ns) {
+    var g = {};
+    ns.slice().sort(function (a, b) { return b.emitida_em.localeCompare(a.emitida_em); }).forEach(function (n) {
+      var k = chaveEmpresa(n), x = g[k] = g[k] || { nome: empresaDe(n), cnpj: n.tomador_cnpj || "", notas: [] };
+      if (!x.cnpj && n.tomador_cnpj) x.cnpj = n.tomador_cnpj;
+      x.notas.push(n);
+    });
+    return Object.keys(g).map(function (k) { var x = g[k]; x.T = soma(x.notas); return x; }).sort(function (a, b) { return b.T.bruto - a.T.bruto; });
+  }
+  function empresas(r, mudou, c) {
+    var ns = notasFiltradas(), T = soma(ns), es = porEmpresa(ns);
+    r.innerHTML = ladrilhos(T, ns.length) +
+      (es.length ? '<div class="tabela-caixa"><table><thead><tr><th>Empresa</th><th class="num">Notas</th><th class="num">Bruto</th><th class="num">Impostos</th><th class="num">Líquido recebido</th><th class="num">Ficou</th><th class="num">A receber</th><th></th></tr></thead><tbody>' +
+        es.map(function (x, i) {
+          return "<tr><td><b>" + esc(x.nome) + "</b>" + (x.cnpj ? '<div class="peq mudo">' + esc(fmtCnpj(x.cnpj)) + "</div>" : "") + '</td><td class="num">' + x.notas.length +
+            '</td><td class="num">' + dinheiro(x.T.bruto) + '</td><td class="num">' + dinheiro(x.T.imp) + '</td><td class="num">' + dinheiro(x.T.liq) + '</td><td class="num"><b>' + dinheiro(x.T.ficou) +
+            '</b></td><td class="num">' + (x.T.areceber ? '<span class="selo atencao">' + dinheiro(x.T.areceber) + "</span>" : "—") + '</td><td><button class="peq" data-ft-emp="' + i + '">Ver notas</button></td></tr>';
+        }).join("") + '<tr><td><b>Total</b></td><td class="num"><b>' + ns.length + '</b></td><td class="num"><b>' + dinheiro(T.bruto) + '</b></td><td class="num"><b>' + dinheiro(T.imp) + '</b></td><td class="num"><b>' + dinheiro(T.liq) +
+        '</b></td><td class="num"><b>' + dinheiro(T.ficou) + '</b></td><td class="num"><b>' + dinheiro(T.areceber) + "</b></td><td></td></tr></tbody></table></div>" + botoesExportar()
+        : '<div class="cartao vazio">Nenhuma nota de serviço neste período.</div>');
+    $$("[data-ft-emp]", r).forEach(function (bt) {
+      bt.onclick = function () { var x = es[Number(bt.dataset.ftEmp)]; filtro.aba = "notas"; filtro.busca = x.cnpj ? fmtCnpj(x.cnpj) : x.nome; ver(c, P); };
+    });
+    ligarExportar(r, ns);
+  }
+  // ---------------- exportar: PDF e planilha ----------------
+  var NOME_PER = { mes: "este mês", mespassado: "mês passado", ano: "este ano", tudo: "todo o período" };
+  function textoPeriodo() { return NOME_PER[filtro.periodo] + (filtro.sit === "areceber" ? " · a receber" : filtro.sit === "recebido" ? " · recebidas" : "") + (filtro.busca ? " · busca: " + filtro.busca : ""); }
+  function csvNotas(ns) {
+    var cel = function (x) { x = String(x === null || x === undefined ? "" : x); return /[;"\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
+    var r2 = function (v) { return Number(v || 0).toFixed(2).replace(".", ","); };
+    var linhas = [["Emissão", "Nº da nota", "Empresa (tomador)", "CNPJ", "Obra / cliente", "Serviço", "Valor bruto (R$)"].concat(RET.map(function (x) { return x[1] + " (R$)"; }),
+      ["Total retido (R$)", "Líquido recebido (R$)", "Imposto da empresa (R$)", "Ficou para a empresa (R$)", "Situação", "Recebido em"])];
+    ns.forEach(function (n) {
+      var c = contas(n), rt = n.retencoes || {};
+      linhas.push([A.dataSimples(n.emitida_em), n.numero_nota || "", empresaDe(n), fmtCnpj(n.tomador_cnpj), rotuloDe(n), n.descricao || "", r2(c.bruto)].concat(RET.map(function (x) { return r2(rt[x[0]]); }),
+        [r2(c.ret), r2(c.liq), r2(c.emp), r2(c.ficou), n.recebido ? "recebido" : "a receber", n.recebido_em ? A.dataSimples(n.recebido_em) : ""]));
+    });
+    var T = soma(ns);
+    linhas.push(["TOTAL", "", "", "", "", "", r2(T.bruto)].concat(RET.map(function () { return ""; }), [r2(T.ret), r2(T.liq), r2(T.emp), r2(T.ficou), "", ""]));
+    var csv = "\ufeff" + linhas.map(function (l) { return l.map(cel).join(";"); }).join("\r\n");
+    P.baixar(new Blob([csv], { type: "text/csv;charset=utf-8" }), "notas-emitidas-" + A.isoLocal(new Date()) + ".csv");
+  }
+  function tx(v) {
+    return String(v === null || v === undefined ? "" : v).replace(/[−–—]/g, "-").replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[\u00a0\u202f]/g, " ").replace(/[^\x00-\xff]/g, "").trim();
+  }
+  function pdfNotas(ns, botao) {
+    A.ocupado(botao, true, "Gerando...");
+    P.carregarJsPdf().then(function (JsPDF) {
+      var doc = new JsPDF({ unit: "mm", format: "a4", orientation: "landscape" }), L = 12, R = 285, y = 16, E = A.CFG.EMPRESA || {}, T = soma(ns);
+      var din = function (v) { return tx(A.dinheiro(Number(v) || 0)); };
+      function nova(alt) { if (y + alt > 192) { doc.addPage(); y = 16; return true; } return false; }
+      doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(20, 50, 92); doc.text(tx(E.nome || "AGE Elétrica e Pintura"), L, y);
+      doc.setFontSize(12); doc.setTextColor(20, 20, 20); doc.text("NOTAS FISCAIS EMITIDAS", R, y, { align: "right" });
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+      doc.text(tx([E.documento, E.telefone, E.email].filter(Boolean).join("  ·  ")), L, y + 5);
+      doc.text(tx("Período: " + textoPeriodo()), R, y + 5, { align: "right" }); doc.text(tx("Emitido em " + A.data(new Date())), R, y + 9.6, { align: "right" });
+      y += 13; doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.7); doc.line(L, y, R, y); y += 7;
+      // resumo
+      var caixas = [["Valor bruto", T.bruto], ["Impostos retidos", T.ret], ["Imposto da empresa", T.emp], ["Ficou para a empresa", T.ficou], ["A receber", T.areceber]], w = (R - L) / caixas.length;
+      caixas.forEach(function (cx, i) {
+        doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(90); doc.text(tx(cx[0]), L + i * w + 1, y);
+        doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(20, 20, 20); doc.text(din(cx[1]), L + i * w + 1, y + 6);
+      });
+      y += 14;
+      function tabela(titulo, cols, linhas, total) {
+        nova(20); doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(20, 50, 92); doc.text(tx(titulo), L, y); y += 6;
+        var cab = function () { doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(90); cols.forEach(function (c2) { doc.text(tx(c2[1]), c2[0], y, { align: c2[2] }); }); y += 2; doc.setDrawColor(200); doc.setLineWidth(0.3); doc.line(L, y, R, y); y += 4; doc.setTextColor(20, 20, 20); };
+        cab();
+        linhas.concat(total ? [total] : []).forEach(function (l, li) {
+          var ult = total && li === linhas.length;
+          doc.setFont("helvetica", ult ? "bold" : "normal"); doc.setFontSize(8.5);
+          var partes = l.map(function (v, i) { return cols[i][3] ? doc.splitTextToSize(tx(v), cols[i][3]) : [tx(v)]; });
+          var alt = Math.max.apply(null, partes.map(function (x) { return x.length; })) * 3.8 + 2;
+          if (nova(alt)) cab();
+          doc.setFont("helvetica", ult ? "bold" : "normal"); doc.setFontSize(8.5);
+          partes.forEach(function (pt, i) { doc.text(pt, cols[i][0], y, { align: cols[i][2] }); });
+          y += alt - 2; doc.setDrawColor(225); doc.setLineWidth(0.2); doc.line(L, y - 1.4, R, y - 1.4); y += 3;
+        });
+        y += 4;
+      }
+      var es = porEmpresa(ns);
+      tabela("Por empresa", [[L + 1, "EMPRESA", "left", 90], [L + 95, "CNPJ", "left"], [152, "NOTAS", "right"], [180, "BRUTO", "right"], [205, "IMPOSTOS", "right"], [232, "LÍQUIDO", "right"], [258, "FICOU", "right"], [R - 1, "A RECEBER", "right"]],
+        es.map(function (x) { return [x.nome, fmtCnpj(x.cnpj), String(x.notas.length), din(x.T.bruto), din(x.T.imp), din(x.T.liq), din(x.T.ficou), din(x.T.areceber)]; }),
+        ["TOTAL", "", String(ns.length), din(T.bruto), din(T.imp), din(T.liq), din(T.ficou), din(T.areceber)]);
+      tabela("Notas", [[L + 1, "EMISSÃO", "left"], [L + 20, "Nº", "left"], [L + 38, "EMPRESA / SERVIÇO", "left", 92], [170, "BRUTO", "right"], [193, "RETIDO", "right"], [216, "LÍQUIDO", "right"], [238, "IMP. EMPRESA", "right"], [260, "FICOU", "right"], [R - 1, "SITUAÇÃO", "right"]],
+        ns.map(function (n) { var c = contas(n); return [A.dataSimples(n.emitida_em), n.numero_nota || "-", empresaDe(n) + (n.descricao ? " - " + String(n.descricao).slice(0, 90) : ""), din(c.bruto), din(c.ret), din(c.liq), din(c.emp), din(c.ficou), n.recebido ? "recebido" : "a receber"]; }),
+        ["", "", "TOTAL", din(T.bruto), din(T.ret), din(T.liq), din(T.emp), din(T.ficou), ""]);
+      var n = doc.getNumberOfPages();
+      for (var pg = 1; pg <= n; pg++) { doc.setPage(pg); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(130); doc.text(tx((E.nome || "AGE") + " - notas fiscais emitidas  ·  página " + pg + " de " + n), 148.5, 203, { align: "center" }); }
+      P.baixar(doc.output("blob"), "notas-emitidas-" + A.isoLocal(new Date()) + ".pdf");
+      A.ocupado(botao, false);
+    }).catch(function (e) { A.ocupado(botao, false); P.falhou(e); });
   }
   function abrirArquivo(cam) {
     var w = window.open("", "_blank");
@@ -162,41 +333,94 @@
   function formulario(op, depois) {
     var n0 = op.nota || null, d = op.lida || {};
     var obraTxt = n0 ? rotuloDe(n0) : sugerirObra(d.tomador);
+    var clientes = {}; P.S.receitas.forEach(function (x) { if (x.cliente) clientes[x.cliente] = x.tomador_cnpj || ""; });
+    var retLida = d.retencoes || {}, somaLida = RET.reduce(function (t, x) { return t + (Number(retLida[x[0]]) || 0); }, 0);
+    // a nota tem bruto e líquido diferentes, mas o app não achou as retenções: a diferença vai em "Outras"
+    var dif = d.bruto && d.valor && d.bruto - d.valor > 0.009 && !somaLida ? Math.round((d.bruto - d.valor) * 100) / 100 : 0;
     var j = A.janela(
       (op.erro ? '<div class="aviso erro">Não consegui ler o arquivo. Preencha à mão.</div>' : "") +
-      (op.lida && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ Não achei o valor da nota com clareza: <b>confira o valor</b>.</div>' : "") +
-      (op.lida && d.tomador ? '<div class="peq mudo">Tomador na nota: <b>' + esc(d.tomador) + "</b></div>" : "") +
+      (op.lida && (d.valorIncerto || !(d.bruto || d.valor)) ? '<div class="aviso">⚠️ Não achei o valor da nota com clareza: <b>confira os valores</b>.</div>' : "") +
+      (dif ? '<div class="aviso">⚠️ O valor bruto (' + dinheiro(d.bruto) + ") e o líquido (" + dinheiro(d.valor) + ") são diferentes e não achei quais impostos foram retidos: coloquei a diferença em <b>Outras retenções</b>. Confira na nota.</div>" : "") +
       (op.bruto ? '<details class="peq" style="margin:4px 0"><summary>🔍 ver o texto que o app leu</summary><pre style="white-space:pre-wrap;max-height:200px;overflow:auto;font-size:11px">' + esc(String(op.bruto).slice(0, 5000)) + "</pre></details>" : "") +
-      '<label for="ft-obra">Cliente / obra (o mesmo de “Para onde foi” nas compras)</label><input id="ft-obra" list="ft-dl" maxlength="200" placeholder="Ex.: DEVA IVECO (contagem)">' + datalist("ft-dl") +
+      '<div class="duas"><div><label for="ft-cli">Empresa (tomador da nota) *</label><input id="ft-cli" list="ft-dl-cli" maxlength="200" placeholder="Ex.: DEVA VEICULOS LTDA"><datalist id="ft-dl-cli">' +
+      Object.keys(clientes).map(function (k) { return '<option value="' + esc(k) + '">'; }).join("") + "</datalist></div>" +
+      '<div><label for="ft-cnpj">CNPJ da empresa</label><input id="ft-cnpj" inputmode="numeric" maxlength="20" placeholder="00.000.000/0000-00"></div></div>' +
+      '<label for="ft-obra">Obra / cliente (o mesmo de “Para onde foi” nas compras — para o resultado por obra)</label><input id="ft-obra" list="ft-dl" maxlength="200" placeholder="Ex.: DEVA IVECO (contagem)">' + datalist("ft-dl") +
       '<div class="duas"><div><label for="ft-num">Nº da nota</label><input id="ft-num" maxlength="30" inputmode="numeric"></div><div><label for="ft-data">Emissão</label><input type="date" id="ft-data"></div></div>' +
-      '<label for="ft-valor">Valor da nota (R$)</label><input id="ft-valor" inputmode="decimal">' +
+      '<label for="ft-valor">Valor bruto da nota (valor dos serviços, R$) *</label><input id="ft-valor" inputmode="decimal">' +
+      '<details id="ft-ret-box" style="margin-top:8px"><summary><b>Impostos retidos na nota</b> <span class="peq mudo">(o que a empresa desconta: ISS retido, INSS, IR, PIS, COFINS, CSLL)</span> <span id="ft-ret-tot" class="selo"></span></summary>' +
+      '<div class="grade" style="margin-top:6px">' + RET.map(function (x) { return '<div><label for="ft-r-' + x[0] + '">' + x[1] + ' (R$)</label><input id="ft-r-' + x[0] + '" inputmode="decimal" class="ft-r"></div>'; }).join("") + "</div></details>" +
+      '<div class="duas"><div><label for="ft-aliq">Imposto da empresa (DAS / Simples, % do bruto)</label><input id="ft-aliq" inputmode="decimal" placeholder="Ex.: 6"></div>' +
+      '<div><label for="ft-emp">Imposto da empresa (R$)</label><input id="ft-emp" inputmode="decimal"></div></div>' +
+      '<div class="cartao" id="ft-conta" style="margin-top:10px"></div>' +
       '<label for="ft-desc">Serviço</label><input id="ft-desc" maxlength="300" placeholder="Ex.: pintura das faixas amarelas e demarcações de combate a incêndio">' +
       '<div class="duas"><div><label class="marca-linha" style="margin-top:28px"><input type="checkbox" id="ft-rec"> ✅ Já recebi</label></div><div id="ft-rec-c"><label for="ft-rec-em">Recebido em</label><input type="date" id="ft-rec-em"></div></div>' +
       '<div id="ft-erro"></div><div class="acoes"><button class="prim" id="ft-salvar">Salvar</button>' + (n0 ? '<button class="perigo" id="ft-apagar">Apagar</button>' : "") + "</div>",
       { titulo: n0 ? "🧾 Nota de serviço" : "🧾 Nova nota de serviço", larga: true });
-    var el = j.el;
-    $("#ft-obra", el).value = obraTxt || (n0 ? n0.cliente || "" : "");
+    var el = j.el, c0 = n0 ? contas(n0) : null, ret0 = n0 ? n0.retencoes || {} : retLida;
+    $("#ft-cli", el).value = n0 ? n0.cliente || "" : d.tomador || "";
+    $("#ft-cnpj", el).value = fmtCnpj(n0 ? n0.tomador_cnpj : d.cnpj);
+    $("#ft-obra", el).value = obraTxt || "";
     $("#ft-num", el).value = n0 ? n0.numero_nota || "" : d.numero || "";
     $("#ft-data", el).value = n0 ? n0.emitida_em : d.data || A.isoLocal(new Date());
-    $("#ft-valor", el).value = num2(n0 ? n0.valor : d.valor);
+    $("#ft-valor", el).value = num2(n0 ? c0.bruto : d.bruto || d.valor);
+    RET.forEach(function (x) { var v = Number(ret0[x[0]]) || (!n0 && x[0] === "outras" ? dif : 0); $("#ft-r-" + x[0], el).value = v ? num2(v) : ""; });
+    if (n0 ? c0.ret : somaLida || dif) $("#ft-ret-box", el).open = true;
+    if (n0) { $("#ft-emp", el).value = c0.emp ? num2(c0.emp) : ""; if (c0.emp && c0.bruto) $("#ft-aliq", el).value = A.numero(Math.round(c0.emp / c0.bruto * 10000) / 100); }
+    else $("#ft-aliq", el).value = aliqGuardada();
     $("#ft-desc", el).value = n0 ? n0.descricao || "" : d.descricao || "";
     $("#ft-rec", el).checked = n0 ? !!n0.recebido : false;
     $("#ft-rec-em", el).value = n0 && n0.recebido_em ? n0.recebido_em : A.isoLocal(new Date());
     var verRec = function () { $("#ft-rec-c", el).classList.toggle("oculto", !$("#ft-rec", el).checked); };
     $("#ft-rec", el).onchange = verRec; verRec();
+    // empresa já usada antes: o CNPJ vem junto
+    $("#ft-cli", el).onchange = function () {
+      var cn = clientes[this.value.trim()];
+      if (cn && !dig($("#ft-cnpj", el).value)) $("#ft-cnpj", el).value = fmtCnpj(cn);
+      if (!$("#ft-obra", el).value.trim()) $("#ft-obra", el).value = sugerirObra(this.value);
+    };
+    $("#ft-cnpj", el).onchange = function () { this.value = fmtCnpj(this.value); };
+    function ler() {
+      var bruto = A.lerNumero($("#ft-valor", el).value) || 0, ret = {}, tr = 0;
+      RET.forEach(function (x) { var v = Math.round((A.lerNumero($("#ft-r-" + x[0], el).value) || 0) * 100) / 100; if (v > 0) { ret[x[0]] = v; tr += v; } });
+      var emp = Math.round((A.lerNumero($("#ft-emp", el).value) || 0) * 100) / 100;
+      tr = Math.round(tr * 100) / 100;
+      return { bruto: bruto, ret: ret, tr: tr, emp: emp, liq: Math.round((bruto - tr) * 100) / 100, ficou: Math.round((bruto - tr - emp) * 100) / 100 };
+    }
+    function conta() {
+      var v = ler(), linha = function (r, val, forte) { return '<div class="linha' + (forte ? " forte" : "") + '"><span>' + r + '</span><span class="dir">' + val + "</span></div>"; };
+      $("#ft-ret-tot", el).textContent = v.tr ? dinheiro(v.tr) : "";
+      $("#ft-conta", el).innerHTML = linha("Valor bruto", dinheiro(v.bruto)) + linha("− Impostos retidos na nota", dinheiro(v.tr)) + linha("= Líquido que a empresa paga", dinheiro(v.liq), true) +
+        linha("− Imposto da empresa (DAS / Simples)", dinheiro(v.emp)) +
+        '<div class="linha forte" style="font-size:18px;margin-top:4px"><span>💰 Ficou para a empresa</span><span class="dir" style="color:var(--' + (v.ficou < 0 ? "critico" : "bom") + ')">' + dinheiro(v.ficou) + "</span></div>";
+    }
+    // % do imposto da empresa → valor (o % fica guardado neste aparelho para as próximas notas)
+    function pelaAliq() { var a = A.lerNumero($("#ft-aliq", el).value), b = A.lerNumero($("#ft-valor", el).value); if (a > 0 && b > 0) $("#ft-emp", el).value = num2(Math.round(b * a) / 100); }
+    $("#ft-aliq", el).oninput = function () { pelaAliq(); conta(); try { localStorage.setItem(CHAVE_ALIQ, this.value.trim()); } catch (e) { /* sem armazenamento */ } };
+    $("#ft-valor", el).oninput = function () { if ($("#ft-aliq", el).value.trim()) pelaAliq(); conta(); };
+    $("#ft-emp", el).oninput = function () {
+      var b = A.lerNumero($("#ft-valor", el).value), e = A.lerNumero(this.value);
+      $("#ft-aliq", el).value = b > 0 && e > 0 ? A.numero(Math.round(e / b * 10000) / 100) : "";
+      conta();
+    };
+    $$(".ft-r", el).forEach(function (i) { i.oninput = conta; });
+    if (!n0 && $("#ft-aliq", el).value.trim()) pelaAliq();
+    conta();
     $("#ft-salvar", el).onclick = function () {
-      var b = this, v = A.lerNumero($("#ft-valor", el).value), txt = $("#ft-obra", el).value.trim();
-      var erro = !txt ? "Informe o cliente / obra." : !(v > 0) ? "Informe o valor da nota." : !$("#ft-data", el).value ? "Informe a data de emissão." : "";
+      var b = this, v = ler(), cli = $("#ft-cli", el).value.trim(), txt = $("#ft-obra", el).value.trim() || cli;
+      var erro = !txt ? "Informe a empresa (tomador)." : !(v.bruto > 0) ? "Informe o valor bruto da nota." : !(v.liq > 0) ? "Os impostos retidos passam do valor bruto: confira." : !$("#ft-data", el).value ? "Informe a data de emissão." : "";
       if (erro) { $("#ft-erro", el).innerHTML = '<div class="aviso erro">' + erro + "</div>"; return; }
       var rs = resolver(txt), rec = $("#ft-rec", el).checked;
-      var dados = { obra_id: rs.obra_id, destino: rs.destino, cliente: (n0 && n0.cliente) || d.tomador || txt, numero_nota: $("#ft-num", el).value.trim() || null, emitida_em: $("#ft-data", el).value,
-        valor: v, descricao: $("#ft-desc", el).value.trim() || null, recebido: rec, recebido_em: rec ? $("#ft-rec-em", el).value || A.isoLocal(new Date()) : null };
+      var dados = { obra_id: rs.obra_id, destino: rs.destino, cliente: cli || txt, numero_nota: $("#ft-num", el).value.trim() || null, emitida_em: $("#ft-data", el).value,
+        valor: v.liq, valor_bruto: v.bruto, retencoes: v.ret, imposto_empresa: v.emp || null, tomador_cnpj: dig($("#ft-cnpj", el).value) || null,
+        descricao: $("#ft-desc", el).value.trim() || null, recebido: rec, recebido_em: rec ? $("#ft-rec-em", el).value || A.isoLocal(new Date()) : null };
       // mesma nota lançada duas vezes (mesmo número e valor)
-      var rep = dados.numero_nota && P.S.receitas.filter(function (x) { return x.id !== (n0 && n0.id) && x.numero_nota === dados.numero_nota && Math.abs(Number(x.valor) - v) < 0.01; })[0];
-      if (rep && b.dataset.confirmou !== "1") { $("#ft-erro", el).innerHTML = '<div class="aviso erro">⚠️ A nota nº ' + esc(rep.numero_nota) + " de " + dinheiro(rep.valor) + " já foi lançada (" + esc(rotuloDe(rep)) + ").</div>"; b.dataset.confirmou = "1"; b.textContent = "Salvar mesmo assim"; return; }
+      var rep = dados.numero_nota && P.S.receitas.filter(function (x) { return x.id !== (n0 && n0.id) && x.numero_nota === dados.numero_nota && Math.abs(contas(x).bruto - v.bruto) < 0.01; })[0];
+      if (rep && b.dataset.confirmou !== "1") { $("#ft-erro", el).innerHTML = '<div class="aviso erro">⚠️ A nota nº ' + esc(rep.numero_nota) + " de " + dinheiro(contas(rep).bruto) + " já foi lançada (" + esc(empresaDe(rep)) + ").</div>"; b.dataset.confirmou = "1"; b.textContent = "Salvar mesmo assim"; return; }
       A.ocupado(b, true, "Salvando...");
-      var f = op.arquivo, pArq = !f ? Promise.resolve(null) : (/^image\//.test(f.type) ? A.prepararFoto(f, [], 1800).then(function (bl) { return { bl: bl, ext: "jpg", tipo: "image/jpeg" }; })
-        : Promise.resolve({ bl: f, ext: /pdf/.test(f.type) ? "pdf" : "xml", tipo: f.type || "application/octet-stream" })).then(function (a) {
+      var f = op.arquivo, ehPdf = f && (/pdf/.test(f.type) || /\.pdf$/i.test(f.name || ""));
+      var pArq = !f ? Promise.resolve(null) : (/^image\//.test(f.type) ? A.prepararFoto(f, [], 1800).then(function (bl) { return { bl: bl, ext: "jpg", tipo: "image/jpeg" }; })
+        : Promise.resolve({ bl: f, ext: ehPdf ? "pdf" : "xml", tipo: ehPdf ? "application/pdf" : "text/xml" })).then(function (a) {
           var cam = "admin/receitas/" + dados.emitida_em + "-" + A.uuid() + "." + a.ext;
           return P.q(P.sb.storage.from("fotos").upload(cam, a.bl, { contentType: a.tipo })).then(function () { return cam; });
         }).catch(function () { return null; });   // sem o arquivo, a nota é salva do mesmo jeito
@@ -206,9 +430,14 @@
       }).then(function (n) {
         P.trocar(P.S.receitas, n); j.fechar();
         if (n.emitida_em < periodo().de) filtro.periodo = "tudo";
-        A.avisar("🧾 Nota de serviço salva: " + rotuloDe(n) + " · " + dinheiro(n.valor), "ok");
+        A.avisar("🧾 Nota salva: " + empresaDe(n) + " · bruto " + dinheiro(contas(n).bruto) + " · ficou " + dinheiro(contas(n).ficou), "ok");
         if (depois) depois();
-      }).catch(function (e) { A.ocupado(b, false); $("#ft-erro", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
+      }).catch(function (e) {
+        A.ocupado(b, false);
+        var m = A.msgErro(e);
+        if (/valor_bruto|retencoes|imposto_empresa|tomador_cnpj/.test(m)) m = "O banco ainda não tem os campos de impostos. Rode no Supabase o supabase.sql atualizado e depois notify pgrst, 'reload schema';";
+        $("#ft-erro", el).innerHTML = '<div class="aviso erro">' + esc(m) + "</div>";
+      });
     };
     if ($("#ft-apagar", el)) $("#ft-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar esta nota de serviço?")) return;
@@ -219,9 +448,9 @@
   // ---------------- resultado por obra ----------------
   function montar() {
     var pr = periodo(), g = {};
-    var grupo = function (k, nome) { return g[k] = g[k] || { k: k, nome: nome, notas: [], compras: [], desp: [], pags: [], recebido: 0, notasV: 0, mat: 0, mo: 0, av: 0, portal: 0 }; };
+    var grupo = function (k, nome) { return g[k] = g[k] || { k: k, nome: nome, notas: [], compras: [], desp: [], pags: [], recebido: 0, notasV: 0, impEmp: 0, mat: 0, mo: 0, av: 0, portal: 0 }; };
     var nomeK = function (x) { return rotuloDe(x) || "Sem obra definida"; };
-    P.S.receitas.forEach(function (n) { if (n.emitida_em < pr.de || n.emitida_em >= pr.ate) return; var x = grupo(chave(n) || "-", nomeK(n)); x.notas.push(n); x.notasV += Number(n.valor); if (n.recebido) x.recebido += Number(n.valor); });
+    P.S.receitas.forEach(function (n) { if (n.emitida_em < pr.de || n.emitida_em >= pr.ate) return; var x = grupo(chave(n) || "-", nomeK(n)); x.notas.push(n); x.notasV += Number(n.valor); x.impEmp += contas(n).emp; if (n.recebido) x.recebido += Number(n.valor); });
     (P.S.compras || []).forEach(function (c) {
       if (c.comprado_em < pr.de || c.comprado_em >= pr.ate) return;
       var x = grupo(chave(c) || "-", nomeK(c));
@@ -236,7 +465,8 @@
     Object.keys(g).forEach(function (k) {
       var x = g[k];
       if (/^o:/.test(k) && !x.notas.length) { var o = P.porId(P.S.obras, k.slice(2)); if (o && o.portal && Number(o.portal.valor) > 0) x.portal = Number(o.portal.valor); }
-      x.entrada = x.notasV || x.portal; x.gastos = x.mat + x.mo + x.av; x.lucro = x.entrada - x.gastos; x.margem = x.entrada ? x.lucro / x.entrada * 100 : null;
+      // notas: líquido recebido menos o imposto da empresa
+      x.entrada = x.notasV ? x.notasV - x.impEmp : x.portal; x.gastos = x.mat + x.mo + x.av; x.lucro = x.entrada - x.gastos; x.margem = x.entrada ? x.lucro / x.entrada * 100 : null;
     });
     return Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return (a.k === "-") - (b.k === "-") || b.entrada - a.entrada || b.gastos - a.gastos; });
   }
@@ -245,7 +475,7 @@
     var b = semAcento(filtro.busca), ls = montar().filter(function (x) { return !b || semAcento(x.nome).indexOf(b) >= 0; });
     var T = ls.filter(function (x) { return x.k !== "-"; }).reduce(function (t, x) { t.e += x.entrada; t.m += x.mat; t.o += x.mo; t.a += x.av; return t; }, { e: 0, m: 0, o: 0, a: 0 });
     var sem = ls.filter(function (x) { return x.k === "-"; })[0];
-    r.innerHTML = (ls.length ? '<div class="tabela-caixa"><table><thead><tr><th>Obra / cliente</th><th class="num">Notas (entrada)</th><th class="num">🧱 Materiais</th><th class="num">👷 Mão de obra</th><th class="num">⛽ Avulsos</th><th class="num">Resultado</th><th class="num">Margem</th><th></th></tr></thead><tbody>' +
+    r.innerHTML = (ls.length ? '<div class="tabela-caixa"><table><thead><tr><th>Obra / cliente</th><th class="num">Notas (entrada, sem impostos)</th><th class="num">🧱 Materiais</th><th class="num">👷 Mão de obra</th><th class="num">⛽ Avulsos</th><th class="num">Resultado</th><th class="num">Margem</th><th></th></tr></thead><tbody>' +
       ls.map(function (x, i) {
         return "<tr" + (x.k === "-" ? ' class="mudo"' : "") + "><td><b>" + esc(x.nome) + "</b>" + (x.portal && !x.notasV ? '<div class="peq mudo">valor do chamado no portal</div>' : x.notasV && x.recebido < x.notasV ? '<div class="peq"><span class="selo atencao">a receber ' + dinheiro(x.notasV - x.recebido) + "</span></div>" : "") +
           '</td><td class="num">' + (x.entrada ? dinheiro(x.entrada) : "—") + '</td><td class="num">' + dinheiro(x.mat) + '</td><td class="num">' + dinheiro(x.mo) + '</td><td class="num">' + dinheiro(x.av) +
@@ -263,7 +493,7 @@
   function textoResultado(x) {
     return "*" + ((A.CFG.EMPRESA || {}).nome || "AGE") + " — Resultado: " + x.nome + "*\n" +
       (x.notasV ? "🧾 Notas de serviço: " + dinheiro(x.notasV) + (x.recebido < x.notasV ? " (recebido " + dinheiro(x.recebido) + ")" : "") : x.portal ? "🧾 Valor do chamado: " + dinheiro(x.portal) : "🧾 Notas de serviço: —") +
-      "\n🧱 Materiais: " + dinheiro(x.mat) + "\n👷 Mão de obra: " + dinheiro(x.mo) + "\n⛽ Avulsos (gasolina, lanche e outros): " + dinheiro(x.av) +
+      (x.impEmp ? "\n🏛️ Imposto da empresa: " + dinheiro(x.impEmp) : "") + "\n🧱 Materiais: " + dinheiro(x.mat) + "\n👷 Mão de obra: " + dinheiro(x.mo) + "\n⛽ Avulsos (gasolina, lanche e outros): " + dinheiro(x.av) +
       "\nTotal de gastos: " + dinheiro(x.gastos) + (x.entrada ? "\n*Resultado: " + dinheiro(x.lucro) + " (" + pct(x.margem) + ")*" : "");
   }
   function detalhe(x, mudou) {

@@ -366,6 +366,12 @@ create table if not exists public.receitas (
   criado_em     timestamptz not null default now()
 );
 create index if not exists receitas_data_idx on public.receitas (emitida_em);
+-- valor bruto, impostos retidos na nota (ISS, INSS, IR, PIS, COFINS, CSLL), imposto da empresa (DAS/Simples) e CNPJ do tomador.
+-- valor = líquido recebido (bruto − retenções); ficou para a empresa = líquido − imposto da empresa
+alter table public.receitas add column if not exists valor_bruto     numeric(12,2);
+alter table public.receitas add column if not exists retencoes       jsonb not null default '{}'::jsonb;
+alter table public.receitas add column if not exists imposto_empresa numeric(12,2);
+alter table public.receitas add column if not exists tomador_cnpj    text;
 alter table public.pagamentos add column if not exists obra_id uuid references public.obras (id) on delete set null;
 alter table public.pagamentos add column if not exists destino text;
 
@@ -692,7 +698,7 @@ begin
   if coalesce(trim(p_tipo_servico), '') = '' and coalesce(trim(p_descricao), '') = '' then
     raise exception 'Descreva o serviço.';
   end if;
-  if jsonb_typeof(p_materiais) <> 'array' or jsonb_array_length(p_materiais) > 200 then
+  if jsonb_typeof(p_materiais) <> 'array' or jsonb_array_length(p_materiais) > 200 or pg_column_size(p_materiais) > 65536 then
     raise exception 'Lista de materiais inválida.';
   end if;
   if coalesce(array_length(p_fotos, 1), 0) > 10
@@ -885,12 +891,12 @@ grant execute on function public.registrar_km(text, uuid, text, integer, text, d
 -- Só você (admin) vê as fotos.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('fotos', 'fotos', false, 5242880, array['image/jpeg'])
-on conflict (id) do update set public = false, file_size_limit = 5242880, allowed_mime_types = array['image/jpeg'];
+values ('fotos', 'fotos', false, 5242880, array['image/jpeg', 'application/pdf', 'text/xml', 'application/xml'])
+on conflict (id) do update set public = false, file_size_limit = 5242880, allowed_mime_types = array['image/jpeg', 'application/pdf', 'text/xml', 'application/xml'];
 
 drop policy if exists age_fotos_func_envia on storage.objects;
 create policy age_fotos_func_envia on storage.objects for insert to anon, authenticated
-  with check (bucket_id = 'fotos' and public.token_valido((storage.foldername(name))[1]));
+  with check (bucket_id = 'fotos' and public.token_valido((storage.foldername(name))[1]) and name ~* '\.jpe?g$');
 
 drop policy if exists age_fotos_admin_le on storage.objects;
 create policy age_fotos_admin_le on storage.objects for select to authenticated

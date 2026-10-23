@@ -1209,7 +1209,7 @@
       '<p class="mudo peq" style="margin-top:-4px">Certidões e documentos pedidos nas licitações. Cadastre a validade: o painel avisa na aba Hoje quando faltar 15 dias.</p>' +
       (lista.length ? lista.map(function (d) {
         return '<div class="cartao clic" data-doc-id="' + d.id + '" style="cursor:pointer"><div class="linha"><b>' + esc(d.nome) + "</b>" + seloValidade(d) +
-          (d.link ? '<a class="dir peq" href="' + esc(d.link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 abrir</a>' : "") + "</div>" +
+          (/^https?:\/\//i.test(d.link || "") ? '<a class="dir peq" href="' + esc(d.link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 abrir</a>' : "") + "</div>" +
           (d.observacao ? '<div class="peq mudo">' + esc(d.observacao) + "</div>" : "") + "</div>";
       }).join("") : '<div class="cartao vazio">Nenhum documento cadastrado.<div class="acoes" style="justify-content:center"><button class="prim" id="dc-padrao">Cadastrar a lista padrão (' + DOCS_PADRAO.length + " documentos)</button></div></div>");
     $("#dc-novo", c).onclick = function () { editarDocumento(null); };
@@ -1236,6 +1236,7 @@
       var b = this;
       if (!P.val(el, "#dc-nome")) { A.avisar("Informe o documento.", "erro"); return; }
       var dados = { nome: P.val(el, "#dc-nome"), validade: $("#dc-val", el).value || null, link: P.nulo(P.val(el, "#dc-link")), observacao: P.nulo(P.val(el, "#dc-obs")) };
+      if (dados.link && !/^https?:\/\//i.test(dados.link)) { if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(dados.link)) dados.link = "https://" + dados.link; else { A.avisar("O link precisa começar com https://", "erro"); return; } }
       A.ocupado(b, true, "Salvando...");
       var q = d ? P.sb.from("documentos").update(dados).eq("id", d.id).select().single() : P.sb.from("documentos").insert(dados).select().single();
       P.q(q).then(function (n) { P.trocar(S.docs, n); j.fechar(); A.avisar("Salvo", "ok"); redesenhar(); }).catch(function (e) { A.ocupado(b, false); P.falhou(e); });
