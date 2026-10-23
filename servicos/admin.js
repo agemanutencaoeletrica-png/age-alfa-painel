@@ -94,8 +94,44 @@
   function abrirFoto(caminho) {
     var u = urls[caminho];
     var j = A.janela((u ? '<a href="' + esc(u.url) + '" target="_blank" rel="noopener"><img class="foto-grande" alt="Foto" src="' + esc(u.url) + '"></a>' : '<div class="vazio">Foto indisponível.</div>') +
-      '<div style="margin-top:10px">' + (infoFoto[caminho] || "") + "</div>", { titulo: "Foto", larga: true });
+      '<div style="margin-top:10px">' + (infoFoto[caminho] || "") + "</div>" +
+      (u ? '<div class="acoes"><button class="peq" id="af-comp">📤 Compartilhar</button><button class="peq" id="af-baixar">⬇️ Baixar</button></div>' : ""), { titulo: "Foto", larga: true });
+    var txt = String(infoFoto[caminho] || "").replace(/<[^>]*>/g, "");
+    if (u) { $("#af-comp", j.el).onclick = function () { compartilharFotos([caminho], "Foto", txt, this); }; $("#af-baixar", j.el).onclick = function () { baixarFotos([caminho], "foto", this); }; }
     return j;
+  }
+  // ---------- tirar as fotos do app: compartilhar (WhatsApp...) ou baixar ----------
+  function nomeArq(t) { return semAcento(t).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50) || "foto"; }
+  function arquivosDasFotos(caminhos, prefixo) {
+    return q(sb.storage.from("fotos").createSignedUrls(caminhos, 600)).then(function (lista) {
+      return Promise.all((lista || []).map(function (x, i) {
+        if (!x.signedUrl) return null;
+        return fetch(x.signedUrl).then(function (r) { return r.blob(); }).then(function (b) {
+          return new File([b], nomeArq(prefixo) + "-" + (i + 1) + ".jpg", { type: /^image\//.test(b.type) ? b.type : "image/jpeg" });
+        }).catch(function () { return null; });
+      }));
+    }).then(function (fs) { return fs.filter(Boolean); });
+  }
+  function baixarFotos(caminhos, prefixo, b) {
+    if (b) A.ocupado(b, true, "Baixando...");
+    return arquivosDasFotos(caminhos, prefixo).then(function (fs) {
+      if (b) A.ocupado(b, false);
+      if (!fs.length) { A.avisar("Não consegui baixar as fotos.", "erro"); return; }
+      fs.forEach(function (f, i) { setTimeout(function () { baixar(f, f.name); }, i * 400); });   // uma por vez (o navegador pode pedir para permitir vários downloads)
+      A.avisar("⬇️ " + fs.length + " foto" + (fs.length > 1 ? "s" : "") + " baixada" + (fs.length > 1 ? "s" : ""), "ok");
+    }).catch(function (e) { if (b) A.ocupado(b, false); falhou(e); });
+  }
+  function compartilharFotos(caminhos, titulo, texto, b) {
+    if (b) A.ocupado(b, true, "Preparando...");
+    return arquivosDasFotos(caminhos, titulo).then(function (fs) {
+      if (b) A.ocupado(b, false);
+      if (!fs.length) { A.avisar("Não consegui pegar as fotos.", "erro"); return; }
+      var pode = false;
+      try { pode = !!(navigator.share && navigator.canShare && navigator.canShare({ files: fs })); } catch (e) { pode = false; }
+      // computador que não compartilha arquivo: baixa as fotos para você anexar no WhatsApp Web
+      if (!pode) { fs.forEach(function (f, i) { setTimeout(function () { baixar(f, f.name); }, i * 400); }); A.avisar("Este navegador não compartilha fotos direto: baixei " + fs.length + " foto" + (fs.length > 1 ? "s" : "") + " para você anexar.", "ok"); return; }
+      return A.compartilhar({ titulo: titulo, texto: texto, arquivos: fs });
+    }).catch(function (e) { if (b) A.ocupado(b, false); falhou(e); });
   }
 
   // ---------- entrada ----------
@@ -1885,6 +1921,15 @@
       hidratarFotos(r);
       $$("[data-exec-rel]", r).forEach(function (b) { b.onclick = function () { abrirRelatorio(b.dataset.execRel); }; });
       $$("[data-exec-serv]", r).forEach(function (b) { b.onclick = function () { abrirServico(b.dataset.execServ); }; });
+      $$("[data-exec-comp]", r).forEach(function (b) {
+        b.onclick = function () {
+          var s = porId(S.serv, b.dataset.execComp), o = porId(S.obras, s.obra_id) || {};
+          compartilharFotos(fotosDoServico(s.id), o.cliente || "Serviço", ((A.CFG.EMPRESA || {}).nome || "AGE") + " — " + (o.cliente || "") + (o.chamado ? " · chamado " + o.chamado : "") + "\n" + resumoServ(s, 160) + "\n" + A.dataSimples(A.isoLocal(dataExecucao(s))), b);
+        };
+      });
+      $$("[data-exec-baixar]", r).forEach(function (b) {
+        b.onclick = function () { var s = porId(S.serv, b.dataset.execBaixar), o = porId(S.obras, s.obra_id) || {}; baixarFotos(fotosDoServico(s.id), (o.cliente || "servico") + "-" + A.isoLocal(dataExecucao(s)), b); };
+      });
     }
     function cartaoExecutado(s) {
       var o = porId(S.obras, s.obra_id) || {}, rels = S.rel.filter(function (x) { return x.servico_id === s.id; });
@@ -1902,7 +1947,14 @@
         (s.descricao ? '<div class="peq" style="margin-top:4px">' + esc(resumoServ(s, 160)) + "</div>" : "") +
         (fotos.length ? '<div class="fotos" style="margin-top:8px">' + fotos.join("") + "</div>" + (mais > 0 ? '<div class="peq mudo">+ ' + mais + " foto" + (mais > 1 ? "s" : "") + " no relatório</div>" : "") :
           '<div class="peq mudo" style="margin-top:6px">Sem fotos no relatório.</div>') +
-        '<div class="acoes">' + (rels.length ? '<button class="peq" data-exec-rel="' + rels[0].id + '">📝 Ver relatório</button>' : "") + '<button class="peq" data-exec-serv="' + s.id + '">Abrir serviço</button></div></div>';
+        '<div class="acoes">' + (rels.length ? '<button class="peq" data-exec-rel="' + rels[0].id + '">📝 Ver relatório</button>' : "") + '<button class="peq" data-exec-serv="' + s.id + '">Abrir serviço</button>' +
+        (antes.length + depois.length ? '<button class="peq" data-exec-comp="' + s.id + '">📤 Compartilhar fotos (' + (antes.length + depois.length) + ')</button><button class="peq" data-exec-baixar="' + s.id + '">⬇️ Baixar fotos</button>' : "") + "</div></div>";
+    }
+    // fotos do serviço executado: as de antes primeiro, depois as de depois
+    function fotosDoServico(sid) {
+      var antes = [], depois = [];
+      S.rel.filter(function (x) { return x.servico_id === sid; }).forEach(function (x) { antes = antes.concat(x.fotos_antes || []); depois = depois.concat(x.fotos || []); });
+      return antes.concat(depois);
     }
     listar();
   }
