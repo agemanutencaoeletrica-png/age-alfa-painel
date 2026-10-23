@@ -22,6 +22,34 @@
       "Thinner", "Aguarrás", "Bandeja"]
   };
   var UNIDADES = ["un", "m", "m²", "rolo", "L", "galão", "lata", "balde", "kg", "cx", "pç", "par"];
+
+  // Materiais que a equipe digita e não estão na lista: ficam guardados neste aparelho na hora
+  // e voltam do banco para todos (materiais_usados), aparecendo como sugestão nas próximas vezes
+  function chaveMats(c) { return "age_mats_" + c; }
+  function matsLocais(c) {
+    try { var l = JSON.parse(localStorage.getItem(chaveMats(c)) || "[]"); return Array.isArray(l) ? l : []; }
+    catch (e) { return []; }
+  }
+  function guardarMat(c, item, un) {
+    item = (item || "").trim();
+    if (item.length < 2 || item.length > 120) return;
+    var l = matsLocais(c).filter(function (m) { return m && m.item && m.item.toLowerCase() !== item.toLowerCase(); });
+    l.unshift({ item: item, un: un || "" });
+    try { localStorage.setItem(chaveMats(c), JSON.stringify(l.slice(0, 300))); } catch (e) { /* sem armazenamento */ }
+  }
+  function materiaisDe(c) {
+    var vistos = {}, lista = [];
+    function por(item, un) {
+      var k = (item || "").trim().toLowerCase();
+      if (!k || vistos[k]) return;
+      vistos[k] = 1;
+      lista.push({ item: item.trim(), un: un || "" });
+    }
+    MATERIAIS[c].forEach(function (t) { por(t, ""); });
+    matsLocais(c).forEach(function (m) { if (m) por(m.item, m.un); });
+    (D.materiais_usados || []).forEach(function (m) { if (m && m.categoria === c) por(m.item, m.un); });
+    return lista;
+  }
   var TIPO_PUBLICO = { predio: "Prédio público", iluminacao: "Iluminação pública", obra: "Obra / reforma" };
 
   function lerToken() {
@@ -157,21 +185,35 @@
     });
   }
 
+  // etapa: 📐 orçamento (visita para orçar) ou 🔧 serviço (executar). Sem a etapa do painel, vale o que a descrição pede.
+  function etapaDe(s) { return s.etapa || (!s.prefeitura && /fazer\s+or[cç]amento|\bor[cç]ar\b|levantamento/i.test(s.descricao || "") ? "orcamento" : "servico"); }
+  // chamados da mesma loja: uma chegada só vale para todos
+  function chaveLoja(s) { return s.loja_id || (s.prefeitura ? "s:" + s.id : "c:" + (s.cliente || "") + "|" + (s.endereco || "")); }
+  function mesmaLoja(s) { return D.servicos.filter(function (x) { return chaveLoja(x) === chaveLoja(s); }); }
+  function chegadaNaLoja(s) {
+    var ids = mesmaLoja(s).map(function (x) { return x.id; });
+    return (D.pontos_hoje || []).filter(function (p) {
+      return p.tipo === "chegada" && (ids.indexOf(p.servico_id) >= 0 || (s.loja_id && p.loja_id === s.loja_id));
+    })[0] || null;
+  }
   function cartaoServico(s) {
-    var h = "";
+    var h = "", cheg = chegadaNaLoja(s);
     h += '<div class="cartao"><div class="linha">' + A.seloCategoria(s.categoria) + A.seloStatus(s.status) +
       (s.data_prevista ? '<span class="dir mudo peq">📅 ' + A.dataSimples(s.data_prevista) + "</span>" : "") + "</div>" +
       (s.prefeitura ? '<div class="aviso" style="margin:8px 0 0">🏛️ <b>' + esc(s.prefeitura) + "</b>" + (s.protocolo ? " · OS/Protocolo <b>" + esc(s.protocolo) + "</b>" : "") +
         (s.tipo_publico ? "<br>" + esc(TIPO_PUBLICO[s.tipo_publico] || "") : "") + (s.secretaria ? " · " + esc(s.secretaria) : "") +
         (s.fiscal ? "<br>Fiscal: " + esc(s.fiscal) : "") +
         '<br><span class="peq">Tire fotos de <b>ANTES</b> e de <b>DEPOIS</b> e colha a assinatura do fiscal ao concluir.</span></div>' : "") +
+      (s.prefeitura ? "" : etapaDe(s) === "orcamento" ? '<div class="aviso" style="margin:8px 0 0">📐 <b>ORÇAMENTO</b>: visita para orçar. Tire fotos do local e anote medidas e materiais. <b>Não execute</b> o serviço ainda.</div>' :
+        '<div class="aviso" style="margin:8px 0 0;border-left-color:var(--bom)">🔧 <b>EXECUTAR O SERVIÇO</b>. Para concluir, tire as <b>fotos do serviço realizado</b>.</div>') +
       '<h3 style="margin-top:8px">' + esc(s.cliente) + "</h3>" +
       (s.referencia ? '<div class="peq">🔖 ' + esc(s.referencia) + "</div>" : "") +
       (s.endereco ? '<div class="peq"><a href="' + A.linkEndereco(s.endereco) + '" target="_blank" rel="noopener">📍 ' + esc(s.endereco) + "</a></div>" : "") +
       (s.telefone ? '<div class="peq"><a href="tel:' + esc(A.soDigitos(s.telefone)) + '">📞 ' + esc(s.telefone) + "</a></div>" : "") +
       (s.descricao ? '<p style="white-space:pre-wrap;margin:8px 0 0">' + esc(s.descricao) + "</p>" : "") +
       (s.observacoes && !/^Criado por .* pelo app$/.test(s.observacoes) ? '<p class="mudo peq" style="white-space:pre-wrap;margin:6px 0 0">Obs.: ' + esc(s.observacoes) + "</p>" : "") +
-      '<div class="acoes"><button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui</button>' +
+      '<div class="acoes">' + (cheg ? '<span class="selo bom" title="A chegada vale para todos os chamados desta loja">✔ Chegada ' + A.hora(cheg.criado_em) + "</span>" :
+        '<button class="peq" data-ponto="chegada" data-serv="' + s.id + '">📍 Cheguei aqui' + (mesmaLoja(s).length > 1 ? " (" + mesmaLoja(s).length + " chamados)" : "") + "</button>") +
       '<button class="peq" data-ponto="servico" data-serv="' + s.id + '">📷 Foto</button>' +
       '<button class="peq" data-relatorio="' + s.id + '">📝 Relatório</button><button class="peq" data-comp="' + s.id + '">📤 Compartilhar</button></div></div>';
     return h;
@@ -316,7 +358,8 @@
       }).then(function (r) {
         if (r.error) throw r.error;
         j.fechar();
-        A.avisar(A.TIPO_PONTO[tipo] + " registrada às " + A.hora(r.data.criado_em), "ok");
+        var sv = servicoPorId($("#fp-serv", el).value), n = tipo === "chegada" && sv ? mesmaLoja(sv).length : 0;
+        A.avisar(A.TIPO_PONTO[tipo] + " registrada às " + A.hora(r.data.criado_em) + (n > 1 ? " · vale para os " + n + " chamados desta loja" : ""), "ok");
         carregar();
       }).catch(function (e) {
         A.ocupado(b, false);
@@ -592,11 +635,11 @@
       $("#fr-tipos", el).innerHTML = TIPOS_SERVICO[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
       $("#fr-dl-mat", el).innerHTML = itensContrato(s).map(function (t) {
         return '<option value="' + esc(t.descricao) + '">' + esc((t.codigo ? t.codigo + " · " : "") + (t.un || "")) + "</option>";
-      }).join("") + MATERIAIS[c].map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
+      }).join("") + materiaisDe(c).map(function (m) { return '<option value="' + esc(m.item) + '">'; }).join("");
       $("#fr-mats-r", el).textContent = pref ? "Serviços executados e materiais usados (quantidades)" : "Materiais necessários";
       $("#fr-antes-caixa", el).classList.toggle("oculto", !pref);
       $("#fr-antes-ok", el).classList.toggle("oculto", !(pref && s.tem_fotos_antes));
-      $("#fr-fotos-r", el).textContent = pref ? "🏛️ Fotos DEPOIS (serviço pronto, até 6)" : "Fotos (até 6)";
+      $("#fr-fotos-r", el).textContent = pref ? "🏛️ Fotos DEPOIS (serviço pronto, até 6)" : $("#fr-orc", el) && $("#fr-orc", el).checked ? "📐 Fotos do ORÇAMENTO (local, medidas — até 6)" : "🔧 Fotos do SERVIÇO REALIZADO (até 6)";
       $("#fr-add-foto", el).textContent = pref ? "📷 Fotos de DEPOIS" : "📷 Adicionar fotos";
       $("#fr-assin-tit", el).textContent = pref ? "✍️ Assinatura do fiscal da prefeitura" : "✍️ Assinatura do responsável no local";
       $("#fr-assin-txt", el).textContent = pref ? "Peça ao fiscal da prefeitura para assinar com o dedo." : "Peça ao gerente (ou ao cliente) para assinar com o dedo.";
@@ -609,13 +652,31 @@
     }
     function ligarUnidade(d) {
       var inp = $(".m-item", d);
+      var sel = $(".m-un", d);
+      function aprender() {
+        var s = servicoPorId($("#fr-serv", el).value);
+        if (s && s.prefeitura) return;
+        var c = s ? s.categoria : "eletrica", v = inp.value.trim();
+        if (!v) return;
+        var igual = materiaisDe(c).filter(function (m) { return m.item.toLowerCase() === v.toLowerCase(); })[0];
+        guardarMat(c, igual ? igual.item : v, sel.value);
+        if (!igual) atualizarListas();
+      }
+      sel.onchange = aprender;
       inp.onchange = function () {
-        var it = itensContrato(servicoPorId($("#fr-serv", el).value)).filter(function (t) { return t.descricao === inp.value.trim(); })[0];
-        var sel = $(".m-un", d);
+        var s = servicoPorId($("#fr-serv", el).value);
+        var it = itensContrato(s).filter(function (t) { return t.descricao === inp.value.trim(); })[0];
+        if (!it && !(s && s.prefeitura)) {
+          // material já usado antes: a unidade vem junto
+          var v = inp.value.trim().toLowerCase();
+          it = materiaisDe(s ? s.categoria : "eletrica").filter(function (m) { return m.un && m.item.toLowerCase() === v; })[0];
+          if (it) it = { un: it.un };
+        }
         if (it && it.un) {
           if (!Array.prototype.some.call(sel.options, function (o) { return o.value === it.un; })) sel.insertAdjacentHTML("beforeend", "<option>" + esc(it.un) + "</option>");
           sel.value = it.un;
         }
+        aprender();
       };
     }
 
@@ -695,13 +756,14 @@
       $("#fr-sem-assin-l", el).classList.toggle("oculto", !obrig);
       if (ver) { quadro.ajustar(); if (rolar) $("#fr-assin", el).scrollIntoView({ behavior: "smooth", block: "center" }); }
     }
-    $("#fr-concl", el).onchange = function () { if (this.checked) $("#fr-orc", el).checked = false; mostrarAssin(true); };
-    $("#fr-orc", el).onchange = function () { if (this.checked) { $("#fr-concl", el).checked = false; mostrarAssin(false); } };
+    $("#fr-concl", el).onchange = function () { if (this.checked) $("#fr-orc", el).checked = false; mostrarAssin(true); atualizarListas(); };
+    $("#fr-orc", el).onchange = function () { if (this.checked) { $("#fr-concl", el).checked = false; mostrarAssin(false); } atualizarListas(); };
     // serviço que pede orçamento ("FAZER ORÇAMENTO", "orçar materiais..."): já vem marcado como visita de orçamento
     function sugerirOrc() {
       var sv = servicoPorId($("#fr-serv", el).value);
-      $("#fr-orc", el).checked = !!(sv && !sv.prefeitura && /fazer\s+or[cç]amento|\bor[cç]ar\b|levantamento/i.test(sv.descricao || ""));
+      $("#fr-orc", el).checked = !!(sv && !sv.prefeitura && etapaDe(sv) === "orcamento");
       if ($("#fr-orc", el).checked) $("#fr-concl", el).checked = false;
+      atualizarListas();
     }
     sugerirOrc();
     $("#fr-serv", el).addEventListener("change", function () { sugerirOrc(); mostrarAssin(false); });
@@ -722,6 +784,10 @@
       }
       if (pref && concl && !fotos.length) {
         $("#fr-erro", el).innerHTML = '<div class="aviso erro">OS da prefeitura: falta a foto de <b>DEPOIS</b> (serviço pronto).</div>'; return;
+      }
+      // fechamento só com prova: concluir pede as fotos do serviço realizado
+      if (!pref && concl && !fotos.length) {
+        $("#fr-erro", el).innerHTML = '<div class="aviso erro">Para <b>concluir</b>, tire as <b>fotos do serviço realizado</b>. Se foi só a visita para orçar, marque “Foi só a visita para o orçamento”.</div>'; return;
       }
       var obrig = pedeAssin(), visivel = concl && obrig;
       var semAssin = obrig && $("#fr-sem-assin", el).checked, nomeAssin = $("#fr-assin-nome", el).value.trim();

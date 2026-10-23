@@ -207,6 +207,10 @@ alter table public.relatorios add column if not exists fotos_antes text[] not nu
 alter table public.relatorios add column if not exists orcamento boolean not null default false;
 alter table public.servicos drop constraint if exists servicos_status_check;
 alter table public.servicos add constraint servicos_status_check check (status in ('aberto', 'em_andamento', 'aguardando', 'concluido', 'cancelado'));
+-- etapa: 'orcamento' (visita para orçar: fotos do local) ou 'servico' (executar: fecha só com foto do serviço feito)
+alter table public.servicos add column if not exists etapa text;
+alter table public.servicos drop constraint if exists servicos_etapa_check;
+alter table public.servicos add constraint servicos_etapa_check check (etapa is null or etapa in ('orcamento', 'servico'));
 
 -- Licitações de que a AGE participa (só o dono vê) e documentos de habilitação
 create table if not exists public.licitacoes (
@@ -388,6 +392,24 @@ create table if not exists public.prospects (
 );
 create index if not exists prospects_retorno_idx on public.prospects (retorno_em);
 
+-- 💲 Tabela de preços dos serviços (elétrica e pintura): o dono acrescenta e edita; aparece como sugestão nos orçamentos
+create table if not exists public.precos (
+  id            uuid primary key default gen_random_uuid(),
+  categoria     text not null check (categoria in ('eletrica', 'pintura')),
+  grupo         text,                         -- ex.: Tomadas e interruptores, Alvenarias e paredes
+  descricao     text not null,
+  un            text not null default 'un',
+  valor         numeric(12, 2),               -- preço usado no orçamento (vazio = a definir)
+  valor_min     numeric(12, 2),               -- faixa de referência (ex.: tabela ABRAPP)
+  valor_max     numeric(12, 2),
+  obs           text,
+  fonte         text,                         -- AGE, ABRAPP 2026...
+  ativo         boolean not null default true,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create index if not exists precos_cat_idx on public.precos (categoria, grupo);
+
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
   id             uuid primary key default gen_random_uuid(),
@@ -452,7 +474,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
@@ -485,12 +507,12 @@ begin
     'servicos', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id', s.id, 'categoria', s.categoria, 'descricao', s.descricao,
-               'data_prevista', s.data_prevista, 'status', s.status, 'pede_assinatura', s.pede_assinatura,
+               'data_prevista', s.data_prevista, 'status', s.status, 'pede_assinatura', s.pede_assinatura, 'etapa', s.etapa,
                'cliente', o.cliente, 'telefone', o.telefone, 'endereco', o.endereco,
                'observacoes', o.observacoes,
                'prefeitura', pf.nome, 'protocolo', o.protocolo, 'secretaria', o.secretaria,
                'tipo_publico', o.tipo_publico, 'referencia', o.referencia, 'fiscal', o.fiscal,
-               'contrato_id', o.contrato_id,
+               'contrato_id', o.contrato_id, 'loja_id', o.loja_id,
                'tem_fotos_antes', exists (select 1 from public.relatorios r
                                           where r.servico_id = s.id and cardinality(r.fotos_antes) > 0))
              order by s.data_prevista nulls last, s.criado_em)
@@ -510,7 +532,8 @@ begin
     'pontos_hoje', coalesce((
       select jsonb_agg(jsonb_build_object(
                'tipo', p.tipo, 'servico_id', p.servico_id, 'criado_em', p.criado_em,
-               'tem_gps', p.lat is not null)
+               'tem_gps', p.lat is not null,
+               'loja_id', (select o.loja_id from public.servicos s join public.obras o on o.id = s.obra_id where s.id = p.servico_id))
              order by p.criado_em)
       from public.pontos p
       where p.funcionario_id = f.id and p.criado_em >= v_inicio
@@ -542,6 +565,23 @@ begin
              order by k.criado_em)
       from public.km_registros k
       where k.funcionario_id = f.id and k.criado_em >= v_inicio
+    ), '[]'::jsonb),
+    -- materiais já digitados pela equipe (último ano, fora prefeitura): viram sugestão na lista
+    'materiais_usados', coalesce((
+      select jsonb_agg(jsonb_build_object('categoria', x.categoria, 'item', x.item, 'un', x.un) order by x.n desc)
+      from (
+        select s.categoria, min(trim(e ->> 'item')) as item,
+               mode() within group (order by e ->> 'un') as un, count(*) as n
+        from public.relatorios r
+        join public.servicos s on s.id = r.servico_id
+        join public.obras o on o.id = s.obra_id
+        cross join lateral jsonb_array_elements(case when jsonb_typeof(r.materiais) = 'array' then r.materiais else '[]'::jsonb end) e
+        where r.criado_em >= now() - interval '1 year' and o.prefeitura_id is null
+          and jsonb_typeof(e) = 'object' and length(trim(coalesce(e ->> 'item', ''))) between 2 and 120
+        group by s.categoria, lower(trim(e ->> 'item'))
+        order by count(*) desc
+        limit 400
+      ) x
     ), '[]'::jsonb)
   );
 end $$;
@@ -592,6 +632,13 @@ begin
 
   if p_servico_id is not null and p_tipo in ('chegada', 'servico') then
     update public.servicos set status = 'em_andamento' where id = p_servico_id and status = 'aberto';
+  end if;
+  -- uma chegada vale para todos os chamados dele na mesma loja (não precisa de uma foto por chamado)
+  if p_servico_id is not null and p_tipo = 'chegada' then
+    update public.servicos s2 set status = 'em_andamento'
+    from public.servicos s join public.obras o on o.id = s.obra_id, public.obras o2
+    where s.id = p_servico_id and o.loja_id is not null and o2.id = s2.obra_id and o2.loja_id = o.loja_id
+      and s2.funcionario_id = f.id and s2.status = 'aberto';
   end if;
 
   -- Chegada com GPS bom numa loja: melhora a localização da loja (para as rotas).
@@ -667,6 +714,10 @@ begin
     if cardinality(p_fotos) = 0 then
       raise exception 'OS da prefeitura: falta a foto de DEPOIS (serviço pronto).';
     end if;
+  end if;
+  -- fechamento só com prova: para concluir precisa da foto do serviço realizado
+  if coalesce(p_concluido, false) and not coalesce(v_pref, false) and cardinality(p_fotos) = 0 then
+    raise exception 'Para concluir, tire as fotos do serviço realizado.';
   end if;
   p_assinatura := nullif(trim(coalesce(p_assinatura, '')), '');
   if p_assinatura is not null then
