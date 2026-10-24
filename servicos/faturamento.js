@@ -152,7 +152,7 @@
       return;
     }
     c.innerHTML = '<div class="cab-secao"><h2>💼 Notas e resultado</h2><span><button class="prim" id="ft-arq-b">📷 Nota de serviço</button> <button id="ft-mao">➕ Lançar à mão</button></span></div>' +
-      '<input type="file" id="ft-arq" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" class="oculto">' +
+      '<input type="file" id="ft-arq" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml,.zip,application/zip" multiple class="oculto">' +
       '<p class="mudo peq" style="margin-top:-4px">Lance a nota fiscal de serviço que você emitiu (foto, PDF ou XML da prefeitura). Em <b>Resultado por obra</b>: o que entrou menos material, mão de obra e despesas avulsas.</p>' +
       '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
       '<div class="filtros"><select id="ft-per" aria-label="Período"><option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="ano">Este ano</option><option value="tudo">Tudo</option></select>' +
@@ -164,7 +164,15 @@
     if ($("#ft-sit")) $("#ft-sit").onchange = function () { filtro.sit = this.value; desenhar(); };
     $("#ft-busca").oninput = function () { filtro.busca = this.value; desenhar(); };
     $("#ft-arq-b").onclick = function () { $("#ft-arq").value = ""; $("#ft-arq").click(); };
-    $("#ft-arq").onchange = function () { if (this.files[0]) receber(this.files[0], function () { ver(c, P); }); };
+    $("#ft-arq").onchange = function () {
+      if (!this.files.length) return;
+      A.abrirZips(this.files).then(function (fs) {
+        if (!fs.length) { A.avisar("O ZIP não tem fotos, PDF nem XML de nota.", "erro"); return; }
+        // várias notas: uma depois da outra
+        var proxima = function () { var f = fs.shift(); if (f) receber(f, function () { if (fs.length) proxima(); else ver(c, P); }); else ver(c, P); };
+        proxima();
+      }).catch(function (e) { A.avisar(A.msgErro(e), "erro"); });
+    };
     $("#ft-mao").onclick = function () { formulario({}, function () { ver(c, P); }); };
     if (P.atualizarAbas) P.atualizarAbas();
     desenhar();

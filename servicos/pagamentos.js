@@ -454,7 +454,7 @@
       '<div class="filtros" id="pg-formas">' + [["", "Todos"], ["pix", "Pix"], ["especie", "💵 Dinheiro (espécie)"]].map(function (x) {
         return '<button class="' + (filtro.forma === x[0] ? "prim" : "") + '" data-forma="' + x[0] + '">' + x[1] + "</button>";
       }).join("") + "</div>" +
-      '<input type="file" id="pg-arq" accept="image/*,application/pdf" multiple class="oculto">' +
+      '<input type="file" id="pg-arq" accept="image/*,application/pdf,.pdf,.zip,application/zip" multiple class="oculto">' +
       '<p class="mudo peq" style="margin-top:-4px">No celular: no app do banco, abra o comprovante, toque em <b>Compartilhar → AGE Painel</b>. Ou toque em 📥 e escolha a imagem/PDF.</p>' +
       '<div class="filtros"><select id="pg-per" aria-label="Período"><option value="semana">Esta semana</option><option value="passada">Semana passada</option><option value="4sem">Últimas 4 semanas</option>' +
       '<option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="tudo">Tudo</option><option value="datas">Escolher datas</option></select>' +
@@ -468,7 +468,11 @@
     $$("[data-forma]", c).forEach(function (b) { b.onclick = function () { filtro.forma = b.dataset.forma; ver(c, P); }; });
     $("#pg-especie").onclick = function () { receber({ arquivos: [], texto: "", especie: true }, P); };
     $("#pg-add").onclick = function () { $("#pg-arq").value = ""; $("#pg-arq").click(); };
-    $("#pg-arq").onchange = function () { if (this.files.length) receber({ arquivos: Array.prototype.slice.call(this.files), texto: "" }, P); };
+    $("#pg-arq").onchange = function () {
+      if (!this.files.length) return;
+      A.abrirZips(this.files).then(function (fs) { if (fs.length) receber({ arquivos: fs, texto: "" }, P); else A.avisar("O ZIP não tem comprovantes (foto ou PDF).", "erro"); })
+        .catch(function (e) { A.avisar(A.msgErro(e), "erro"); });
+    };
     $("#pg-colar").onclick = function () {
       var jj = A.janela('<label for="pg-txt">Cole o texto do comprovante</label><textarea id="pg-txt" rows="8"></textarea><div class="acoes"><button class="prim" id="pg-ler">Ler</button></div>', { titulo: "📝 Colar comprovante" });
       $("#pg-ler", jj.el).onclick = function () { var t = $("#pg-txt", jj.el).value; jj.fechar(); if (t.trim()) receber({ arquivos: [], texto: t }, P); };
