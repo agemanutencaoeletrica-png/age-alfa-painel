@@ -25,6 +25,9 @@ window.AGE_CONFIG = {
     endereco: "R. das Canárias, 249 - Palmeiras",
     cidade: "Ibirité - MG, 32421-250",
     // link para o cliente avaliar a AGE no Google (Perfil da Empresa → Pedir avaliações)
-    avaliacao: "https://g.page/r/CXdHVPjUS_tXEBM/review"
+    avaliacao: "https://g.page/r/CXdHVPjUS_tXEBM/review",
+    facebook: "https://www.facebook.com/share/1DjvBreye9/",   // página da AGE (aparece no site; coloque aqui também o Instagram e o Telegram quando criar)
+    instagram: "",
+    telegram: ""
   }
 };
