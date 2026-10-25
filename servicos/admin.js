@@ -400,7 +400,8 @@
       q(sb.from("receitas").select("*").order("emitida_em", { ascending: false })).catch(function (e) { S.erroReceitas = A.msgErro(e); return null; }),
       q(sb.from("prospects").select("*").order("criado_em", { ascending: false })).catch(function (e) { S.erroProsp = A.msgErro(e); return null; }),
       q(sb.from("servicos").select("etapa").limit(1)).then(function () { return true; }).catch(function () { return false; }),
-      q(sb.from("precos").select("*").order("descricao")).catch(function (e) { S.erroPrecos = A.msgErro(e); return null; })
+      q(sb.from("precos").select("*").order("descricao")).catch(function (e) { S.erroPrecos = A.msgErro(e); return null; }),
+      q(sb.from("candidatos").select("*").order("criado_em", { ascending: false }).limit(500)).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -412,6 +413,7 @@
       S.semProsp = !r[13]; S.prosp = r[13] || [];
       S.semEtapa = !r[14];   // banco ainda sem a coluna servicos.etapa (rode o bloco do supabase.sql)
       S.semPrecos = !r[15]; S.precos = r[15] || [];
+      S.semCand = !r[16]; S.cand = r[16] || [];
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
     });
   }
@@ -3339,10 +3341,64 @@
             (f.telefone ? '<a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgLink(f))) + '">📲 Enviar link</a>' : "") +
             '<button class="peq" data-editar="' + f.id + '">Editar</button></div>' : '<div class="acoes"><button class="peq" data-editar="' + f.id + '">Editar / reativar</button></div>') + "</div>";
       }).join("") : '<div class="cartao vazio">Cadastre o primeiro funcionário.</div>') +
-      '<p class="mudo peq">Cada funcionário tem um link próprio e secreto. Se alguém perder o celular ou sair da empresa, use “Editar” → “Gerar novo link” ou desative: o link antigo para de funcionar na hora.</p>';
+      '<p class="mudo peq">Cada funcionário tem um link próprio e secreto. Se alguém perder o celular ou sair da empresa, use “Editar” → “Gerar novo link” ou desative: o link antigo para de funcionar na hora.</p>' +
+      htmlCandidatos();
     $("#be-novo").onclick = function () { editarFunc(null); };
+    ligarCandidatos(c);
     $$("[data-copiar]", c).forEach(function (b) { b.onclick = function () { copiar(linkFunc(porId(S.func, b.dataset.copiar))); }; });
     $$("[data-editar]", c).forEach(function (b) { b.onclick = function () { editarFunc(b.dataset.editar); }; });
+  }
+
+  // ---------- candidatos que se cadastraram no site ("Trabalhe com a gente") ----------
+  var FUNCOES_CAND = { pintor: "Pintor", ajudante_pintura: "Ajudante de pintura", eletricista: "Eletricista", ajudante_eletrica: "Ajudante de eletricista", cordeiro: "Cordeiro / alpinista (cadeirinha)", limpeza_vidros: "Limpeza de vidros em altura" };
+  var SIT_CAND = { novo: "🆕 Novo", contato: "💬 Conversando", entrevista: "📅 Entrevista / teste", contratado: "✅ Contratado", descartado: "🚫 Não serve agora" };
+  var filtroCand = "abertos";
+  function htmlCandidatos() {
+    if (S.semCand) return '<hr class="sep"><h3>👷 Candidatos do site</h3><div class="aviso peq">Para receber os cadastros do “Trabalhe com a gente” do site, rode no Supabase o <b>supabase.sql</b> atualizado (bloco “Candidatos”) e depois <code>notify pgrst, \'reload schema\';</code></div>';
+    var ls = S.cand.filter(function (x) { return filtroCand === "todos" || (filtroCand === "abertos" ? x.situacao !== "descartado" && x.situacao !== "contratado" : x.situacao === filtroCand); });
+    var novos = S.cand.filter(function (x) { return x.situacao === "novo"; }).length;
+    var link = new URL("../site/#trabalhe", location.href).href;
+    return '<hr class="sep"><div class="cab-secao"><h3 style="margin:0">👷 Candidatos do site' + (novos ? ' <span class="selo critico">' + novos + " novo" + (novos > 1 ? "s" : "") + "</span>" : "") + '</h3>' +
+      '<span><button class="peq" id="cd-link">🔗 Copiar link da vaga</button> <button class="peq zap" id="cd-divulgar">📣 Divulgar a vaga</button></span></div>' +
+      '<div class="filtros">' + [["abertos", "Em aberto"], ["novo", "🆕 Novos"], ["entrevista", "📅 Entrevista"], ["contratado", "✅ Contratados"], ["descartado", "🚫 Não serve"], ["todos", "Todos"]].map(function (f) {
+        return '<button class="peq ' + (filtroCand === f[0] ? "prim" : "") + '" data-cdf="' + f[0] + '">' + f[1] + "</button>"; }).join("") + "</div>" +
+      (ls.length ? ls.map(function (x) {
+        return '<div class="cartao"><div class="linha"><h3 style="margin:0">' + esc(x.nome) + "</h3>" + (x.funcoes || []).map(function (f) { return '<span class="selo">' + esc(FUNCOES_CAND[f] || f) + "</span>"; }).join("") +
+          (x.nrs || []).map(function (n) { return '<span class="selo bom">' + esc(n.toUpperCase().replace("NR", "NR-")) + "</span>"; }).join("") + '<span class="dir peq mudo">' + esc(A.dataSimples(String(x.criado_em).slice(0, 10))) + "</span></div>" +
+          '<div class="peq mudo">' + esc([x.cidade, x.experiencia && "experiência: " + x.experiencia, x.disponibilidade].filter(Boolean).join(" · ")) + "</div>" +
+          (x.obs ? '<div class="peq">' + esc(x.obs) + "</div>" : "") + (x.notas ? '<div class="peq">📝 ' + esc(x.notas) + "</div>" : "") +
+          '<div class="acoes"><a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(x.whatsapp, "Olá, " + String(x.nome).split(" ")[0] + "! Aqui é da " + ((A.CFG.EMPRESA || {}).nome || "AGE") + ". Recebemos seu cadastro no site para a vaga. Podemos conversar?")) + '">💬 ' + esc(x.whatsapp) + "</a>" +
+          '<select class="peq" data-cds="' + x.id + '">' + Object.keys(SIT_CAND).map(function (k) { return '<option value="' + k + '"' + (k === x.situacao ? " selected" : "") + ">" + SIT_CAND[k] + "</option>"; }).join("") + "</select>" +
+          '<button class="peq" data-cdn="' + x.id + '">📝 Anotar</button>' + (x.situacao === "contratado" && !S.func.some(function (f) { return A.soDigitos(f.telefone).slice(-9) === String(x.whatsapp).slice(-9); }) ? '<button class="peq prim" data-cdc="' + x.id + '">➕ Cadastrar na equipe</button>' : "") + "</div></div>";
+      }).join("") : '<div class="cartao vazio peq">Nenhum candidato neste filtro. Divulgue o link da vaga (botão 📣) em grupos de WhatsApp e Facebook da sua região.</div>') +
+      '<p class="mudo peq">Link do formulário: <a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(link) + "</a></p>";
+  }
+  function ligarCandidatos(c) {
+    var link = new URL("../site/#trabalhe", location.href).href;
+    if ($("#cd-link", c)) $("#cd-link", c).onclick = function () { copiar(link); };
+    if ($("#cd-divulgar", c)) $("#cd-divulgar", c).onclick = function () {
+      A.compartilhar({ titulo: "Vaga AGE", texto: "👷 *A " + ((A.CFG.EMPRESA || {}).nome || "AGE") + " está contratando!*\nPintor, ajudante de pintura, eletricista, ajudante e profissional de cadeirinha (acesso por corda / limpeza de vidros em altura) em BH e região.\n\nCadastre-se aqui: " + link });
+    };
+    $$("[data-cdf]", c).forEach(function (b) { b.onclick = function () { filtroCand = b.dataset.cdf; verEquipe(c); }; });
+    $$("[data-cds]", c).forEach(function (s) {
+      s.onchange = function () { q(sb.from("candidatos").update({ situacao: s.value, atualizado_em: new Date().toISOString() }).eq("id", s.dataset.cds).select().single()).then(function (n) { trocar(S.cand, n); verEquipe(c); }).catch(falhou); };
+    });
+    $$("[data-cdn]", c).forEach(function (b) {
+      b.onclick = function () {
+        var x = porId(S.cand, b.dataset.cdn), t = window.prompt("Anotação sobre " + x.nome + ":", x.notas || "");
+        if (t === null) return;
+        q(sb.from("candidatos").update({ notas: t.trim() || null, atualizado_em: new Date().toISOString() }).eq("id", x.id).select().single()).then(function (n) { trocar(S.cand, n); verEquipe(c); }).catch(falhou);
+      };
+    });
+    $$("[data-cdc]", c).forEach(function (b) {
+      b.onclick = function () {
+        var x = porId(S.cand, b.dataset.cdc), fs = x.funcoes || [];
+        var el = editarFunc(null);
+        $("#ef-nome", el).value = x.nome; $("#ef-tel", el).value = x.whatsapp;
+        var ele = fs.some(function (f) { return /eletric/.test(f); }), pin = fs.some(function (f) { return !/eletric/.test(f); });
+        $("#ef-area", el).value = ele && pin ? "ambos" : ele ? "eletrica" : "pintura";
+      };
+    });
   }
 
   function editarFunc(id) {
@@ -3377,7 +3433,7 @@
         } else A.avisar("Salvo", "ok");
       }).catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
-    if (!f) return;
+    if (!f) return el;
     $("#ef-token", el).onclick = function () {
       if (!A.confirmar("Gerar um novo link para " + f.nome + "? O link antigo para de funcionar e você precisa enviar o novo.")) return;
       q(sb.from("funcionarios").update({ token: novoToken() }).eq("id", f.id).select().single()).then(function (n) {
@@ -3397,7 +3453,7 @@
         if (/foreign key|violates/i.test(A.msgErro(e))) A.avisar("Ele já tem registros de ponto ou relatórios. Desmarque “Ativo” em vez de apagar.", "erro");
         else falhou(e);
       });
-    };
+    };    return el;
   }
 
   // o módulo da prefeitura (prefeitura.js) usa as mesmas funções do painel
