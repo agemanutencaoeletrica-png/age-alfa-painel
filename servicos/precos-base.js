@@ -72,6 +72,17 @@
       ["Lavagem de piso – máquina com água pressurizada", "m²", 9.16, 7.30, 11.01],
       ["Deslocamento até a obra (por km)", "km", 8.68, 5.82, 11.53]
     ]),
+    // limpeza de vidros e pintura de fachada em altura com acesso por corda (cadeira suspensa / alpinismo industrial, NR-35)
+    // a ABRAPP não tem preço de limpeza: ficam "a definir"; as diárias de cordeiro são as da tabela
+    grupo("Acesso por corda (cadeirinha / alpinismo industrial)", [
+      ["Limpeza de vidros / vidraças com acesso por corda", "m²", null],
+      ["Limpeza de fachada (ACM, pele de vidro, revestimento) com acesso por corda", "m²", null],
+      ["Pintura de fachada com acesso por corda – 2 demãos (lavagem não inclusa)", "m²", null],
+      ["Lavagem de fachada com lavadora pressurizada por corda", "m²", null],
+      ["Diária cordeiro – pintor/limpador profissional na cadeirinha 8h", "dia", 301.40, 262.09, 340.72],
+      ["Diária cordeiro – ajudante na cadeirinha 8h", "dia", 235.88, 196.57, 275.19],
+      ["Montagem de ancoragem e isolamento da área (por queda)", "un", null]
+    ]),
     grupo("Serviços diversos", [
       ["Resinar telhas em geral 2 demãos (resina acrílica, lavagem inclusa)", "m²", 25.12, 19.66, 30.58],
       ["Resinar telhas em geral 3 demãos (resina acrílica, lavagem inclusa)", "m²", 32.09, 24.87, 39.31],

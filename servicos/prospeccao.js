@@ -33,7 +33,7 @@
   // mensagem do 1º contato (você pode mudar e ela fica guardada neste aparelho)
   function msgPadrao() {
     var E = A.CFG.EMPRESA || {};
-    return "Olá, tudo bem? Aqui é da {empresa}. Fazemos pintura industrial, demarcação de piso (faixas, vagas, zebrados, PARE) e manutenção elétrica para empresas de BH e região — muitas vezes à noite, para não parar a operação.\n\n" +
+    return "Olá, tudo bem? Aqui é da {empresa}. Fazemos pintura industrial, demarcação de piso (faixas, vagas, zebrados, PARE), pintura de fachadas e limpeza de vidros em altura com acesso por corda (NR-35) e manutenção elétrica para empresas de BH e região — muitas vezes à noite, para não parar a operação.\n\n" +
       "Posso enviar fotos de obras e fazer um orçamento sem compromisso para a {nome}? Nossos trabalhos: {site}\n\n" +
       (E.telefone ? "Contato: " + E.telefone + "\n" : "") + "Se preferir não receber mensagens, é só avisar que não mandamos mais.";
   }
@@ -278,6 +278,7 @@
     veiculos: { nome: "Concessionárias e oficinas de caminhão / carro", tipo: "comercio", q: ['["shop"~"^(car|truck|car_repair|tyres|motorcycle)$"]'] },
     supermercado: { nome: "Supermercados / atacados", tipo: "supermercado", q: ['["shop"~"^(supermarket|wholesale|hardware|doityourself)$"]'] },
     escola: { nome: "Escolas / hospitais / clínicas", tipo: "escola", q: ['["amenity"~"^(school|college|university|hospital|clinic)$"]'] },
+    predio: { nome: "Prédios comerciais, hotéis e edifícios (fachadas e vidros)", tipo: "condominio", q: ['["building"~"^(commercial|office|retail|hotel)$"]["building:levels"~"^([4-9]|[1-9][0-9])$"]', '["tourism"="hotel"]', '["office"]["building:levels"]', '["building"]["building:levels"~"^([5-9]|[1-9][0-9])$"]'] },
     condominio: { nome: "Condomínios / shoppings / escritórios", tipo: "condominio", q: ['["building"~"^(apartments|commercial|office)$"]', '["shop"="mall"]', '["office"~"company|property_management"]'] }
   };
   function telDe(t) { return t["contact:phone"] || t.phone || t["contact:mobile"] || t.mobile || ""; }
