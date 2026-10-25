@@ -3377,7 +3377,7 @@
     var link = new URL("../site/#trabalhe", location.href).href;
     if ($("#cd-link", c)) $("#cd-link", c).onclick = function () { copiar(link); };
     if ($("#cd-divulgar", c)) $("#cd-divulgar", c).onclick = function () {
-      A.compartilhar({ titulo: "Vaga AGE", texto: "👷 *A " + ((A.CFG.EMPRESA || {}).nome || "AGE") + " está contratando!*\nPintor, ajudante de pintura, eletricista, ajudante e profissional de cadeirinha (acesso por corda / limpeza de vidros em altura) em BH e região.\n\nCadastre-se aqui: " + link });
+      A.compartilhar({ titulo: "Vaga AGE", texto: "👷 *A " + ((A.CFG.EMPRESA || {}).nome || "AGE") + " está contratando!*\n*Vagas temporárias, por obra* (diária ou empreitada pelo período do serviço) para pintor, ajudante de pintura, eletricista, ajudante e profissional de cadeirinha (acesso por corda / limpeza de vidros em altura) em BH e região.\n\nCadastre-se aqui: " + link });
     };
     $$("[data-cdf]", c).forEach(function (b) { b.onclick = function () { filtroCand = b.dataset.cdf; verEquipe(c); }; });
     $$("[data-cds]", c).forEach(function (s) {
