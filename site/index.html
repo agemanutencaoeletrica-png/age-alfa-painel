@@ -69,6 +69,17 @@
   .nota .est { color: var(--amarelo); font-size: 30px; letter-spacing: 2px; }
   .nota .n { font-size: 44px; font-weight: 800; line-height: 1; }
   .nota p { color: #d6e2f0; }
+  .vaga form { background: #fff; border: 1px solid var(--borda); border-radius: 10px; padding: 22px; max-width: 760px; }
+  .vaga label { display: block; font-weight: 700; color: var(--azul); margin: 12px 0 4px; font-size: 15px; }
+  .vaga input[type=text], .vaga input[type=tel], .vaga select, .vaga textarea { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 1px solid var(--borda); border-radius: 6px; font: inherit; font-size: 16px; }
+  .vaga .duas { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  .vaga .opcoes { display: flex; flex-wrap: wrap; gap: 8px; }
+  .vaga .opcoes label { font-weight: 500; color: var(--texto); margin: 0; border: 1px solid var(--borda); border-radius: 999px; padding: 7px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .vaga .aceite { font-weight: 500; color: var(--mudo); font-size: 14px; display: flex; gap: 8px; align-items: flex-start; }
+  .vaga .isca { position: absolute; left: -9999px; }
+  .vaga .msg { margin-top: 12px; font-weight: 700; }
+  .vaga .msg.ok { color: #13723a; } .vaga .msg.erro { color: #b42318; }
+  @media (max-width: 640px) { .vaga .duas { grid-template-columns: 1fr; } }
   .cta-final { background: linear-gradient(135deg, var(--azul) 0%, var(--azul2) 100%); color: #fff; text-align: center; }
   .cta-final h2 { color: #fff; }
   .cta-final .lead { color: #d6e2f0; margin-left: auto; margin-right: auto; }
@@ -107,7 +118,7 @@
 <header class="topo">
   <div class="cx">
     <a class="logo" href="#inicio">AGE <span>PINTURAS</span></a>
-    <nav><a href="#servicos">Serviços</a><a href="#obras">Obras</a><a href="#diferenciais">Diferenciais</a><a href="#como">Como trabalhamos</a><a href="#contato">Contato</a></nav>
+    <nav><a href="#servicos">Serviços</a><a href="#obras">Obras</a><a href="#diferenciais">Diferenciais</a><a href="#como">Como trabalhamos</a><a href="#contato">Contato</a><a href="#trabalhe">Trabalhe conosco</a></nav>
     <a class="btn peq" data-zap href="#">📲 Orçamento</a>
   </div>
 </header>
@@ -242,6 +253,44 @@
     </div>
   </section>
 
+  <section id="trabalhe" class="vaga">
+    <div class="cx">
+      <h2>Trabalhe com a gente</h2>
+      <p class="lead">Buscamos pintores, ajudantes, eletricistas e profissionais de cadeirinha (acesso por corda / limpeza de vidros em altura) para obras em BH e região. Deixe seu contato que a gente chama.</p>
+      <form id="f-vaga" novalidate>
+        <div class="duas">
+          <div><label for="v-nome">Nome completo *</label><input type="text" id="v-nome" maxlength="120" autocomplete="name" required></div>
+          <div><label for="v-zap">WhatsApp com DDD *</label><input type="tel" id="v-zap" maxlength="20" autocomplete="tel" placeholder="(31) 99999-9999" required></div>
+        </div>
+        <label>Função * <span style="font-weight:400;color:var(--mudo)">(pode marcar mais de uma)</span></label>
+        <div class="opcoes">
+          <label><input type="checkbox" name="fun" value="pintor"> Pintor</label>
+          <label><input type="checkbox" name="fun" value="ajudante_pintura"> Ajudante de pintura</label>
+          <label><input type="checkbox" name="fun" value="eletricista"> Eletricista</label>
+          <label><input type="checkbox" name="fun" value="ajudante_eletrica"> Ajudante de eletricista</label>
+          <label><input type="checkbox" name="fun" value="cordeiro"> Cordeiro / cadeirinha</label>
+          <label><input type="checkbox" name="fun" value="limpeza_vidros"> Limpeza de vidros em altura</label>
+        </div>
+        <div class="duas">
+          <div><label for="v-cidade">Cidade / bairro</label><input type="text" id="v-cidade" maxlength="120" placeholder="Ex.: Contagem - Eldorado"></div>
+          <div><label for="v-exp">Experiência</label><select id="v-exp"><option value="">—</option><option>Começando agora</option><option>Menos de 1 ano</option><option>1 a 3 anos</option><option>3 a 5 anos</option><option>Mais de 5 anos</option></select></div>
+        </div>
+        <label>Cursos</label>
+        <div class="opcoes">
+          <label><input type="checkbox" name="nr" value="nr35"> NR-35 (altura)</label>
+          <label><input type="checkbox" name="nr" value="nr10"> NR-10 (elétrica)</label>
+          <label><input type="checkbox" name="nr" value="nr18"> NR-18 (construção)</label>
+        </div>
+        <label for="v-disp">Disponibilidade</label><select id="v-disp"><option value="">—</option><option>Diária / por obra</option><option>Fixo</option><option>Fins de semana e noites</option><option>Qualquer uma</option></select>
+        <label for="v-obs">Conte um pouco do que já fez (opcional)</label><textarea id="v-obs" rows="3" maxlength="1000"></textarea>
+        <input type="text" class="isca" id="v-site" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <label class="aceite"><input type="checkbox" id="v-aceite"> Autorizo a AGE a guardar estes dados e me chamar pelo WhatsApp sobre vagas. Posso pedir para apagar quando quiser.</label>
+        <div style="margin-top:14px"><button class="btn" type="submit" id="v-enviar">📨 Enviar cadastro</button></div>
+        <div class="msg" id="v-msg" role="status"></div>
+      </form>
+    </div>
+  </section>
+
   <section id="contato" class="cta-final">
     <div class="cx">
       <h2>Peça uma visita técnica sem compromisso</h2>
@@ -265,12 +314,47 @@
 
 <a class="zap-flut" data-zap href="#" aria-label="Falar no WhatsApp">💬</a>
 
+<script src="../servicos/config.js"></script>
 <script>
   // todos os botões de WhatsApp abrem a conversa com a mensagem pronta
   (function () {
     var msg = "Olá! Vi o site da AGE e gostaria de um orçamento de pintura industrial.";
     var url = "https://wa.me/5531988589772?text=" + encodeURIComponent(msg);
     document.querySelectorAll("[data-zap]").forEach(function (a) { a.href = url; a.target = "_blank"; a.rel = "noopener"; });
+  })();
+  // "Trabalhe com a gente": grava direto no app da AGE (se o servidor não responder, abre o WhatsApp com os dados)
+  (function () {
+    var f = document.getElementById("f-vaga"); if (!f) return;
+    var msg = document.getElementById("v-msg"), bt = document.getElementById("v-enviar"), C = window.AGE_CONFIG || {};
+    var marcados = function (n) { return Array.prototype.map.call(f.querySelectorAll('input[name="' + n + '"]:checked'), function (i) { return i.value; }); };
+    var nomeFun = { pintor: "Pintor", ajudante_pintura: "Ajudante de pintura", eletricista: "Eletricista", ajudante_eletrica: "Ajudante de eletricista", cordeiro: "Cordeiro / cadeirinha", limpeza_vidros: "Limpeza de vidros em altura" };
+    function aviso(t, ok) { msg.textContent = t; msg.className = "msg " + (ok ? "ok" : "erro"); }
+    f.onsubmit = function (e) {
+      e.preventDefault();
+      if (document.getElementById("v-site").value) return;   // robô
+      var d = { p_nome: document.getElementById("v-nome").value.trim(), p_whatsapp: document.getElementById("v-zap").value.trim(), p_cidade: document.getElementById("v-cidade").value.trim(),
+        p_funcoes: marcados("fun"), p_experiencia: document.getElementById("v-exp").value, p_nrs: marcados("nr"), p_disponibilidade: document.getElementById("v-disp").value,
+        p_obs: document.getElementById("v-obs").value.trim(), p_aceite: document.getElementById("v-aceite").checked };
+      var dig = d.p_whatsapp.replace(/\D/g, "");
+      if (d.p_nome.length < 3) return aviso("Escreva seu nome.");
+      if (dig.length < 10 || dig.length > 13) return aviso("Coloque o WhatsApp com DDD.");
+      if (!d.p_funcoes.length) return aviso("Marque pelo menos uma função.");
+      if (!d.p_aceite) return aviso("Marque a autorização para podermos te chamar.");
+      bt.disabled = true; bt.textContent = "Enviando...";
+      var porZap = function () {
+        var t = "Olá! Quero trabalhar na AGE.\nNome: " + d.p_nome + "\nWhatsApp: " + d.p_whatsapp + "\nFunção: " + d.p_funcoes.map(function (x) { return nomeFun[x]; }).join(", ") +
+          (d.p_cidade ? "\nCidade: " + d.p_cidade : "") + (d.p_experiencia ? "\nExperiência: " + d.p_experiencia : "") + (d.p_nrs.length ? "\nCursos: " + d.p_nrs.join(", ").toUpperCase() : "");
+        window.open("https://wa.me/5531988589772?text=" + encodeURIComponent(t), "_blank", "noopener");
+      };
+      fetch(String(C.SUPABASE_URL || "").replace(/\/$/, "") + "/rest/v1/rpc/enviar_candidatura", { method: "POST", headers: { "Content-Type": "application/json", apikey: C.SUPABASE_ANON_KEY, Authorization: "Bearer " + C.SUPABASE_ANON_KEY }, body: JSON.stringify(d) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j && j.message || "erro"); return j; }); })
+        .then(function () { f.reset(); aviso("✅ Cadastro recebido! Vamos te chamar pelo WhatsApp quando surgir uma vaga.", true); })
+        .catch(function (e) {
+          if (/[a-zà-ú]{4,}/i.test(e.message) && !/fetch|network|failed|function|schema|erro$/i.test(e.message)) aviso(e.message);
+          else { aviso("Não conseguimos enviar agora: abrimos o WhatsApp com os seus dados, é só enviar.", true); porZap(); }
+        })
+        .then(function () { bt.disabled = false; bt.textContent = "📨 Enviar cadastro"; });
+    };
   })();
   // ampliar as fotos das obras
   (function () {

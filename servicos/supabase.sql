@@ -416,6 +416,24 @@ create table if not exists public.precos (
 );
 create index if not exists precos_cat_idx on public.precos (categoria, grupo);
 
+-- 👷 Candidatos a vaga (formulário "Trabalhe com a gente" do site): o site só envia pela função enviar_candidatura; só você lê
+create table if not exists public.candidatos (
+  id              uuid primary key default gen_random_uuid(),
+  nome            text not null,
+  whatsapp        text not null,
+  cidade          text,
+  funcoes         text[] not null default '{}',   -- pintor, ajudante_pintura, eletricista, ajudante_eletrica, cordeiro, limpeza_vidros
+  experiencia     text,
+  nrs             text[] not null default '{}',   -- nr35, nr10, nr18
+  disponibilidade text,
+  obs             text,
+  situacao        text not null default 'novo' check (situacao in ('novo', 'contato', 'entrevista', 'contratado', 'descartado')),
+  notas           text,
+  criado_em       timestamptz not null default now(),
+  atualizado_em   timestamptz not null default now()
+);
+create index if not exists candidatos_data_idx on public.candidatos (criado_em desc);
+
 -- rotas montadas no painel (paradas em ordem, com nome/endereço/coordenadas copiados da loja)
 create table if not exists public.rotas (
   id             uuid primary key default gen_random_uuid(),
@@ -480,7 +498,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'candidatos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
@@ -872,6 +890,40 @@ begin
   returning id, criado_em into v_id, v_quando;
   return jsonb_build_object('id', v_id, 'criado_em', v_quando);
 end $$;
+
+-- formulário do site: valida, limita (o mesmo WhatsApp atualiza o cadastro; no máximo 60 por dia) e grava
+create or replace function public.enviar_candidatura(
+  p_nome text, p_whatsapp text, p_cidade text, p_funcoes text[], p_experiencia text, p_nrs text[], p_disponibilidade text, p_obs text, p_aceite boolean
+) returns text
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_zap text := regexp_replace(coalesce(p_whatsapp, ''), '\D', '', 'g');
+  v_fun text[] := array(select x from unnest(coalesce(p_funcoes, '{}')) x where x in ('pintor', 'ajudante_pintura', 'eletricista', 'ajudante_eletrica', 'cordeiro', 'limpeza_vidros'));
+  v_nrs text[] := array(select x from unnest(coalesce(p_nrs, '{}')) x where x in ('nr35', 'nr10', 'nr18'));
+  v_id  uuid;
+begin
+  if not coalesce(p_aceite, false) then raise exception 'Marque que autoriza o uso dos seus dados para a vaga.'; end if;
+  if length(trim(coalesce(p_nome, ''))) < 3 then raise exception 'Escreva seu nome.'; end if;
+  if v_zap ~ '^55\d{10,11}$' then v_zap := substr(v_zap, 3); end if;
+  if v_zap !~ '^\d{10,11}$' then raise exception 'WhatsApp inválido: coloque o DDD e o número.'; end if;
+  if cardinality(v_fun) = 0 then raise exception 'Escolha pelo menos uma função.'; end if;
+  select id into v_id from public.candidatos where whatsapp = v_zap;
+  if v_id is null and (select count(*) from public.candidatos where criado_em > now() - interval '1 day') >= 60 then
+    raise exception 'Recebemos muitos cadastros hoje. Tente amanhã ou chame no WhatsApp.';
+  end if;
+  if v_id is not null then
+    update public.candidatos set nome = left(trim(p_nome), 120), cidade = left(nullif(trim(p_cidade), ''), 120), funcoes = v_fun, experiencia = left(nullif(trim(p_experiencia), ''), 60),
+      nrs = v_nrs, disponibilidade = left(nullif(trim(p_disponibilidade), ''), 60), obs = left(nullif(trim(p_obs), ''), 1000),
+      situacao = case when situacao = 'descartado' then 'novo' else situacao end, atualizado_em = now()
+    where id = v_id;
+    return 'atualizado';
+  end if;
+  insert into public.candidatos (nome, whatsapp, cidade, funcoes, experiencia, nrs, disponibilidade, obs)
+  values (left(trim(p_nome), 120), v_zap, left(nullif(trim(p_cidade), ''), 120), v_fun, left(nullif(trim(p_experiencia), ''), 60), v_nrs,
+          left(nullif(trim(p_disponibilidade), ''), 60), left(nullif(trim(p_obs), ''), 1000));
+  return 'ok';
+end $$;
+grant execute on function public.enviar_candidatura(text, text, text, text[], text, text[], text, text, boolean) to anon, authenticated;
 
 revoke execute on function public._func_por_token(text) from public, anon, authenticated;
 revoke execute on function public._tocar_atualizado_em() from public, anon, authenticated;
