@@ -18,7 +18,7 @@
   };
   var TIPOS = { galpao: "Galpão / logística", industria: "Indústria", transportadora: "Transportadora", supermercado: "Supermercado / atacado",
     condominio: "Condomínio / administradora", comercio: "Comércio / loja", escola: "Escola / hospital / órgão", outro: "Outro" };
-  var ORIGENS = { maps: "Google Maps", cnpj: "Lista de CNPJ", indicacao: "Indicação", visita: "Visita / passou na frente", site: "Site / Instagram", outro: "Outro" };
+  var ORIGENS = { mapa: "Mapa do app (OpenStreetMap)", maps: "Google Maps", cnpj: "Lista de CNPJ", indicacao: "Indicação", visita: "Visita / passou na frente", site: "Site / Instagram", outro: "Outro" };
   var DIAS_RETORNO = 7;
   var CHAVE_MSG = "age_msg_prospeccao";
 
@@ -54,7 +54,7 @@
     var ls = P.S.prosp, cont = function (f) { return ls.filter(f).length; };
     var contatados = cont(function (x) { return x.situacao !== "a_contatar"; }), fechou = cont(function (x) { return x.situacao === "fechou"; });
     var orc = cont(function (x) { return x.situacao === "orcamento" || x.situacao === "fechou"; }), ret = retornarHoje(P.S).length;
-    c.innerHTML = '<div class="cab-secao"><h2>🎯 Prospecção</h2><span><button class="prim" id="pr-novo">➕ Nova empresa</button> <button id="pr-maps">📍 Colar do Maps</button> <button id="pr-colar">📋 Colar lista</button> <button id="pr-msg">✏️ Mensagem</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>🎯 Prospecção</h2><span><button class="prim" id="pr-novo">➕ Nova empresa</button> <button id="pr-mapa">🗺️ Buscar no mapa</button> <button id="pr-maps">📍 Colar do Maps</button> <button id="pr-colar">📋 Colar lista</button> <button id="pr-msg">✏️ Mensagem</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Anote as empresas que você achar (Google Maps, lista de CNPJ, indicação). O WhatsApp abre com a mensagem pronta, <b>uma empresa por vez</b> — o app marca como contatado e lembra de retornar em ' + DIAS_RETORNO + " dias.</p>" +
       '<div class="grade">' +
       '<div class="ladrilho" style="border-left:4px solid var(--prim)"><div class="r">🆕 A contatar</div><div class="v">' + cont(function (x) { return x.situacao === "a_contatar"; }) + "</div></div>" +
@@ -75,6 +75,7 @@
     $("#pr-novo").onclick = function () { editar(null, mudou); };
     $("#pr-colar").onclick = function () { colar(mudou); };
     $("#pr-maps").onclick = function () { editar(null, mudou, true); };
+    $("#pr-mapa").onclick = function () { buscarMapa(mudou); };
     $("#pr-msg").onclick = function () { editarMsg(); };
     listar();
     function listar() {
@@ -101,11 +102,13 @@
           (x.obs ? '<div class="peq mudo">' + esc(x.obs) + "</div>" : "") +
           '<div class="acoes" style="margin-top:6px">' +
           (x.situacao !== "nao_quer" && dig(zap).length >= 10 ? '<button class="zap peq" data-pr-zap="' + x.id + '">💬 WhatsApp</button>' : "") +
+          (x.situacao !== "nao_quer" && /@/.test(x.email || "") ? '<button class="peq" data-pr-email="' + x.id + '">✉️ E-mail</button>' : "") +
           (x.situacao !== "nao_quer" && dig(x.telefone).length >= 10 ? '<a class="botao peq" href="tel:' + dig(x.telefone) + '" data-pr-tel="' + x.id + '">📞 ' + esc(x.telefone) + "</a>" : "") +
           '<select class="peq" data-pr-sit="' + x.id + '" aria-label="Situação">' + Object.keys(SIT).map(function (k) { return '<option value="' + k + '"' + (k === x.situacao ? " selected" : "") + ">" + SIT[k].ic + " " + SIT[k].nome + "</option>"; }).join("") + "</select>" +
           '<button class="peq" data-pr-nota="' + x.id + '">📝 Anotar</button><button class="peq" data-pr-ed="' + x.id + '">Editar</button></div></div>';
       }).join("") : '<div class="cartao vazio">' + (ls.length ? "Nenhuma empresa neste filtro." : "Nenhuma empresa ainda. Procure no Google Maps (ex.: “galpão logístico Contagem”) e toque em ➕ Nova empresa, ou cole uma lista em 📋 Colar lista.") + "</div>";
       $$("[data-pr-zap]", r).forEach(function (b2) { b2.onclick = function () { contatar(P.porId(ls, b2.dataset.prZap), "zap", mudou); }; });
+      $$("[data-pr-email]", r).forEach(function (b2) { b2.onclick = function () { contatar(P.porId(ls, b2.dataset.prEmail), "email", mudou); }; });
       $$("[data-pr-tel]", r).forEach(function (a) { a.addEventListener("click", function () { contatar(P.porId(ls, a.dataset.prTel), "tel", mudou); }); });
       $$("[data-pr-sit]", r).forEach(function (s2) { s2.onchange = function () { mudarSit(P.porId(ls, s2.dataset.prSit), s2.value, mudou); }; });
       $$("[data-pr-nota]", r).forEach(function (b2) { b2.onclick = function () { anotar(P.porId(ls, b2.dataset.prNota), mudou); }; });
@@ -122,9 +125,11 @@
   // WhatsApp / ligação: registra o contato e já marca o retorno
   function contatar(x, como, mudou) {
     if (como === "zap") A.abrirZap(A.linkZap(x.whatsapp || x.telefone, montarMsg(x)));
-    var up = { historico: hist(x, como === "zap" ? "💬 mensagem pelo WhatsApp" : "📞 ligação"), contatado_em: new Date().toISOString(), retorno_em: maisDias(DIAS_RETORNO) };
+    // e-mail: abre o seu programa de e-mail com a mensagem pronta; você confere e envia (um por vez)
+    if (como === "email") location.href = "mailto:" + encodeURIComponent(x.email.trim()) + "?subject=" + encodeURIComponent(((A.CFG.EMPRESA || {}).nome || "AGE") + " — pintura industrial, demarcação de piso e elétrica") + "&body=" + encodeURIComponent(montarMsg(x));
+    var up = { historico: hist(x, como === "zap" ? "💬 mensagem pelo WhatsApp" : como === "email" ? "✉️ e-mail" : "📞 ligação"), contatado_em: new Date().toISOString(), retorno_em: maisDias(DIAS_RETORNO) };
     if (x.situacao === "a_contatar") up.situacao = "contatado";
-    gravar(x, up).then(function () { A.avisar((como === "zap" ? "💬 " : "📞 ") + x.nome + ": contato anotado, retornar em " + DIAS_RETORNO + " dias", "ok"); mudou(); }).catch(P.falhou);
+    gravar(x, up).then(function () { A.avisar((como === "zap" ? "💬 " : como === "email" ? "✉️ " : "📞 ") + x.nome + ": contato anotado, retornar em " + DIAS_RETORNO + " dias", "ok"); mudou(); }).catch(P.falhou);
   }
   function mudarSit(x, sit, mudou) {
     var up = { situacao: sit, historico: hist(x, (SIT[sit] || {}).ic + " " + (SIT[sit] || {}).nome) };
@@ -262,6 +267,91 @@
       })).select()).then(function (ns) { (ns || []).forEach(function (n) { P.S.prosp.unshift(n); }); j.fechar(); A.avisar("🎯 " + (ns || []).length + " empresas adicionadas", "ok"); mudou(); })
         .catch(function (e) { A.ocupado(b, false); $("#pc-prev", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
     };
+  }
+
+  // ---------------- buscar empresas no mapa (OpenStreetMap: dados abertos) ----------------
+  // Mostra no mapa as empresas cadastradas no OpenStreetMap na área que você escolher, com o telefone, o e-mail e o site
+  // quando a própria empresa informou. Você marca quais entram na lista; o contato continua um por vez.
+  var CATS_MAPA = {
+    galpao: { nome: "Galpões / logística / transportadoras", tipo: "galpao", q: ['["building"="warehouse"]', '["industrial"~"warehouse|logistics|distributor"]', '["office"~"logistics|moving_company|courier"]', '["landuse"="industrial"]["name"~"[Ll]og[ií]stic|[Tt]ransport|[Aa]rmaz|CD "]'] },
+    industria: { nome: "Indústrias / fábricas", tipo: "industria", q: ['["man_made"="works"]', '["industrial"]', '["building"="industrial"]', '["landuse"="industrial"]'] },
+    veiculos: { nome: "Concessionárias e oficinas de caminhão / carro", tipo: "comercio", q: ['["shop"~"^(car|truck|car_repair|tyres|motorcycle)$"]'] },
+    supermercado: { nome: "Supermercados / atacados", tipo: "supermercado", q: ['["shop"~"^(supermarket|wholesale|hardware|doityourself)$"]'] },
+    escola: { nome: "Escolas / hospitais / clínicas", tipo: "escola", q: ['["amenity"~"^(school|college|university|hospital|clinic)$"]'] },
+    condominio: { nome: "Condomínios / shoppings / escritórios", tipo: "condominio", q: ['["building"~"^(apartments|commercial|office)$"]', '["shop"="mall"]', '["office"~"company|property_management"]'] }
+  };
+  function telDe(t) { return t["contact:phone"] || t.phone || t["contact:mobile"] || t.mobile || ""; }
+  function emailDe(t) { return t["contact:email"] || t.email || ""; }
+  function zapDe(t) { return t["contact:whatsapp"] || t.whatsapp || ""; }
+  function endDe(t) { return [[t["addr:street"], t["addr:housenumber"]].filter(Boolean).join(", "), t["addr:suburb"] || t["addr:neighbourhood"], t["addr:city"]].filter(Boolean).join(" - "); }
+  function buscarMapa(mudou) {
+    var j = A.janela('<div class="duas"><div><label for="bm-lugar">Cidade, bairro ou distrito</label><div class="linha"><input id="bm-lugar" placeholder="Ex.: Distrito Industrial Contagem" style="flex:1"><button id="bm-ir">Ir</button></div></div>' +
+      '<div><label for="bm-cat">O que procurar</label><select id="bm-cat">' + Object.keys(CATS_MAPA).map(function (k) { return '<option value="' + k + '">' + CATS_MAPA[k].nome + "</option>"; }).join("") + "</select></div></div>" +
+      '<div id="bm-mapa" style="height:340px;border-radius:8px;margin-top:8px;background:var(--borda)"></div>' +
+      '<div class="acoes"><button class="prim" id="bm-buscar">🔎 Buscar nesta área do mapa</button><label class="marca-linha peq" style="font-weight:400"><input type="checkbox" id="bm-so" checked> Só com telefone, WhatsApp ou e-mail</label></div>' +
+      '<div id="bm-st" class="peq"></div><div id="bm-res"></div>' +
+      '<p class="peq mudo">Dados abertos do OpenStreetMap: aparecem só as empresas cadastradas lá, e o telefone/e-mail só quando a empresa informou. Para achar mais, use também o 📍 Colar do Maps.</p>',
+      { titulo: "🗺️ Buscar empresas no mapa", larga: true, fixa: true });
+    var el = j.el, mapa = null, camada = null, achados = [];
+    P.carregarLeaflet().then(function (L) {
+      mapa = L.map($("#bm-mapa", el)).setView([-19.93, -44.03], 12);   // BH / Contagem
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(mapa);
+      camada = L.layerGroup().addTo(mapa);
+    }).catch(function (e) { $("#bm-st", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
+    function ir() {
+      var t = $("#bm-lugar", el).value.trim(); if (!t || !mapa) return;
+      $("#bm-st", el).textContent = "📍 Procurando " + t + "...";
+      fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR&q=" + encodeURIComponent(t + ", MG"))
+        .then(function (r) { return r.json(); }).then(function (l) {
+          if (!l || !l[0]) { $("#bm-st", el).textContent = "Lugar não encontrado. Tente o nome da cidade."; return; }
+          var b = l[0].boundingbox.map(Number);
+          mapa.fitBounds([[b[0], b[2]], [b[1], b[3]]]); if (mapa.getZoom() < 13) mapa.setZoom(13);
+          $("#bm-st", el).textContent = "";
+        }).catch(function () { $("#bm-st", el).textContent = "Sem internet para procurar o lugar."; });
+    }
+    $("#bm-ir", el).onclick = ir;
+    $("#bm-lugar", el).onkeydown = function (ev) { if (ev.key === "Enter") { ev.preventDefault(); ir(); } };
+    $("#bm-buscar", el).onclick = function () {
+      if (!mapa) return;
+      if (mapa.getZoom() < 12) { $("#bm-st", el).innerHTML = '<span class="selo atencao">Área muito grande: aproxime o mapa (zoom) antes de buscar.</span>'; return; }
+      var b = mapa.getBounds(), bb = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(function (n) { return n.toFixed(5); }).join(",");
+      var cat = CATS_MAPA[$("#bm-cat", el).value], bt = this;
+      var q = "[out:json][timeout:25];(" + cat.q.map(function (f) { return 'nwr["name"]' + f + "(" + bb + ");"; }).join("") + ");out center tags 300;";
+      A.ocupado(bt, true, "Buscando...");
+      fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" } })
+        .then(function (r) { if (!r.ok) throw new Error("O serviço do mapa está ocupado (" + r.status + "). Tente de novo em 1 minuto."); return r.json(); })
+        .then(function (d) {
+          A.ocupado(bt, false);
+          var vistos = {};
+          achados = (d.elements || []).map(function (e) {
+            var t = e.tags || {};
+            return { nome: String(t.name || "").slice(0, 160), telefone: telDe(t).split(";")[0].trim(), whatsapp: zapDe(t).split(";")[0].trim(), email: emailDe(t).split(";")[0].trim(),
+              endereco: endDe(t), bairro: t["addr:suburb"] || "", cidade: t["addr:city"] || "", site: t.website || t["contact:website"] || "", lat: e.lat || (e.center && e.center.lat), lng: e.lon || (e.center && e.center.lon), tipo: cat.tipo };
+          }).filter(function (x) { var k = semAcento(x.nome); if (!x.nome || vistos[k]) return false; vistos[k] = 1; return true; });
+          mostrar();
+        }).catch(function (e) { A.ocupado(bt, false); $("#bm-st", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
+    };
+    $("#bm-so", el).onchange = function () { mostrar(); };
+    function mostrar() {
+      var so = $("#bm-so", el).checked, ls = achados.filter(function (x) { return !so || x.telefone || x.whatsapp || x.email; });
+      if (camada) { camada.clearLayers(); ls.forEach(function (x) { if (x.lat) window.L.circleMarker([x.lat, x.lng], { radius: 7, color: "#1f4e8c", fillColor: "#f2c200", fillOpacity: .9, weight: 2 }).addTo(camada).bindTooltip(x.nome); }); }
+      $("#bm-st", el).innerHTML = "<b>" + achados.length + "</b> empresa(s) na área" + (so ? ", <b>" + ls.length + "</b> com contato" : "") + ".";
+      $("#bm-res", el).innerHTML = ls.length ? '<div class="tabela-caixa"><table><tbody>' + ls.map(function (x, i) {
+        var ja = repetido(x.nome, x.telefone || x.whatsapp, null);
+        return "<tr><td>" + (ja ? '<span class="selo">✓ já na lista</span>' : '<input type="checkbox" data-bm="' + i + '" checked aria-label="Adicionar">') + "</td><td><b>" + esc(x.nome) + "</b>" +
+          (x.endereco ? '<div class="peq mudo">' + esc(x.endereco) + "</div>" : "") + '</td><td class="peq">' + [x.telefone && "📞 " + esc(x.telefone), x.whatsapp && "💬 " + esc(x.whatsapp), x.email && "✉️ " + esc(x.email), x.site && "🌐 " + esc(x.site)].filter(Boolean).join("<br>") + "</td></tr>";
+      }).join("") + '</tbody></table></div><div class="acoes"><button class="prim" id="bm-add">➕ Adicionar as marcadas na prospecção</button></div>' : '<div class="cartao vazio">Nenhuma empresa com contato nesta área. Tente outra categoria, outra área ou desmarque “Só com telefone…”.</div>';
+      if ($("#bm-add", el)) $("#bm-add", el).onclick = function () {
+        var sel = $$("[data-bm]", el).filter(function (c) { return c.checked; }).map(function (c) { return ls[Number(c.dataset.bm)]; });
+        if (!sel.length) return;
+        var b2 = this, agora = new Date().toISOString(); A.ocupado(b2, true, "Adicionando...");
+        P.q(P.sb.from("prospects").insert(sel.map(function (x) {
+          return { nome: x.nome, tipo: x.tipo, origem: "mapa", telefone: x.telefone || null, whatsapp: x.whatsapp || null, email: x.email || null, endereco: x.endereco || null, bairro: x.bairro || null, cidade: x.cidade || null,
+            obs: x.site ? "Site: " + x.site : null, situacao: "a_contatar", historico: [{ em: agora, txt: "🆕 cadastrada (mapa)" }], atualizado_em: agora };
+        })).select()).then(function (ns) { (ns || []).forEach(function (n) { P.S.prosp.unshift(n); }); j.fechar(); A.avisar("🎯 " + (ns || []).length + " empresas adicionadas", "ok"); mudou(); })
+          .catch(function (e) { A.ocupado(b2, false); P.falhou(e); });
+      };
+    }
   }
 
   // aviso na tela Hoje
