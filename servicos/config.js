@@ -26,6 +26,7 @@ window.AGE_CONFIG = {
     cidade: "Ibirité - MG, 32421-250",
     // link para o cliente avaliar a AGE no Google (Perfil da Empresa → Pedir avaliações)
     avaliacao: "https://g.page/r/CXdHVPjUS_tXEBM/review",
+    site: "https://agemanutencaoeletrica.com.br/",   // site principal da AGE (Hostinger)
     maps: "https://maps.google.com/?cid=6339744278525527927",   // AGE no Google Maps (Perfil da Empresa)
     facebook: "https://www.facebook.com/share/1DjvBreye9/",   // página da AGE (aparece no site; coloque aqui também o Instagram e o Telegram quando criar)
     instagram: "",
