@@ -3357,7 +3357,7 @@
     if (S.semCand) return '<hr class="sep"><h3>👷 Candidatos do site</h3><div class="aviso peq">Para receber os cadastros do “Trabalhe com a gente” do site, rode no Supabase o <b>supabase.sql</b> atualizado (bloco “Candidatos”) e depois <code>notify pgrst, \'reload schema\';</code></div>';
     var ls = S.cand.filter(function (x) { return filtroCand === "todos" || (filtroCand === "abertos" ? x.situacao !== "descartado" && x.situacao !== "contratado" : x.situacao === filtroCand); });
     var novos = S.cand.filter(function (x) { return x.situacao === "novo"; }).length;
-    var link = new URL("../site/#trabalhe", location.href).href;
+    var link = sitePintura() + "#trabalhe";
     return '<hr class="sep"><div class="cab-secao"><h3 style="margin:0">👷 Candidatos do site' + (novos ? ' <span class="selo critico">' + novos + " novo" + (novos > 1 ? "s" : "") + "</span>" : "") + '</h3>' +
       '<span><button class="peq" id="cd-link">🔗 Copiar link da vaga</button> <button class="peq zap" id="cd-divulgar">📣 Divulgar a vaga</button></span></div>' +
       '<div class="filtros">' + [["abertos", "Em aberto"], ["novo", "🆕 Novos"], ["entrevista", "📅 Entrevista"], ["contratado", "✅ Contratados"], ["descartado", "🚫 Não serve"], ["todos", "Todos"]].map(function (f) {
@@ -3373,8 +3373,9 @@
       }).join("") : '<div class="cartao vazio peq">Nenhum candidato neste filtro. Divulgue o link da vaga (botão 📣) em grupos de WhatsApp e Facebook da sua região.</div>') +
       '<p class="mudo peq">Link do formulário: <a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(link) + "</a></p>";
   }
+  function sitePintura() { return (A.CFG.EMPRESA && A.CFG.EMPRESA.sitePintura) || new URL("../site/", location.href).href; }
   function ligarCandidatos(c) {
-    var link = new URL("../site/#trabalhe", location.href).href;
+    var link = sitePintura() + "#trabalhe";
     if ($("#cd-link", c)) $("#cd-link", c).onclick = function () { copiar(link); };
     if ($("#cd-divulgar", c)) $("#cd-divulgar", c).onclick = function () {
       A.compartilhar({ titulo: "Vaga AGE", texto: "👷 *A " + ((A.CFG.EMPRESA || {}).nome || "AGE") + " está contratando!*\n*Vagas temporárias, por obra* (diária ou empreitada pelo período do serviço) para pintor, ajudante de pintura, eletricista, ajudante e profissional de cadeirinha (acesso por corda / limpeza de vidros em altura) em BH e região.\n\nCadastre-se aqui: " + link });

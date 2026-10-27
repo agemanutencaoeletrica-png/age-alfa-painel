@@ -28,7 +28,7 @@
   function maisDias(n) { var d = new Date(); d.setDate(d.getDate() + n); return A.isoLocal(d); }
   function aberto(x) { return x.situacao !== "fechou" && x.situacao !== "nao_quer"; }
   function retornarHoje(S) { return (S.prosp || []).filter(function (x) { return aberto(x) && x.retorno_em && x.retorno_em <= hoje(); }); }
-  function linkSite() { try { return new URL("../site/", location.href).href; } catch (e) { return ""; } }
+  function linkSite() { var E = (window.AGE_CONFIG || {}).EMPRESA || {}; if (E.sitePintura) return E.sitePintura; try { return new URL("../site/", location.href).href; } catch (e) { return ""; } }
 
   // mensagem do 1º contato (você pode mudar e ela fica guardada neste aparelho)
   function msgPadrao() {
