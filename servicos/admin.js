@@ -2196,10 +2196,37 @@
       '<button id="eo2-imprimir">🖨 Imprimir</button>' + (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
       { titulo: M.numero ? "Orçamento nº " + String(M.numero).padStart(4, "0") : "Novo orçamento", larga: true, fixa: true });
     var el = j.el;
-    $("#eo2-cli", el).value = M.cliente || ""; $("#eo2-tel", el).value = M.telefone || ""; $("#eo2-email", el).value = M.email || ""; $("#eo2-end", el).value = M.endereco || "";
-    $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? A.numero(M.desconto) : "";
-    $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
-    $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
+    function preencher() {
+      $("#eo2-cli", el).value = M.cliente || ""; $("#eo2-tel", el).value = M.telefone || ""; $("#eo2-email", el).value = M.email || ""; $("#eo2-end", el).value = M.endereco || "";
+      $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? A.numero(M.desconto) : "";
+      $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
+      $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
+    }
+    preencher();
+
+    // rascunho no aparelho: o que foi digitado e ainda não foi salvo volta se a página recarregar, fechar ou cair a internet
+    var chaveRasc = "age_rascunho_orc_" + (M.id || "novo"), tRasc = null, rascPronto = false;
+    function temAlgo() {
+      return !!(M.cliente || M.telefone || M.endereco || M.itens.some(function (i) { return (i.descricao && i.descricao !== "Mão de obra") || Number(i.valor); }));
+    }
+    function guardarRasc() {
+      if (!rascPronto) return;
+      clearTimeout(tRasc);
+      tRasc = setTimeout(function () {
+        lerCampos();
+        // igual ao que está salvo: não há o que recuperar
+        if (assinatura() === salvoSig) { apagarRasc(); return; }
+        try { if (temAlgo()) localStorage.setItem(chaveRasc, JSON.stringify({ em: Date.now(), M: M })); } catch (e) { /* sem armazenamento */ }
+      }, 400);
+    }
+    function assinatura() {
+      return JSON.stringify([M.cliente, M.telefone, M.email, M.endereco, M.categoria, M.desconto, M.validade_dias, M.pagamento, M.prazo, M.observacoes, M.status,
+        M.itens.map(function (i) { return [i.tipo, i.descricao, Number(i.qtd) || 0, i.un, Number(i.valor) || 0]; })]);
+    }
+    var salvoSig = null;
+    function apagarRasc(k) { try { localStorage.removeItem(k || chaveRasc); } catch (e) { /* sem armazenamento */ } }
+    el.addEventListener("input", function () { guardarRasc(); });
+    el.addEventListener("change", function () { guardarRasc(); });
 
     function desenharItens() {
       $("#eo2-itens", el).innerHTML = M.itens.map(function (i, n) {
@@ -2255,7 +2282,7 @@
       M.pagamento = val(el, "#eo2-pag"); M.prazo = val(el, "#eo2-prazo"); M.observacoes = val(el, "#eo2-obs"); M.status = $("#eo2-st", el).value;
     }
     function totais() {
-      lerCampos();
+      lerCampos(); guardarRasc();
       M.itens.forEach(function (i, n) { var c = $('#eo2-itens .item-orc[data-i="' + n + '"] .i-sub', el); if (c) c.textContent = A.dinheiro((Number(i.qtd) || 0) * (Number(i.valor) || 0)); });
       var t = calcOrc(M);
       $("#eo2-totais", el).innerHTML = '<div class="linha"><span>Materiais</span><span class="dir">' + A.dinheiro(t.mat) + "</span></div>" +
@@ -2269,6 +2296,28 @@
     $("#eo2-mais-serv", el).onclick = function () { M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 }); desenharItens(); focarUltimo(); };
     function focarUltimo() { var x = $$(".i-desc", el); if (x.length) x[x.length - 1].focus(); }
     desenharItens();
+    if (M.id) { lerCampos(); salvoSig = assinatura(); }
+    rascPronto = true;
+    (function oferecerRasc() {
+      var r = null;
+      try { r = JSON.parse(localStorage.getItem(chaveRasc) || "null"); } catch (e) { r = null; }
+      if (!r || !r.M || Date.now() - r.em > 30 * 864e5) return;
+      if (M.id && r.em <= Date.parse(M.atualizado_em || M.criado_em || 0)) { apagarRasc(); return; }
+      var av = document.createElement("div");
+      av.className = "aviso"; av.id = "eo2-rasc";
+      av.innerHTML = "📝 Há um rascunho <b>não salvo</b> deste orçamento" + (r.M.cliente ? " (" + esc(r.M.cliente) + ")" : "") + ", de " +
+        esc(new Date(r.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })) + "." +
+        '<div class="acoes" style="margin-top:6px"><button class="prim peq" id="eo2-rasc-sim">↩ Recuperar</button><button class="peq" id="eo2-rasc-nao">Descartar</button></div>';
+      el.insertBefore(av, el.firstChild);
+      $("#eo2-rasc-sim", el).onclick = function () {
+        var id = M.id, numero = M.numero;
+        M = Object.assign(M, r.M, { id: id, numero: numero });
+        M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
+        if (!M.itens.length) M.itens.push({ tipo: "servico", descricao: "Mão de obra", qtd: 1, un: "serv", valor: 0 });
+        preencher(); listaPrecos(); desenharItens(); av.remove(); A.avisar("Rascunho recuperado. Clique em Salvar para guardar.", "ok");
+      };
+      $("#eo2-rasc-nao", el).onclick = function () { if (!window.confirm("Descartar o rascunho? O que não foi salvo será perdido.")) return; apagarRasc(); av.remove(); };
+    })();
 
     // itens novos com preço entram sozinhos na 💲 tabela de preços (e aparecem como sugestão nos próximos orçamentos);
     // os que já vieram de um orçamento ficam com o último preço usado; os da tabela base/ABRAPP não mudam
@@ -2306,8 +2355,11 @@
         trocar(S.orc, n);
         S.orc.sort(function (a, b) { return b.numero - a.numero; });
         M = Object.assign(M, n);
+        // salvo no servidor: o rascunho deste aparelho não é mais necessário
+        clearTimeout(tRasc); apagarRasc(); apagarRasc("age_rascunho_orc_novo"); chaveRasc = "age_rascunho_orc_" + n.id;
         aprenderItens(itens, M.categoria);
         desenharItens();
+        lerCampos(); salvoSig = assinatura();
         var titulo = el.closest(".modal").querySelector(".cab h2");
         titulo.textContent = "Orçamento nº " + String(n.numero).padStart(4, "0");
         if (location.hash.slice(1) === "orcamentos") rota();
