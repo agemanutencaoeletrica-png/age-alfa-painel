@@ -2182,7 +2182,7 @@
       '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><select id="eo2-cat"><option value="">—</option>' +
       Object.keys(CAT_ORC).map(function (k) { return '<option value="' + k + '">' + CAT_ORC[k] + "</option>"; }).join("") + "</select></div></div>" +
       '<h3 style="margin-top:14px">Itens</h3><div id="eo2-itens"></div><datalist id="eo2-dl-precos"></datalist>' +
-      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button><button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button></div>' +
+      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button><button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
       '<div class="cartao" style="margin-top:10px" id="eo2-totais"></div>' +
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
@@ -2229,6 +2229,19 @@
       });
       totais();
     }
+    // 🔠 descrição dos itens em maiúscula; tocar de novo volta ao texto de antes
+    var antesMaiusc = null;
+    function botaoMaiusc() { $("#eo2-maiusc", el).textContent = antesMaiusc ? "↩ Desfazer maiúsculas" : "🔠 MAIÚSCULAS"; }
+    $("#eo2-maiusc", el).onclick = function () {
+      if (antesMaiusc) {
+        M.itens.forEach(function (i, n) { if (antesMaiusc[n] !== undefined && i.descricao === String(antesMaiusc[n]).toLocaleUpperCase("pt-BR")) i.descricao = antesMaiusc[n]; });
+        antesMaiusc = null;
+      } else {
+        antesMaiusc = M.itens.map(function (i) { return i.descricao || ""; });
+        M.itens.forEach(function (i) { i.descricao = String(i.descricao || "").toLocaleUpperCase("pt-BR"); });
+      }
+      botaoMaiusc(); desenharItens();
+    };
     function listaPrecos() {
       if (!window.AGE_PRECOS) return;
       $("#eo2-dl-precos", el).innerHTML = window.AGE_PRECOS.paraOrcamento(S, $("#eo2-cat", el).value).map(function (x) {
