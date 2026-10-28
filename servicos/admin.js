@@ -2178,7 +2178,7 @@
   // busca por número, cliente, endereço ou qualquer item (sem ligar para acento e maiúscula)
   function orcBate(o, b) {
     if (!b) return true;
-    var txt = semAcento([String(o.numero).padStart(4, "0"), o.cliente, o.endereco, o.telefone, CAT_ORC[o.categoria] || ""].concat((o.itens || []).map(function (i) { return i.descricao; })).join(" "));
+    var txt = semAcento([String(o.numero).padStart(4, "0"), o.cliente, o.documento, soDig(o.documento), o.endereco, o.telefone, CAT_ORC[o.categoria] || ""].concat((o.itens || []).map(function (i) { return i.descricao; })).join(" "));
     return b.split(/\s+/).every(function (p) { return txt.indexOf(p) >= 0; });
   }
   function verOrcamentos(c) {
@@ -2227,6 +2227,25 @@
   // tipos de item: material (só quantidade para o cliente; o valor fica no app), mão de obra, e material + mão de obra
   var TIPOS_ITEM = { material: "Material", servico: "Mão de obra", ambos: "Material + mão de obra" };
   // orçamento antigo (antes das opções) continua como era: materiais com valor para o cliente
+  // CPF / CNPJ do cliente: confere os dígitos e formata
+  function soDig(t) { return String(t || "").replace(/\D/g, ""); }
+  function cpfValido(c) {
+    c = soDig(c); if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+    var dv = function (n) { var s = 0; for (var i = 0; i < n; i++) s += Number(c[i]) * (n + 1 - i); var r = (s * 10) % 11; return r === 10 ? 0 : r; };
+    return dv(9) === Number(c[9]) && dv(10) === Number(c[10]);
+  }
+  function cnpjValido(c) {
+    c = soDig(c); if (c.length !== 14 || /^(\d)\1+$/.test(c)) return false;
+    var dv = function (n) { var s = 0, p = n - 7; for (var i = 0; i < n; i++) { s += Number(c[i]) * p--; if (p < 2) p = 9; } var r = s % 11; return r < 2 ? 0 : 11 - r; };
+    return dv(12) === Number(c[12]) && dv(13) === Number(c[13]);
+  }
+  function fmtDoc(t) {
+    var d = soDig(t);
+    if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+    if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+    return String(t || "").trim();
+  }
+  function rotuloDoc(t) { var d = soDig(t); return d.length === 14 ? "CNPJ" : d.length === 11 ? "CPF" : "CPF/CNPJ"; }
   function matCliente(o) { return o.materiais_cliente !== false; }
   function valoresCliente(o) { return o.valores_cliente !== "total"; }
   function calcOrc(M) {
@@ -2254,6 +2273,8 @@
 
     var j = A.janela(
       '<label for="eo2-cli">Cliente *</label><input id="eo2-cli" maxlength="200">' +
+      '<label for="eo2-doc">CPF ou CNPJ do cliente</label><div class="linha"><input id="eo2-doc" inputmode="numeric" maxlength="20" placeholder="Só os números ou com pontos" style="flex:1">' +
+      '<button class="peq" id="eo2-doc-busca" title="Com CNPJ, busca a razão social e o endereço na Receita">🔎 Buscar CNPJ</button></div><div id="eo2-doc-msg" class="peq"></div>' +
       '<div class="duas"><div><label for="eo2-tel">WhatsApp do cliente</label><input id="eo2-tel" type="tel" maxlength="40"></div><div><label for="eo2-email">E-mail do cliente</label><input id="eo2-email" type="email" maxlength="200"></div></div>' +
       '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><select id="eo2-cat"><option value="">—</option>' +
       Object.keys(CAT_ORC).map(function (k) { return '<option value="' + k + '">' + CAT_ORC[k] + "</option>"; }).join("") + "</select></div></div>" +
@@ -2277,6 +2298,7 @@
       { titulo: M.numero ? "Orçamento nº " + String(M.numero).padStart(4, "0") : "Novo orçamento", larga: true, fixa: true });
     var el = j.el;
     function preencher() {
+      $("#eo2-doc", el).value = M.documento ? fmtDoc(M.documento) : "";
       $("#eo2-cli", el).value = M.cliente || ""; $("#eo2-tel", el).value = M.telefone || ""; $("#eo2-email", el).value = M.email || ""; $("#eo2-end", el).value = M.endereco || "";
       $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? A.numero(M.desconto) : "";
       $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
@@ -2322,12 +2344,39 @@
     }
     function mostrarAuto(t) { var x = $("#eo2-auto", el); if (x) x.textContent = t; }
     function assinatura() {
-      return JSON.stringify([M.cliente, M.telefone, M.email, M.endereco, M.categoria, M.desconto, M.validade_dias, M.pagamento, M.prazo, M.observacoes, M.status,
+      return JSON.stringify([M.documento, M.cliente, M.telefone, M.email, M.endereco, M.categoria, M.desconto, M.validade_dias, M.pagamento, M.prazo, M.observacoes, M.status,
         M.valores_cliente, M.materiais_cliente,
         M.itens.map(function (i) { return [i.tipo, i.descricao, Number(i.qtd) || 0, i.un, Number(i.valor) || 0, Number(i.valor_mat) || 0]; })]);
     }
     var salvoSig = null;
     function apagarRasc(k) { try { localStorage.removeItem(k || chaveRasc); } catch (e) { /* sem armazenamento */ } }
+    function conferirDoc(mostrarOk) {
+      var v = val(el, "#eo2-doc"), d = soDig(v), m = $("#eo2-doc-msg", el);
+      if (!d) { m.textContent = ""; return; }
+      var ok = d.length === 11 ? cpfValido(d) : d.length === 14 ? cnpjValido(d) : false;
+      if (ok) { $("#eo2-doc", el).value = fmtDoc(d); m.innerHTML = mostrarOk ? '<span style="color:var(--bom)">✔ ' + rotuloDoc(d) + " válido</span>" : ""; }
+      else m.innerHTML = '<span style="color:var(--critico)">⚠ ' + (d.length === 11 || d.length === 14 ? rotuloDoc(d) + " com dígito errado — confira os números." : "CPF tem 11 números e CNPJ tem 14.") + "</span>";
+    }
+    $("#eo2-doc", el).addEventListener("blur", function () { conferirDoc(true); });
+    $("#eo2-doc-busca", el).onclick = function () {
+      var d = soDig(val(el, "#eo2-doc")), b = this, m = $("#eo2-doc-msg", el);
+      if (d.length !== 14 || !cnpjValido(d)) { conferirDoc(); if (d.length !== 14) m.innerHTML = '<span style="color:var(--critico)">A busca é só para CNPJ (14 números).</span>'; return; }
+      if (!window.AGE_FORN) return;
+      A.ocupado(b, true, "Buscando...");
+      window.AGE_FORN.consultar(d).then(function (r) {
+        A.ocupado(b, false);
+        if (!r) { m.innerHTML = '<span style="color:var(--atencao)">Não achei esse CNPJ agora (sem internet ou fora do ar). Preencha à mão.</span>'; return; }
+        // só preenche o que está vazio; o que você já escreveu fica
+        var feitos = [];
+        if (!val(el, "#eo2-cli")) { $("#eo2-cli", el).value = r.razao_social; feitos.push("cliente"); }
+        var end = [r.endereco, r.bairro, r.cidade && r.uf ? r.cidade + "/" + r.uf : r.cidade, r.cep].filter(Boolean).join(" - ");
+        if (!val(el, "#eo2-end") && end) { $("#eo2-end", el).value = end; feitos.push("endereço"); }
+        if (!val(el, "#eo2-email") && r.email) { $("#eo2-email", el).value = r.email; feitos.push("e-mail"); }
+        if (!val(el, "#eo2-tel") && (r.whatsapp || r.telefone)) { $("#eo2-tel", el).value = r.whatsapp || r.telefone; feitos.push("telefone"); }
+        m.innerHTML = '<span style="color:var(--bom)">✔ ' + esc(r.razao_social) + (feitos.length ? " — preenchi: " + feitos.join(", ") : " — os campos já estavam preenchidos") + "</span>";
+        totais();
+      });
+    };
     el.addEventListener("input", function () { guardarRasc(); });
     el.addEventListener("change", function () { guardarRasc(); });
 
@@ -2400,6 +2449,7 @@
       }).join("");
     }
     function lerCampos() {
+      M.documento = soDig(val(el, "#eo2-doc")) ? fmtDoc(val(el, "#eo2-doc")) : "";
       M.cliente = val(el, "#eo2-cli"); M.telefone = val(el, "#eo2-tel"); M.email = val(el, "#eo2-email"); M.endereco = val(el, "#eo2-end"); M.categoria = $("#eo2-cat", el).value;
       M.desconto = A.lerNumero($("#eo2-desc", el).value); M.validade_dias = Math.max(1, parseInt($("#eo2-val", el).value, 10) || 15);
       M.pagamento = val(el, "#eo2-pag"); M.prazo = val(el, "#eo2-prazo"); M.observacoes = val(el, "#eo2-obs"); M.status = $("#eo2-st", el).value;
@@ -2487,19 +2537,23 @@
         if (i.tipo === "ambos") x.valor_mat = Math.round((Number(i.valor_mat) || 0) * 100) / 100;
         return x;
       });
-      var dados = { obra_id: M.obra_id, relatorio_id: M.relatorio_id, cliente: M.cliente, telefone: nulo(M.telefone), email: nulo(M.email), endereco: nulo(M.endereco), categoria: nulo(M.categoria),
+      var dados = { obra_id: M.obra_id, relatorio_id: M.relatorio_id, cliente: M.cliente, documento: nulo(M.documento), telefone: nulo(M.telefone), email: nulo(M.email), endereco: nulo(M.endereco), categoria: nulo(M.categoria),
         itens: itens, desconto: Math.round((M.desconto || 0) * 100) / 100, total: calcOrc({ itens: itens, desconto: M.desconto, materiais_cliente: M.materiais_cliente }).total,
         pagamento: nulo(M.pagamento), prazo: nulo(M.prazo), validade_dias: M.validade_dias, observacoes: nulo(M.observacoes), status: M.status };
       if (!S.semOpcOrc) { dados.valores_cliente = M.valores_cliente; dados.materiais_cliente = !!M.materiais_cliente; }
+      if (S.semDocOrc) delete dados.documento;
       function gravar(d) { return q(M.id ? sb.from("orcamentos").update(d).eq("id", M.id).select().single() : sb.from("orcamentos").insert(d).select().single()); }
       return gravar(dados).catch(function (e) {
         // banco ainda sem as colunas novas: grava sem elas e avisa uma vez para rodar o SQL
-        if (S.semOpcOrc || !/valores_cliente|materiais_cliente/.test(A.msgErro(e) + " " + (e && e.message))) throw e;
-        S.semOpcOrc = true; delete dados.valores_cliente; delete dados.materiais_cliente;
+        var msg = A.msgErro(e) + " " + (e && e.message), opc = /valores_cliente|materiais_cliente/.test(msg), doc = /documento/.test(msg);
+        if ((!opc || S.semOpcOrc) && (!doc || S.semDocOrc)) throw e;
+        if (opc) { S.semOpcOrc = true; delete dados.valores_cliente; delete dados.materiais_cliente; }
+        if (doc) { S.semDocOrc = true; delete dados.documento; }
         A.avisar("Para guardar as opções do que vai ao cliente, rode o supabase.sql no Supabase (colunas novas do orçamento).", "erro");
         return gravar(dados);
       }).then(function (n) {
         if (S.semOpcOrc) { n.valores_cliente = M.valores_cliente; n.materiais_cliente = !!M.materiais_cliente; }
+        if (S.semDocOrc) n.documento = M.documento;
         trocar(S.orc, n);
         S.orc.sort(function (a, b) { return b.numero - a.numero; });
         var titulo = el.closest(".modal").querySelector(".cab h2");
@@ -2595,7 +2649,7 @@
   function textoOrcamento(o, semNegrito) {
     var E = A.CFG.EMPRESA || {};
     var t = "Olá, " + o.cliente.split(" ")[0] + "! Segue o orçamento solicitado.\n\n*" + (E.nome || "AGE Elétrica e Pintura") + "*\nOrçamento nº " +
-      String(o.numero).padStart(4, "0") + " — " + A.data(o.criado_em) + "\n\nCliente: " + o.cliente + "\n";
+      String(o.numero).padStart(4, "0") + " — " + A.data(o.criado_em) + "\n\nCliente: " + o.cliente + "\n" + (o.documento ? rotuloDoc(o.documento) + ": " + fmtDoc(o.documento) + "\n" : "");
     if (o.endereco) t += "Local: " + o.endereco + "\n";
     t += "\n";
     var tc = calcOrc(o);
@@ -2694,7 +2748,7 @@
       doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.8); doc.line(L, y, R, y); y += 6;
 
       // cliente
-      var cli = [["Cliente: ", o.cliente], ["WhatsApp: ", o.telefone], ["E-mail: ", o.email], ["Local: ", o.endereco], ["Serviço: ", CAT_ORC[o.categoria] || o.categoria]]
+      var cli = [["Cliente: ", o.cliente], [rotuloDoc(o.documento) + ": ", o.documento ? fmtDoc(o.documento) : ""], ["WhatsApp: ", o.telefone], ["E-mail: ", o.email], ["Local: ", o.endereco], ["Serviço: ", CAT_ORC[o.categoria] || o.categoria]]
         .filter(function (c) { return c[1]; });
       var linhasCli = cli.map(function (c) { return { r: c[0], v: doc.splitTextToSize(tx(c[1]), 150) }; });
       var altCli = linhasCli.reduce(function (s2, c) { return s2 + c.v.length * 5; }, 0) + 5;
@@ -2791,7 +2845,7 @@
       '<div class="cab"><div class="emp"><b>' + esc(E.nome || "AGE Elétrica e Pintura") + "</b><br>" +
       [E.documento, E.telefone, E.email, E.endereco, E.cidade].filter(Boolean).map(esc).join("<br>") + "</div>" +
       '<div class="num"><b>ORÇAMENTO Nº ' + String(o.numero).padStart(4, "0") + "</b><br>Data: " + A.data(o.criado_em) + "<br>Válido até: " + A.data(validade) + "</div></div>" +
-      '<div class="cli"><b>Cliente:</b> ' + esc(o.cliente) + (o.telefone ? " · " + esc(o.telefone) : "") + (o.email ? " · " + esc(o.email) : "") + (o.endereco ? "<br><b>Local:</b> " + esc(o.endereco) : "") +
+      '<div class="cli"><b>Cliente:</b> ' + esc(o.cliente) + (o.documento ? " · <b>" + rotuloDoc(o.documento) + ":</b> " + esc(fmtDoc(o.documento)) : "") + (o.telefone ? " · " + esc(o.telefone) : "") + (o.email ? " · " + esc(o.email) : "") + (o.endereco ? "<br><b>Local:</b> " + esc(o.endereco) : "") +
       (o.categoria ? "<br><b>Serviço:</b> " + esc(CAT_ORC[o.categoria] || o.categoria) : "") + "</div>" +
       gruposCliente(o).map(bloco).join("") +
       '<div class="tot">' + (t.mc && t.mat ? "<div><span>Materiais</span><span>" + A.dinheiro(t.mat) + "</span></div>" : "") +

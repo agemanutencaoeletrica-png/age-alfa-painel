@@ -132,6 +132,7 @@ alter table public.orcamentos add column if not exists email text;
 alter table public.orcamentos add column if not exists valores_cliente text not null default 'itens';
 alter table public.orcamentos add column if not exists materiais_cliente boolean not null default true;
 alter table public.orcamentos alter column materiais_cliente set default false;
+alter table public.orcamentos add column if not exists documento text;          -- CPF ou CNPJ do cliente
 alter table public.obras      add column if not exists loja_id uuid references public.lojas (id) on delete set null;
 alter table public.servicos   add column if not exists criado_pelo_funcionario boolean not null default false;
 -- assinatura do responsável no local (gerente da loja / cliente) ao concluir
