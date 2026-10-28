@@ -40,6 +40,11 @@
       ["Instalação de exaustor", "un", null], ["Ponto elétrico para ar-condicionado", "un", null], ["Instalação de campainha / interfone", "un", null],
       ["Ligação de motor / portão automático", "un", null]
     ]),
+    grupo("Câmeras e CFTV", [
+      ["Instalação de câmera (CFTV)", "un", null], ["Instalação de câmera IP / Wi-Fi", "un", null], ["Instalação de DVR / NVR", "un", null],
+      ["Configuração de acesso pelo celular (app)", "serv", null], ["Passagem de cabo para câmera", "m", null], ["Instalação de fonte / nobreak do CFTV", "un", null],
+      ["Manutenção / troca de câmera", "un", null], ["Ajuste de posição e foco das câmeras", "serv", null], ["Projeto / visita técnica de CFTV", "serv", null]
+    ]),
     grupo("Entrada e aterramento", [
       ["Padrão de entrada monofásico", "un", null], ["Padrão de entrada bifásico", "un", null], ["Padrão de entrada trifásico", "un", null],
       ["Aterramento com haste", "un", null]

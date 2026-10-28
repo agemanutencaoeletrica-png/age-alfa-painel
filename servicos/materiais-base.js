@@ -107,9 +107,22 @@
     ]),
     grupo("Equipamentos e pontos", [
       ["Chuveiro elétrico 220 V", "un"], ["Resistência para chuveiro", "un"], ["Ventilador de teto", "un"], ["Exaustor", "un"], ["Campainha", "un"],
-      ["Interfone / porteiro eletrônico", "un"], ["Fechadura elétrica", "un"], ["Câmera de segurança (CFTV)", "un"], ["Gravador DVR/NVR", "un"],
-      ["Fonte 12 V para CFTV", "un"], ["Conector BNC / P4", "un"], ["Rack / patch panel", "un"], ["Switch de rede", "un"],
+      ["Interfone / porteiro eletrônico", "un"], ["Fechadura elétrica", "un"], ["Rack / patch panel", "un"], ["Switch de rede", "un"],
       ["Motor de portão", "un"], ["Bomba d'água (ligação elétrica)", "un"], ["Automático de boia", "un"]
+    ]),
+    grupo("Câmeras e CFTV", [
+      ["Câmera bullet HD 1080p (analógica HDCVI/AHD)", "un"], ["Câmera dome HD 1080p (analógica HDCVI/AHD)", "un"], ["Câmera bullet IP 2 MP PoE", "un"],
+      ["Câmera dome IP 2 MP PoE", "un"], ["Câmera IP 4 MP PoE", "un"], ["Câmera IP 8 MP (4K) PoE", "un"], ["Câmera full color / visão noturna colorida", "un"],
+      ["Câmera speed dome PTZ", "un"], ["Câmera Wi-Fi (interna)", "un"], ["Câmera Wi-Fi (externa)", "un"], ["Câmera com áudio / microfone", "un"],
+      ["DVR 4 canais", "un"], ["DVR 8 canais", "un"], ["DVR 16 canais", "un"], ["NVR 4 canais PoE", "un"], ["NVR 8 canais PoE", "un"], ["NVR 16 canais", "un"],
+      ["HD para CFTV 1 TB (Purple / SkyHawk)", "un"], ["HD para CFTV 2 TB", "un"], ["HD para CFTV 4 TB", "un"], ["Cartão de memória microSD 64/128 GB", "un"],
+      ["Fonte colmeia 12 V 10 A", "un"], ["Fonte colmeia 12 V 20 A", "un"], ["Fonte 12 V 1 A individual", "un"], ["Nobreak para DVR/NVR", "un"],
+      ["Switch PoE 4 portas", "un"], ["Switch PoE 8 portas", "un"], ["Switch PoE 16 portas", "un"], ["Injetor PoE", "un"],
+      ["Balun (conversor) passivo HD", "par"], ["Conector BNC de mola / crimpar", "un"], ["Conector P4 macho / fêmea", "un"], ["Conector RJ45 Cat5e/Cat6", "cento"],
+      ["Cabo coaxial bipolar 4 mm (CFTV)", "m"], ["Cabo coaxial bipolar 4 mm (rolo 100 m)", "rolo"], ["Cabo UTP Cat5e externo (CFTV)", "m"], ["Cabo UTP Cat6 externo", "m"],
+      ["Caixa de passagem para câmera (CFTV)", "un"], ["Suporte para câmera bullet", "un"], ["Suporte para câmera dome (poste/parede)", "un"],
+      ["Suporte / abraçadeira de poste para câmera", "un"], ["Rack de parede 5U / 8U", "un"], ["Monitor para CFTV 19 a 21 pol.", "un"], ["Cabo HDMI", "un"],
+      ["Mouse / cabo de rede para DVR", "un"], ["Placa de aviso \"Área monitorada\"", "un"], ["Antena / roteador Wi-Fi", "un"]
     ])
   );
 
