@@ -2615,7 +2615,8 @@
     if (o.prazo) t += "Prazo: " + o.prazo + "\n";
     t += "Validade: " + o.validade_dias + " dias";
     if (o.observacoes) t += "\n\n" + o.observacoes;
-    if (E.telefone) t += "\n\nDúvidas: " + E.telefone;
+    if (E.fraseOrcamento) t += "\n\n" + E.fraseOrcamento + (E.telefone ? "\n📲 " + E.telefone : "");
+    else if (E.telefone) t += "\n\nDúvidas: " + E.telefone;
     return semNegrito ? t.replace(/\*/g, "") : t;
   }
 
@@ -2743,6 +2744,11 @@
         fonte("normal", 10); doc.text(linhas, L, y); y += linhas.length * 4.6 + 3;
       });
 
+      // frase de atendimento
+      if (E.fraseOrcamento) {
+        var fr = doc.splitTextToSize(tx(E.fraseOrcamento + (E.telefone ? "  WhatsApp: " + E.telefone : "")), R - L);
+        espaco(6 + fr.length * 5); fonte("bold", 10.5); azul(); doc.text(fr, 105, y, { align: "center" }); y += fr.length * 5 + 2; preto();
+      }
       // assinaturas
       if (espaco(30)) y += 10; else y += 18;
       doc.setDrawColor(60); doc.setLineWidth(0.3);
@@ -2794,6 +2800,7 @@
       '<div class="g"><span>Total</span><span>' + A.dinheiro(t.total) + "</span></div></div>" +
       '<div class="cond">' + (o.pagamento ? "<p><b>Forma de pagamento:</b> " + esc(o.pagamento) + "</p>" : "") + (o.prazo ? "<p><b>Prazo de execução:</b> " + esc(o.prazo) + "</p>" : "") +
       (o.observacoes ? '<p><b>Observações:</b><br><span style="white-space:pre-wrap">' + esc(o.observacoes) + "</span></p>" : "") + "</div>" +
+      (E.fraseOrcamento ? '<p style="text-align:center;font-weight:bold;color:#14325c;margin-top:18px">' + esc(E.fraseOrcamento) + (E.telefone ? " · WhatsApp: " + esc(E.telefone) : "") + "</p>" : "") +
       '<div class="ass"><div>' + esc(E.nome || "AGE Elétrica e Pintura") + "</div><div>Cliente — de acordo</div></div>" +
       "<script>setTimeout(function(){window.print()},400)<\/script></body></html>";
     w.document.open();
