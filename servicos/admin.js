@@ -18,7 +18,7 @@
     bifasica: "bifásica", bifasico: "bifásico", trifasica: "trifásica", trifasico: "trifásico", monofasica: "monofásica", monofasico: "monofásico",
     distribuicao: "distribuição", distribicao: "distribuição", distribiçao: "distribuição", distribição: "distribuição", distribuiçao: "distribuição",
     instalacao: "instalação", instalaçao: "instalação", istalacao: "instalação", istalação: "instalação", istalarção: "instalação", instalarção: "instalação",
-    instalacoes: "instalações", istalar: "instalar", instalacão: "instalação", lancar: "lançar", lancamento: "lançamento", manutencao: "manutenção", manutençao: "manutenção", iluminacao: "iluminação", iluminaçao: "iluminação",
+    instalacoes: "instalações", istalar: "instalar", adequarçao: "adequação", adequarção: "adequação", adequaçao: "adequação", adequacao: "adequação", espostos: "expostos", esposto: "exposto", espostas: "expostas", indentificar: "identificar", indentificacao: "identificação", identificacao: "identificação", vistoria: "vistoria", instalacão: "instalação", lancar: "lançar", lancamento: "lançamento", manutencao: "manutenção", manutençao: "manutenção", iluminacao: "iluminação", iluminaçao: "iluminação",
     fixacao: "fixação", fixaçao: "fixação", fixaçar: "fixar", conexao: "conexão", conexoes: "conexões", extensao: "extensão", tensao: "tensão",
     potencia: "potência", saida: "saída", saidas: "saídas", padrao: "padrão", medicao: "medição", protecao: "proteção", ligacao: "ligação", ligacoes: "ligações",
     alimentacao: "alimentação", substituicao: "substituição", substituiçao: "substituição", adequacao: "adequação", revisao: "revisão",
@@ -2246,6 +2246,8 @@
     return String(t || "").trim();
   }
   function rotuloDoc(t) { var d = soDig(t); return d.length === 14 ? "CNPJ" : d.length === 11 ? "CPF" : "CPF/CNPJ"; }
+  // valores em reais sempre com 2 casas (ex.: 100,00)
+  function reais2(v) { return Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function matCliente(o) { return o.materiais_cliente !== false; }
   function valoresCliente(o) { return o.valores_cliente !== "total"; }
   function calcOrc(M) {
@@ -2300,7 +2302,7 @@
     function preencher() {
       $("#eo2-doc", el).value = M.documento ? fmtDoc(M.documento) : "";
       $("#eo2-cli", el).value = M.cliente || ""; $("#eo2-tel", el).value = M.telefone || ""; $("#eo2-email", el).value = M.email || ""; $("#eo2-end", el).value = M.endereco || "";
-      $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? A.numero(M.desconto) : "";
+      $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? reais2(M.desconto) : "";
       $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
       $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
       $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente;
@@ -2396,8 +2398,13 @@
       $$("#eo2-itens .item-orc", el).forEach(function (tr) {
         var i = M.itens[Number(tr.dataset.i)];
         $(".i-tipo", tr).value = i.tipo; $(".i-desc", tr).value = i.descricao; $(".i-qtd", tr).value = A.numero(i.qtd, 3);
-        $(".i-un", tr).value = i.un; $(".i-valor", tr).value = i.valor ? A.numero(i.valor) : "";
-        if ($(".i-vmat", tr)) $(".i-vmat", tr).value = i.valor_mat ? A.numero(i.valor_mat) : "";
+        $(".i-un", tr).value = i.un; $(".i-valor", tr).value = i.valor ? reais2(i.valor) : "";
+        if ($(".i-vmat", tr)) $(".i-vmat", tr).value = i.valor_mat ? reais2(i.valor_mat) : "";
+        // ao sair do campo de valor, formata com 2 casas (10 → 10,00)
+        [".i-valor", ".i-vmat"].forEach(function (k) {
+          var x = $(k, tr); if (!x) return;
+          x.addEventListener("blur", function () { if (/[A-Za-zÀ-ÿ]/.test(x.value) || !String(x.value).trim()) return; var v = A.lerNumero(x.value); x.value = v ? reais2(v) : ""; });
+        });
         tr.oninput = tr.onchange = function (ev) {
           var tipoAntes = i.tipo;
           i.tipo = $(".i-tipo", tr).value; i.descricao = $(".i-desc", tr).value; i.qtd = A.lerNumero($(".i-qtd", tr).value);
@@ -2469,6 +2476,7 @@
         (!t.mc && t.mat ? '<div class="linha mudo peq"><span>Custo total com os materiais (só no app)</span><span class="dir">' + A.dinheiro(t.custo) + "</span></div>" : "");
     }
     $("#eo2-desc", el).oninput = totais;
+    $("#eo2-desc", el).addEventListener("blur", function () { var v = A.lerNumero(this.value); this.value = v ? reais2(v) : ""; });
     $("#eo2-cat", el).addEventListener("change", listaPrecos); listaPrecos();
     $("#eo2-mais-mat", el).onclick = function () { M.itens.push({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }); desenharItens(); focarUltimo(); };
     $("#eo2-mais-serv", el).onclick = function () { M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 }); desenharItens(); focarUltimo(); };
