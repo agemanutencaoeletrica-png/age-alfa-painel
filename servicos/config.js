@@ -30,6 +30,6 @@ window.AGE_CONFIG = {
     maps: "https://maps.google.com/?cid=6339744278525527927",   // AGE no Google Maps (Perfil da Empresa)
     facebook: "https://www.facebook.com/share/1DjvBreye9/",   // página da AGE (aparece no site; coloque aqui também o Instagram e o Telegram quando criar)
     instagram: "https://www.instagram.com/ageeletricaepintura/",
-    telegram: ""
+    telegram: "https://t.me/ageeletricaepintura"
   }
 };
