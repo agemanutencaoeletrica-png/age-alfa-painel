@@ -2284,8 +2284,9 @@
         gravando = true; mostrarAuto("💾 Salvando...");
         salvar(true).then(function () {
           mostrarAuto("✅ Salvo automaticamente às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
-        }).catch(function () {
-          mostrarAuto("⚠ Sem conexão: o rascunho está guardado neste aparelho. Tento de novo na próxima alteração.");
+        }).catch(function (e) {
+          // mostra o motivo real (sem internet, sessão vencida, banco...) para não parecer salvo quando não está
+          mostrarAuto("⚠ Não salvou no servidor: " + A.msgErro(e) + " — o rascunho está guardado neste aparelho; tento de novo na próxima alteração.");
         }).then(function () { gravando = false; if (deNovo) { deNovo = false; agendarAuto(); } });
       }, 2000);
     }
@@ -2496,7 +2497,8 @@
     }
     $("#eo2-salvar", el).onclick = function () {
       var b = this; A.ocupado(b, true, "Salvando...");
-      salvar().then(function () { A.ocupado(b, false); A.avisar("Orçamento salvo", "ok"); }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+      salvar().then(function (n) { A.ocupado(b, false); A.avisar("Orçamento nº " + String(n.numero).padStart(4, "0") + " salvo", "ok"); mostrarAuto("✅ Salvo às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })); })
+        .catch(function (e) { A.ocupado(b, false); falhou(e); mostrarAuto("⚠ Não salvou: " + A.msgErro(e)); });
     };
     $("#eo2-imprimir", el).onclick = function () {
       var w = window.open("", "_blank");
