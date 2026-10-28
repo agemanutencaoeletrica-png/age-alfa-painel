@@ -18,7 +18,7 @@
     bifasica: "bifásica", bifasico: "bifásico", trifasica: "trifásica", trifasico: "trifásico", monofasica: "monofásica", monofasico: "monofásico",
     distribuicao: "distribuição", distribicao: "distribuição", distribiçao: "distribuição", distribição: "distribuição", distribuiçao: "distribuição",
     instalacao: "instalação", instalaçao: "instalação", istalacao: "instalação", istalação: "instalação", istalarção: "instalação", instalarção: "instalação",
-    instalacoes: "instalações", manutencao: "manutenção", manutençao: "manutenção", iluminacao: "iluminação", iluminaçao: "iluminação",
+    instalacoes: "instalações", istalar: "instalar", instalacão: "instalação", lancar: "lançar", lancamento: "lançamento", manutencao: "manutenção", manutençao: "manutenção", iluminacao: "iluminação", iluminaçao: "iluminação",
     fixacao: "fixação", fixaçao: "fixação", fixaçar: "fixar", conexao: "conexão", conexoes: "conexões", extensao: "extensão", tensao: "tensão",
     potencia: "potência", saida: "saída", saidas: "saídas", padrao: "padrão", medicao: "medição", protecao: "proteção", ligacao: "ligação", ligacoes: "ligações",
     alimentacao: "alimentação", substituicao: "substituição", substituiçao: "substituição", adequacao: "adequação", revisao: "revisão",
@@ -2221,6 +2221,7 @@
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
       '<label for="eo2-obs">Observações</label><textarea id="eo2-obs" rows="3"></textarea>' +
       '<label for="eo2-st">Situação</label><select id="eo2-st">' + Object.keys(STATUS_ORC).map(function (k) { return '<option value="' + k + '">' + STATUS_ORC[k] + "</option>"; }).join("") + "</select>" +
+      '<p class="mudo peq" id="eo2-auto" style="margin:8px 0 0">💾 O orçamento salva sozinho enquanto você digita (com o cliente preenchido).</p>' +
       '<div class="acoes"><button class="prim" id="eo2-salvar">Salvar</button>' +
       (podeCompartilharArquivo() ? '<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>' : "") +
       '<button id="eo2-pdf">📄 Baixar PDF</button></div>' +
@@ -2249,8 +2250,28 @@
         // igual ao que está salvo: não há o que recuperar
         if (assinatura() === salvoSig) { apagarRasc(); return; }
         try { if (temAlgo()) localStorage.setItem(chaveRasc, JSON.stringify({ em: Date.now(), M: M })); } catch (e) { /* sem armazenamento */ }
+        agendarAuto();
       }, 400);
     }
+    // gravação automática no servidor (com o cliente preenchido): ao reabrir, em qualquer aparelho, já vem tudo atualizado
+    var tAuto = null, gravando = false, deNovo = false;
+    function agendarAuto() {
+      clearTimeout(tAuto);
+      if (!M.cliente) return;
+      tAuto = setTimeout(function () {
+        if (!document.body.contains(el)) return;
+        if (gravando) { deNovo = true; return; }
+        lerCampos();
+        if (assinatura() === salvoSig) return;
+        gravando = true; mostrarAuto("💾 Salvando...");
+        salvar(true).then(function () {
+          mostrarAuto("✅ Salvo automaticamente às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
+        }).catch(function () {
+          mostrarAuto("⚠ Sem conexão: o rascunho está guardado neste aparelho. Tento de novo na próxima alteração.");
+        }).then(function () { gravando = false; if (deNovo) { deNovo = false; agendarAuto(); } });
+      }, 2000);
+    }
+    function mostrarAuto(t) { var x = $("#eo2-auto", el); if (x) x.textContent = t; }
     function assinatura() {
       return JSON.stringify([M.cliente, M.telefone, M.email, M.endereco, M.categoria, M.desconto, M.validade_dias, M.pagamento, M.prazo, M.observacoes, M.status,
         M.itens.map(function (i) { return [i.tipo, i.descricao, Number(i.qtd) || 0, i.un, Number(i.valor) || 0]; })]);
@@ -2381,9 +2402,15 @@
         if (novos.length) A.avisar(novos.length + " item(ns) novo(s) guardado(s) na 💲 tabela de preços", "ok");
       }).catch(function () { /* o orçamento já foi salvo; a tabela tenta de novo no próximo salvamento */ });
     }
-    function salvar() {
+    function salvar(auto) {
       lerCampos();
       if (!M.cliente) return Promise.reject(new Error("Informe o cliente."));
+      if (!auto) {
+        // ao salvar pelo botão, o corretor passa em todos os itens (inclusive os escritos antes dele existir)
+        var corr = [];
+        M.itens.forEach(function (i) { var r = corrigirTexto(i.descricao); if (r.feitas.length) { i.descricao = r.texto; corr = corr.concat(r.feitas); } });
+        if (corr.length) A.avisar("✍ Corrigido: " + corr.join(", "), "ok");
+      }
       var itens = M.itens.filter(function (i) { return i.descricao.trim(); }).map(function (i) {
         return { tipo: i.tipo, descricao: i.descricao.trim(), qtd: Number(i.qtd) || 0, un: i.un, valor: Math.round((Number(i.valor) || 0) * 100) / 100 };
       });
@@ -2394,13 +2421,28 @@
       return q(p).then(function (n) {
         trocar(S.orc, n);
         S.orc.sort(function (a, b) { return b.numero - a.numero; });
+        var titulo = el.closest(".modal").querySelector(".cab h2");
+        if (auto) {
+          // gravação automática: não redesenha a tela (quem está digitando não perde o campo)
+          M.id = n.id; M.numero = n.numero; M.criado_em = n.criado_em; M.atualizado_em = n.atualizado_em;
+          apagarRasc(); apagarRasc("age_rascunho_orc_novo"); chaveRasc = "age_rascunho_orc_" + n.id;
+          // aprende só os itens que não estão sendo digitados agora
+          var ativo = document.activeElement && document.activeElement.closest ? document.activeElement.closest(".item-orc") : null;
+          var ai = ativo ? Number(ativo.dataset.i) : -1;
+          aprenderItens(M.itens.filter(function (y, k) { return k !== ai && String(y.descricao || "").trim(); }).map(function (y) {
+            return { tipo: y.tipo, descricao: y.descricao.trim(), un: y.un, valor: Math.round((Number(y.valor) || 0) * 100) / 100 };
+          }), M.categoria);
+          salvoSig = assinatura();
+          titulo.textContent = "Orçamento nº " + String(n.numero).padStart(4, "0");
+          if (location.hash.slice(1) === "orcamentos") rota();
+          return n;
+        }
         M = Object.assign(M, n);
         // salvo no servidor: o rascunho deste aparelho não é mais necessário
         clearTimeout(tRasc); apagarRasc(); apagarRasc("age_rascunho_orc_novo"); chaveRasc = "age_rascunho_orc_" + n.id;
         aprenderItens(itens, M.categoria);
         desenharItens();
         lerCampos(); salvoSig = assinatura();
-        var titulo = el.closest(".modal").querySelector(".cab h2");
         titulo.textContent = "Orçamento nº " + String(n.numero).padStart(4, "0");
         if (location.hash.slice(1) === "orcamentos") rota();
         return n;
