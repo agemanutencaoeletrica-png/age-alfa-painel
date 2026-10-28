@@ -2219,7 +2219,7 @@
       valores_cliente: "itens", materiais_cliente: false
     }, base || {});
     M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
-    if (!M.itens.length) M.itens.push({ tipo: "servico", descricao: "Mão de obra", qtd: 1, un: "serv", valor: 0 });
+    if (!M.itens.length) M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 });
     M.materiais_cliente = matCliente(M); M.valores_cliente = valoresCliente(M) ? "itens" : "total";
 
     var j = A.janela(
@@ -2306,11 +2306,12 @@
         return '<div class="item-orc" data-i="' + n + '"><div class="l1"><select class="i-tipo" aria-label="Tipo">' +
           Object.keys(TIPOS_ITEM).map(function (k) { return '<option value="' + k + '">' + TIPOS_ITEM[k] + "</option>"; }).join("") + "</select>" +
           '<input class="i-desc" list="eo2-dl-precos" maxlength="300" spellcheck="true" lang="pt-BR" autocorrect="on" placeholder="Descrição (os serviços da 💲 tabela de preços aparecem aqui)" aria-label="Descrição"></div>' +
-          '<div class="l2"><label>Qtd<input class="i-qtd" inputmode="decimal"></label>' +
+          '<div class="l2' + (i.tipo === "ambos" ? " ambos" : "") + '"><label>Qtd<input class="i-qtd" inputmode="decimal"></label>' +
           '<label>Un<select class="i-un">' + UNIDADES.concat(UNIDADES.indexOf(i.un) < 0 && i.un ? [i.un] : []).map(function (u) { return "<option>" + esc(u) + "</option>"; }).join("") + "</select></label>" +
           (i.tipo === "ambos" ? '<label>Material un. (R$)<input class="i-vmat" inputmode="decimal"></label>' : "") +
           '<label>' + (i.tipo === "material" ? "Valor un. (R$)" + (M.materiais_cliente ? "" : " · só no app") : i.tipo === "ambos" ? "Mão de obra un. (R$)" : "Valor un. (R$)") +
-          '<input class="i-valor" inputmode="decimal"></label><div class="i-sub forte"></div>' +
+          '<input class="i-valor" inputmode="decimal" placeholder="0,00"></label><div class="i-sub forte"></div>' +
+          '<div class="i-aviso aviso erro peq oculto" style="grid-column:1/-1;margin:4px 0 0">Neste campo vai só o número (ex.: 250 ou 12,50). O nome do serviço ou do material vai no campo grande ao lado do tipo.</div>' +
           '<button class="peq i-tirar" aria-label="Remover item">✕</button></div></div>';
       }).join("");
       $$("#eo2-itens .item-orc", el).forEach(function (tr) {
@@ -2323,6 +2324,9 @@
           i.tipo = $(".i-tipo", tr).value; i.descricao = $(".i-desc", tr).value; i.qtd = A.lerNumero($(".i-qtd", tr).value);
           i.un = $(".i-un", tr).value; i.valor = A.lerNumero($(".i-valor", tr).value);
           if ($(".i-vmat", tr)) i.valor_mat = A.lerNumero($(".i-vmat", tr).value);
+          // letra no campo de valor: avisa (é comum digitar a descrição ali)
+          var letras = [$(".i-valor", tr), $(".i-vmat", tr)].some(function (x) { return x && /[A-Za-zÀ-ÿ]/.test(x.value); });
+          $(".i-aviso", tr).classList.toggle("oculto", !letras);
           // trocou o tipo: redesenha para mostrar (ou tirar) o campo do valor do material
           if (i.tipo !== tipoAntes) { desenharItens(); return; }
           // serviço escolhido da 💲 tabela de preços: vira mão de obra e traz a unidade e o preço
@@ -2411,7 +2415,7 @@
         var id = M.id, numero = M.numero;
         M = Object.assign(M, r.M, { id: id, numero: numero });
         M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
-        if (!M.itens.length) M.itens.push({ tipo: "servico", descricao: "Mão de obra", qtd: 1, un: "serv", valor: 0 });
+        if (!M.itens.length) M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 });
         preencher(); listaPrecos(); desenharItens(); av.remove(); A.avisar("Rascunho recuperado. Clique em Salvar para guardar.", "ok");
       };
       $("#eo2-rasc-nao", el).onclick = function () { if (!window.confirm("Descartar o rascunho? O que não foi salvo será perdido.")) return; apagarRasc(); av.remove(); };
