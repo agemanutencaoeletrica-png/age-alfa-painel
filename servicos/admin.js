@@ -2247,9 +2247,10 @@
           // serviço escolhido da 💲 tabela de preços: vira mão de obra e traz a unidade e o preço
           var pc = ev && ev.target && ev.target.classList.contains("i-desc") && window.AGE_PRECOS ? window.AGE_PRECOS.acharServico(S, M.categoria, i.descricao) : null;
           if (pc) {
-            i.tipo = pc.grupo === GRUPO_MAT_ORC ? "material" : "servico"; i.descricao = pc.descricao; i.un = pc.un || i.un;
-            if (pc.valor !== null && pc.valor !== undefined && !i.valor) i.valor = Number(pc.valor);
-            desenharItens(); return;
+            // a descrição fica como foi escrita (ex.: em MAIÚSCULAS): da tabela vêm só o tipo, a unidade e o preço
+            var tipo = pc.grupo === GRUPO_MAT_ORC ? "material" : "servico", un = pc.un || i.un;
+            var valor = pc.valor !== null && pc.valor !== undefined && !i.valor ? Number(pc.valor) : i.valor;
+            if (tipo !== i.tipo || un !== i.un || valor !== i.valor) { i.tipo = tipo; i.un = un; i.valor = valor; desenharItens(); return; }
           }
           totais();
         };
