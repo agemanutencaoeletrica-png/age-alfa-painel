@@ -12,6 +12,38 @@
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
   var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
+  // corretor dos itens do orçamento: palavras do dia a dia de elétrica e pintura escritas sem acento ou com erro comum
+  var CORRECOES = {
+    eletrica: "elétrica", eletricas: "elétricas", eletrico: "elétrico", eletricos: "elétricos", eletricista: "eletricista",
+    bifasica: "bifásica", bifasico: "bifásico", trifasica: "trifásica", trifasico: "trifásico", monofasica: "monofásica", monofasico: "monofásico",
+    distribuicao: "distribuição", distribicao: "distribuição", distribiçao: "distribuição", distribição: "distribuição", distribuiçao: "distribuição",
+    instalacao: "instalação", instalaçao: "instalação", istalacao: "instalação", istalação: "instalação", istalarção: "instalação", instalarção: "instalação",
+    instalacoes: "instalações", manutencao: "manutenção", manutençao: "manutenção", iluminacao: "iluminação", iluminaçao: "iluminação",
+    fixacao: "fixação", fixaçao: "fixação", fixaçar: "fixar", conexao: "conexão", conexoes: "conexões", extensao: "extensão", tensao: "tensão",
+    potencia: "potência", saida: "saída", saidas: "saídas", padrao: "padrão", medicao: "medição", protecao: "proteção", ligacao: "ligação", ligacoes: "ligações",
+    alimentacao: "alimentação", substituicao: "substituição", substituiçao: "substituição", adequacao: "adequação", revisao: "revisão",
+    conteiner: "contêiner", conteineres: "contêineres", container: "contêiner", metalica: "metálica", metalicas: "metálicas", metalico: "metálico",
+    galpao: "galpão", galpoes: "galpões", industria: "indústria", industrial: "industrial", epoxi: "epóxi", epoxy: "epóxi",
+    demarcacao: "demarcação", sinalizacao: "sinalização", impermeabilizacao: "impermeabilização", pintura: "pintura", demaos: "demãos", demao: "demão",
+    servico: "serviço", servicos: "serviços", mao: "mão", area: "área", areas: "áreas", agua: "água", calcada: "calçada",
+    eletrocalha: "eletrocalha", eletroduto: "eletroduto", disjuntor: "disjuntor", diferencial: "diferencial", aterramento: "aterramento",
+    refletor: "refletor", refletores: "refletores", lampada: "lâmpada", lampadas: "lâmpadas", luminaria: "luminária", luminarias: "luminárias",
+    tomadas: "tomadas", interruptor: "interruptor", chuveiro: "chuveiro", chuveiros: "chuveiros", poste: "poste", postes: "postes",
+    rapido: "rápido", tecnico: "técnico", tecnica: "técnica", eletronico: "eletrônico", automatico: "automático", automatica: "automática",
+    cabeamento: "cabeamento", subterraneo: "subterrâneo", subterranea: "subterrânea", aereo: "aéreo", aerea: "aérea"
+  };
+  // corrige palavra a palavra mantendo MAIÚSCULAS / Primeira maiúscula; devolve o texto e a lista do que mudou
+  function corrigirTexto(t) {
+    var feitas = [];
+    var novo = String(t || "").replace(/[A-Za-zÀ-ÿ]+/g, function (w) {
+      var c = CORRECOES[w.toLowerCase()];
+      if (!c || c === w.toLowerCase()) return w;
+      var r = w === w.toUpperCase() ? c.toLocaleUpperCase("pt-BR") : (w.charAt(0) === w.charAt(0).toUpperCase() ? c.charAt(0).toUpperCase() + c.slice(1) : c);
+      if (r !== w) feitas.push(w + " → " + r);
+      return r;
+    });
+    return { texto: novo, feitas: feitas };
+  }
   var GRUPO_MAT_ORC = "Materiais (dos orçamentos)";
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
@@ -2231,7 +2263,7 @@
     function desenharItens() {
       $("#eo2-itens", el).innerHTML = M.itens.map(function (i, n) {
         return '<div class="item-orc" data-i="' + n + '"><div class="l1"><select class="i-tipo" aria-label="Tipo"><option value="material">Material</option><option value="servico">Mão de obra</option></select>' +
-          '<input class="i-desc" list="eo2-dl-precos" maxlength="300" placeholder="Descrição (os serviços da 💲 tabela de preços aparecem aqui)" aria-label="Descrição"></div>' +
+          '<input class="i-desc" list="eo2-dl-precos" maxlength="300" spellcheck="true" lang="pt-BR" autocorrect="on" placeholder="Descrição (os serviços da 💲 tabela de preços aparecem aqui)" aria-label="Descrição"></div>' +
           '<div class="l2"><label>Qtd<input class="i-qtd" inputmode="decimal"></label>' +
           '<label>Un<select class="i-un">' + UNIDADES.concat(UNIDADES.indexOf(i.un) < 0 && i.un ? [i.un] : []).map(function (u) { return "<option>" + esc(u) + "</option>"; }).join("") + "</select></label>" +
           '<label>Valor un. (R$)<input class="i-valor" inputmode="decimal"></label><div class="i-sub forte"></div>' +
@@ -2255,6 +2287,13 @@
           totais();
         };
         $(".i-tirar", tr).onclick = function () { M.itens.splice(Number(tr.dataset.i), 1); desenharItens(); };
+        // ao sair do campo, corrige acentos e erros comuns (ex.: BIFASICA → BIFÁSICA)
+        $(".i-desc", tr).addEventListener("blur", function () {
+          var r = corrigirTexto(this.value);
+          if (!r.feitas.length) return;
+          this.value = i.descricao = r.texto; totais();
+          A.avisar("✍ Corrigido: " + r.feitas.join(", "), "ok");
+        });
       });
       totais();
     }
