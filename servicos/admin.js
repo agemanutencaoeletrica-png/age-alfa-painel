@@ -2174,17 +2174,47 @@
   // =================================================================
   // ORÇAMENTOS (só o dono vê)
   // =================================================================
+  var buscaOrc = "";
+  // busca por número, cliente, endereço ou qualquer item (sem ligar para acento e maiúscula)
+  function orcBate(o, b) {
+    if (!b) return true;
+    var txt = semAcento([String(o.numero).padStart(4, "0"), o.cliente, o.endereco, o.telefone, CAT_ORC[o.categoria] || ""].concat((o.itens || []).map(function (i) { return i.descricao; })).join(" "));
+    return b.split(/\s+/).every(function (p) { return txt.indexOf(p) >= 0; });
+  }
   function verOrcamentos(c) {
     c.innerHTML = '<div class="cab-secao"><h2>Orçamentos</h2><button class="prim" id="bo-novo">+ Novo orçamento</button></div>' +
       '<p class="mudo peq" style="margin-top:-6px">Só você vê esta área. Os funcionários nunca veem valores.</p>' +
-      (S.orc.length ? '<div class="cartao tabela-caixa"><table><thead><tr><th>Nº</th><th>Cliente</th><th class="esconde-cel">Área</th><th>Situação</th><th class="num">Total</th><th class="esconde-cel">Data</th></tr></thead><tbody>' +
-        S.orc.map(function (o) {
-          return '<tr class="clic" data-orc="' + o.id + '" style="cursor:pointer"><td>' + String(o.numero).padStart(4, "0") + "</td><td>" + esc(o.cliente) + '</td><td class="esconde-cel">' +
-            esc(CAT_ORC[o.categoria] || "") + '</td><td><span class="selo ' + COR_ORC[o.status] + '">' + STATUS_ORC[o.status] + '</span></td><td class="num">' + A.dinheiro(o.total) +
-            '</td><td class="esconde-cel">' + A.data(o.criado_em) + "</td></tr>";
-        }).join("") + "</tbody></table></div>" : '<div class="cartao vazio">Nenhum orçamento ainda. Crie um aqui ou a partir do relatório de um funcionário.</div>');
+      (S.orc.length ? '<input id="bo-busca" type="search" placeholder="🔍 Buscar orçamento: cliente, nº, endereço ou item (ex.: refletor, quadro)" style="margin-bottom:8px">' +
+        '<p class="mudo peq" style="margin:-2px 0 8px">Ache um orçamento parecido e toque em <b>📋 Usar como modelo</b>: abre um novo com os mesmos itens e preços, é só trocar o cliente e ajustar o que mudou.</p>' +
+        '<div class="cartao tabela-caixa"><table><thead><tr><th>Nº</th><th>Cliente</th><th class="esconde-cel">Área</th><th>Situação</th><th class="num">Total</th><th class="esconde-cel">Data</th><th></th></tr></thead><tbody id="bo-lista"></tbody></table></div>' +
+        '<div id="bo-nada" class="vazio oculto">Nenhum orçamento com essa busca.</div>'
+        : '<div class="cartao vazio">Nenhum orçamento ainda. Crie um aqui ou a partir do relatório de um funcionário.</div>');
     $("#bo-novo").onclick = function () { editarOrcamento(null, {}); };
-    $$("[data-orc]", c).forEach(function (t) { t.onclick = function () { editarOrcamento(porId(S.orc, t.dataset.orc)); }; });
+    if (!S.orc.length) return;
+    function lista() {
+      var b = semAcento(buscaOrc).trim(), ls = S.orc.filter(function (o) { return orcBate(o, b); });
+      $("#bo-lista", c).innerHTML = ls.map(function (o) {
+        return '<tr class="clic" data-orc="' + o.id + '" style="cursor:pointer"><td>' + String(o.numero).padStart(4, "0") + "</td><td>" + esc(o.cliente) + '</td><td class="esconde-cel">' +
+          esc(CAT_ORC[o.categoria] || "") + '</td><td><span class="selo ' + COR_ORC[o.status] + '">' + STATUS_ORC[o.status] + '</span></td><td class="num">' + A.dinheiro(o.total) +
+          '</td><td class="esconde-cel">' + A.data(o.criado_em) + '</td><td><button class="peq" data-dup="' + o.id + '" title="Abre um orçamento novo com os mesmos itens">📋 Usar como modelo</button></td></tr>';
+      }).join("");
+      $("#bo-nada", c).classList.toggle("oculto", ls.length > 0);
+      $$("[data-orc]", c).forEach(function (t) { t.onclick = function () { editarOrcamento(porId(S.orc, t.dataset.orc)); }; });
+      $$("[data-dup]", c).forEach(function (b) { b.onclick = function (ev) { ev.stopPropagation(); usarComoModelo(porId(S.orc, b.dataset.dup)); }; });
+    }
+    $("#bo-busca", c).value = buscaOrc;
+    $("#bo-busca", c).oninput = function () { buscaOrc = this.value; lista(); };
+    lista();
+  }
+  // orçamento novo a partir de um antigo: mesmos itens, preços e condições; cliente em branco
+  function usarComoModelo(o) {
+    if (!o) return;
+    editarOrcamento(null, {
+      categoria: o.categoria || "", itens: JSON.parse(JSON.stringify(o.itens || [])), desconto: Number(o.desconto) || 0,
+      pagamento: o.pagamento || "", prazo: o.prazo || "", validade_dias: o.validade_dias || 15, observacoes: o.observacoes || "",
+      valores_cliente: o.valores_cliente || "itens", materiais_cliente: o.materiais_cliente === true
+    });
+    A.avisar("📋 Itens do orçamento nº " + String(o.numero).padStart(4, "0") + " copiados. Preencha o cliente e ajuste o que mudou.", "ok");
   }
 
   function orcamentoDaObra(obraId) {
@@ -2243,7 +2273,7 @@
       (podeCompartilharArquivo() ? '<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>' : "") +
       '<button id="eo2-pdf">📄 Baixar PDF</button></div>' +
       '<div class="acoes" style="margin-top:8px"><button class="zap" id="eo2-zap">📲 WhatsApp do cliente</button><button id="eo2-email-b">✉ E-mail do cliente</button>' +
-      '<button id="eo2-imprimir">🖨 Imprimir</button>' + (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
+      '<button id="eo2-imprimir">🖨 Imprimir</button>' + (M.id ? '<button id="eo2-dup">📋 Usar como modelo</button><button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
       { titulo: M.numero ? "Orçamento nº " + String(M.numero).padStart(4, "0") : "Novo orçamento", larga: true, fixa: true });
     var el = j.el;
     function preencher() {
@@ -2543,6 +2573,11 @@
           '<div class="acoes"><a class="botao prim" id="ok-email" href="mailto:' + encodeURIComponent(o.email) + "?subject=" + encodeURIComponent(assunto) +
           "&body=" + encodeURIComponent(corpo.replace(/\n/g, "\r\n")) + '">✉ Abrir e-mail</a></div>', { titulo: "Enviar por e-mail" });
       }).catch(falhou);
+    };
+    if ($("#eo2-dup", el)) $("#eo2-dup", el).onclick = function () {
+      // salva o que está na tela antes de copiar
+      var b = this; A.ocupado(b, true, "Copiando...");
+      salvar().then(function (n) { A.ocupado(b, false); j.fechar(); usarComoModelo(n); }).catch(function (e) { A.ocupado(b, false); falhou(e); });
     };
     if ($("#eo2-apagar", el)) $("#eo2-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar este orçamento?")) return;
