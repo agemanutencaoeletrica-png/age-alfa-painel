@@ -128,6 +128,10 @@ create table if not exists public.orcamentos (
 -- colunas novas (para quem já tinha rodado uma versão anterior deste arquivo)
 alter table public.obras      add column if not exists email text;
 alter table public.orcamentos add column if not exists email text;
+-- o que vai para o cliente: valor de cada serviço ('itens') ou só o total ('total'); valor dos materiais (os antigos continuam com valor)
+alter table public.orcamentos add column if not exists valores_cliente text not null default 'itens';
+alter table public.orcamentos add column if not exists materiais_cliente boolean not null default true;
+alter table public.orcamentos alter column materiais_cliente set default false;
 alter table public.obras      add column if not exists loja_id uuid references public.lojas (id) on delete set null;
 alter table public.servicos   add column if not exists criado_pelo_funcionario boolean not null default false;
 -- assinatura do responsável no local (gerente da loja / cliente) ao concluir
