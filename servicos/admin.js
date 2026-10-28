@@ -2194,20 +2194,33 @@
     editarOrcamento(null, { obra_id: o.id, cliente: o.cliente, telefone: o.telefone, email: o.email, endereco: o.endereco, categoria: cat });
   }
 
+  // tipos de item: material (só quantidade para o cliente; o valor fica no app), mão de obra, e material + mão de obra
+  var TIPOS_ITEM = { material: "Material", servico: "Mão de obra", ambos: "Material + mão de obra" };
+  // orçamento antigo (antes das opções) continua como era: materiais com valor para o cliente
+  function matCliente(o) { return o.materiais_cliente !== false; }
+  function valoresCliente(o) { return o.valores_cliente !== "total"; }
   function calcOrc(M) {
-    var mat = 0, serv = 0;
-    M.itens.forEach(function (i) { var st = (Number(i.qtd) || 0) * (Number(i.valor) || 0); if (i.tipo === "material") mat += st; else serv += st; });
-    var bruto = mat + serv, total = Math.max(0, bruto - (Number(M.desconto) || 0));
-    return { mat: Math.round(mat * 100) / 100, serv: Math.round(serv * 100) / 100, bruto: Math.round(bruto * 100) / 100, total: Math.round(total * 100) / 100 };
+    var mat = 0, serv = 0, r2 = function (v) { return Math.round(v * 100) / 100; };
+    M.itens.forEach(function (i) {
+      var q = Number(i.qtd) || 0;
+      if (i.tipo === "material") mat += q * (Number(i.valor) || 0);
+      else { serv += q * (Number(i.valor) || 0); if (i.tipo === "ambos") mat += q * (Number(i.valor_mat) || 0); }
+    });
+    var mc = matCliente(M), cliente = serv + (mc ? mat : 0), desc = Number(M.desconto) || 0;
+    return { mat: r2(mat), serv: r2(serv), cliente: r2(cliente), mc: mc, total: r2(Math.max(0, cliente - desc)), custo: r2(Math.max(0, mat + serv - desc)) };
   }
+  // valor unitário que o cliente vê (no "material + mão de obra", só a mão de obra, a não ser que os materiais vão para o cliente)
+  function unCliente(i, o) { return (Number(i.valor) || 0) + (i.tipo === "ambos" && matCliente(o) ? Number(i.valor_mat) || 0 : 0); }
 
   function editarOrcamento(orc, base) {
     var M = orc ? JSON.parse(JSON.stringify(orc)) : Object.assign({
       id: null, numero: null, obra_id: null, relatorio_id: null, cliente: "", telefone: "", email: "", endereco: "", categoria: "", itens: [],
-      desconto: 0, pagamento: "50% na aprovação e 50% na entrega do serviço", prazo: "", validade_dias: 15, observacoes: "", status: "rascunho"
+      desconto: 0, pagamento: "50% na aprovação e 50% na entrega do serviço", prazo: "", validade_dias: 15, observacoes: "", status: "rascunho",
+      valores_cliente: "itens", materiais_cliente: false
     }, base || {});
     M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
     if (!M.itens.length) M.itens.push({ tipo: "servico", descricao: "Mão de obra", qtd: 1, un: "serv", valor: 0 });
+    M.materiais_cliente = matCliente(M); M.valores_cliente = valoresCliente(M) ? "itens" : "total";
 
     var j = A.janela(
       '<label for="eo2-cli">Cliente *</label><input id="eo2-cli" maxlength="200">' +
@@ -2215,8 +2228,12 @@
       '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><select id="eo2-cat"><option value="">—</option>' +
       Object.keys(CAT_ORC).map(function (k) { return '<option value="' + k + '">' + CAT_ORC[k] + "</option>"; }).join("") + "</select></div></div>" +
       '<h3 style="margin-top:14px">Itens</h3><div id="eo2-itens"></div><datalist id="eo2-dl-precos"></datalist>' +
-      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button><button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button></div>' +
+      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button><button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-mais-ambos">+ Material + mão de obra</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
+      '<div class="cartao" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-vitens"> Mostrar o valor de cada serviço de mão de obra</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-mcli"> Enviar também o valor dos materiais</label>' +
+      '<p class="mudo peq" style="margin:4px 0 0">Desmarcado: os materiais vão só com a quantidade e o valor deles fica só no app.</p></div>' +
       '<div class="cartao" style="margin-top:10px" id="eo2-totais"></div>' +
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
       '<label for="eo2-obs">Observações</label><textarea id="eo2-obs" rows="3"></textarea>' +
@@ -2234,6 +2251,7 @@
       $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? A.numero(M.desconto) : "";
       $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
       $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
+      $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente;
     }
     preencher();
 
@@ -2274,7 +2292,8 @@
     function mostrarAuto(t) { var x = $("#eo2-auto", el); if (x) x.textContent = t; }
     function assinatura() {
       return JSON.stringify([M.cliente, M.telefone, M.email, M.endereco, M.categoria, M.desconto, M.validade_dias, M.pagamento, M.prazo, M.observacoes, M.status,
-        M.itens.map(function (i) { return [i.tipo, i.descricao, Number(i.qtd) || 0, i.un, Number(i.valor) || 0]; })]);
+        M.valores_cliente, M.materiais_cliente,
+        M.itens.map(function (i) { return [i.tipo, i.descricao, Number(i.qtd) || 0, i.un, Number(i.valor) || 0, Number(i.valor_mat) || 0]; })]);
     }
     var salvoSig = null;
     function apagarRasc(k) { try { localStorage.removeItem(k || chaveRasc); } catch (e) { /* sem armazenamento */ } }
@@ -2283,25 +2302,33 @@
 
     function desenharItens() {
       $("#eo2-itens", el).innerHTML = M.itens.map(function (i, n) {
-        return '<div class="item-orc" data-i="' + n + '"><div class="l1"><select class="i-tipo" aria-label="Tipo"><option value="material">Material</option><option value="servico">Mão de obra</option></select>' +
+        return '<div class="item-orc" data-i="' + n + '"><div class="l1"><select class="i-tipo" aria-label="Tipo">' +
+          Object.keys(TIPOS_ITEM).map(function (k) { return '<option value="' + k + '">' + TIPOS_ITEM[k] + "</option>"; }).join("") + "</select>" +
           '<input class="i-desc" list="eo2-dl-precos" maxlength="300" spellcheck="true" lang="pt-BR" autocorrect="on" placeholder="Descrição (os serviços da 💲 tabela de preços aparecem aqui)" aria-label="Descrição"></div>' +
           '<div class="l2"><label>Qtd<input class="i-qtd" inputmode="decimal"></label>' +
           '<label>Un<select class="i-un">' + UNIDADES.concat(UNIDADES.indexOf(i.un) < 0 && i.un ? [i.un] : []).map(function (u) { return "<option>" + esc(u) + "</option>"; }).join("") + "</select></label>" +
-          '<label>Valor un. (R$)<input class="i-valor" inputmode="decimal"></label><div class="i-sub forte"></div>' +
+          (i.tipo === "ambos" ? '<label>Material un. (R$)<input class="i-vmat" inputmode="decimal"></label>' : "") +
+          '<label>' + (i.tipo === "material" ? "Valor un. (R$)" + (M.materiais_cliente ? "" : " · só no app") : i.tipo === "ambos" ? "Mão de obra un. (R$)" : "Valor un. (R$)") +
+          '<input class="i-valor" inputmode="decimal"></label><div class="i-sub forte"></div>' +
           '<button class="peq i-tirar" aria-label="Remover item">✕</button></div></div>';
       }).join("");
       $$("#eo2-itens .item-orc", el).forEach(function (tr) {
         var i = M.itens[Number(tr.dataset.i)];
         $(".i-tipo", tr).value = i.tipo; $(".i-desc", tr).value = i.descricao; $(".i-qtd", tr).value = A.numero(i.qtd, 3);
         $(".i-un", tr).value = i.un; $(".i-valor", tr).value = i.valor ? A.numero(i.valor) : "";
+        if ($(".i-vmat", tr)) $(".i-vmat", tr).value = i.valor_mat ? A.numero(i.valor_mat) : "";
         tr.oninput = tr.onchange = function (ev) {
+          var tipoAntes = i.tipo;
           i.tipo = $(".i-tipo", tr).value; i.descricao = $(".i-desc", tr).value; i.qtd = A.lerNumero($(".i-qtd", tr).value);
           i.un = $(".i-un", tr).value; i.valor = A.lerNumero($(".i-valor", tr).value);
+          if ($(".i-vmat", tr)) i.valor_mat = A.lerNumero($(".i-vmat", tr).value);
+          // trocou o tipo: redesenha para mostrar (ou tirar) o campo do valor do material
+          if (i.tipo !== tipoAntes) { desenharItens(); return; }
           // serviço escolhido da 💲 tabela de preços: vira mão de obra e traz a unidade e o preço
           var pc = ev && ev.target && ev.target.classList.contains("i-desc") && window.AGE_PRECOS ? window.AGE_PRECOS.acharServico(S, M.categoria, i.descricao) : null;
           if (pc) {
             // a descrição fica como foi escrita (ex.: em MAIÚSCULAS): da tabela vêm só o tipo, a unidade e o preço
-            var tipo = pc.grupo === GRUPO_MAT_ORC ? "material" : "servico", un = pc.un || i.un;
+            var tipo = i.tipo === "ambos" ? "ambos" : pc.grupo === GRUPO_MAT_ORC ? "material" : "servico", un = pc.un || i.un;
             var valor = pc.valor !== null && pc.valor !== undefined && !i.valor ? Number(pc.valor) : i.valor;
             if (tipo !== i.tipo || un !== i.un || valor !== i.valor) { i.tipo = tipo; i.un = un; i.valor = valor; desenharItens(); return; }
           }
@@ -2341,20 +2368,29 @@
       M.cliente = val(el, "#eo2-cli"); M.telefone = val(el, "#eo2-tel"); M.email = val(el, "#eo2-email"); M.endereco = val(el, "#eo2-end"); M.categoria = $("#eo2-cat", el).value;
       M.desconto = A.lerNumero($("#eo2-desc", el).value); M.validade_dias = Math.max(1, parseInt($("#eo2-val", el).value, 10) || 15);
       M.pagamento = val(el, "#eo2-pag"); M.prazo = val(el, "#eo2-prazo"); M.observacoes = val(el, "#eo2-obs"); M.status = $("#eo2-st", el).value;
+      M.valores_cliente = $("#eo2-vitens", el).checked ? "itens" : "total"; M.materiais_cliente = $("#eo2-mcli", el).checked;
     }
     function totais() {
       lerCampos(); guardarRasc();
-      M.itens.forEach(function (i, n) { var c = $('#eo2-itens .item-orc[data-i="' + n + '"] .i-sub', el); if (c) c.textContent = A.dinheiro((Number(i.qtd) || 0) * (Number(i.valor) || 0)); });
+      M.itens.forEach(function (i, n) {
+        var c = $('#eo2-itens .item-orc[data-i="' + n + '"] .i-sub', el);
+        if (c) c.textContent = A.dinheiro((Number(i.qtd) || 0) * ((Number(i.valor) || 0) + (i.tipo === "ambos" ? Number(i.valor_mat) || 0 : 0)));
+      });
       var t = calcOrc(M);
-      $("#eo2-totais", el).innerHTML = '<div class="linha"><span>Materiais</span><span class="dir">' + A.dinheiro(t.mat) + "</span></div>" +
-        '<div class="linha"><span>Mão de obra / serviços</span><span class="dir">' + A.dinheiro(t.serv) + "</span></div>" +
+      $("#eo2-totais", el).innerHTML = '<div class="linha"><span>🧱 Materiais' + (t.mc ? "" : ' <span class="selo">só no app</span>') + '</span><span class="dir">' + A.dinheiro(t.mat) + "</span></div>" +
+        '<div class="linha"><span>👷 Mão de obra / serviços</span><span class="dir">' + A.dinheiro(t.serv) + "</span></div>" +
         (M.desconto ? '<div class="linha"><span>Desconto</span><span class="dir">− ' + A.dinheiro(M.desconto) + "</span></div>" : "") +
-        '<div class="linha forte" style="font-size:18px;margin-top:4px"><span>Total</span><span class="dir">' + A.dinheiro(t.total) + "</span></div>";
+        '<div class="linha forte" style="font-size:18px;margin-top:4px"><span>Total para o cliente</span><span class="dir">' + A.dinheiro(t.total) + "</span></div>" +
+        (!t.mc && t.mat ? '<div class="linha mudo peq"><span>Custo total com os materiais (só no app)</span><span class="dir">' + A.dinheiro(t.custo) + "</span></div>" : "");
     }
     $("#eo2-desc", el).oninput = totais;
     $("#eo2-cat", el).addEventListener("change", listaPrecos); listaPrecos();
     $("#eo2-mais-mat", el).onclick = function () { M.itens.push({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }); desenharItens(); focarUltimo(); };
     $("#eo2-mais-serv", el).onclick = function () { M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 }); desenharItens(); focarUltimo(); };
+    $("#eo2-mais-ambos", el).onclick = function () { M.itens.push({ tipo: "ambos", descricao: "", qtd: 1, un: "un", valor: 0, valor_mat: 0 }); desenharItens(); focarUltimo(); };
+    // trocar a opção dos materiais muda o rótulo do valor e o total para o cliente
+    $("#eo2-mcli", el).addEventListener("change", function () { lerCampos(); desenharItens(); });
+    $("#eo2-vitens", el).addEventListener("change", totais);
     function focarUltimo() { var x = $$(".i-desc", el); if (x.length) x[x.length - 1].focus(); }
     desenharItens();
     if (M.id) { lerCampos(); salvoSig = assinatura(); }
@@ -2412,13 +2448,23 @@
         if (corr.length) A.avisar("✍ Corrigido: " + corr.join(", "), "ok");
       }
       var itens = M.itens.filter(function (i) { return i.descricao.trim(); }).map(function (i) {
-        return { tipo: i.tipo, descricao: i.descricao.trim(), qtd: Number(i.qtd) || 0, un: i.un, valor: Math.round((Number(i.valor) || 0) * 100) / 100 };
+        var x = { tipo: i.tipo, descricao: i.descricao.trim(), qtd: Number(i.qtd) || 0, un: i.un, valor: Math.round((Number(i.valor) || 0) * 100) / 100 };
+        if (i.tipo === "ambos") x.valor_mat = Math.round((Number(i.valor_mat) || 0) * 100) / 100;
+        return x;
       });
       var dados = { obra_id: M.obra_id, relatorio_id: M.relatorio_id, cliente: M.cliente, telefone: nulo(M.telefone), email: nulo(M.email), endereco: nulo(M.endereco), categoria: nulo(M.categoria),
-        itens: itens, desconto: Math.round((M.desconto || 0) * 100) / 100, total: calcOrc({ itens: itens, desconto: M.desconto }).total,
+        itens: itens, desconto: Math.round((M.desconto || 0) * 100) / 100, total: calcOrc({ itens: itens, desconto: M.desconto, materiais_cliente: M.materiais_cliente }).total,
         pagamento: nulo(M.pagamento), prazo: nulo(M.prazo), validade_dias: M.validade_dias, observacoes: nulo(M.observacoes), status: M.status };
-      var p = M.id ? sb.from("orcamentos").update(dados).eq("id", M.id).select().single() : sb.from("orcamentos").insert(dados).select().single();
-      return q(p).then(function (n) {
+      if (!S.semOpcOrc) { dados.valores_cliente = M.valores_cliente; dados.materiais_cliente = !!M.materiais_cliente; }
+      function gravar(d) { return q(M.id ? sb.from("orcamentos").update(d).eq("id", M.id).select().single() : sb.from("orcamentos").insert(d).select().single()); }
+      return gravar(dados).catch(function (e) {
+        // banco ainda sem as colunas novas: grava sem elas e avisa uma vez para rodar o SQL
+        if (S.semOpcOrc || !/valores_cliente|materiais_cliente/.test(A.msgErro(e) + " " + (e && e.message))) throw e;
+        S.semOpcOrc = true; delete dados.valores_cliente; delete dados.materiais_cliente;
+        A.avisar("Para guardar as opções do que vai ao cliente, rode o supabase.sql no Supabase (colunas novas do orçamento).", "erro");
+        return gravar(dados);
+      }).then(function (n) {
+        if (S.semOpcOrc) { n.valores_cliente = M.valores_cliente; n.materiais_cliente = !!M.materiais_cliente; }
         trocar(S.orc, n);
         S.orc.sort(function (a, b) { return b.numero - a.numero; });
         var titulo = el.closest(".modal").querySelector(".cab h2");
@@ -2498,17 +2544,32 @@
     };
   }
 
+  function gruposCliente(o) {
+    var mc = matCliente(o), vi = valoresCliente(o);
+    return [
+      { titulo: "Materiais", itens: o.itens.filter(function (i) { return i.tipo === "material"; }), comValor: mc },
+      { titulo: "Mão de obra / serviços", itens: o.itens.filter(function (i) { return i.tipo !== "material"; }), comValor: vi }
+    ].filter(function (g) { return g.itens.length; });
+  }
   function textoOrcamento(o, semNegrito) {
     var E = A.CFG.EMPRESA || {};
     var t = "Olá, " + o.cliente.split(" ")[0] + "! Segue o orçamento solicitado.\n\n*" + (E.nome || "AGE Elétrica e Pintura") + "*\nOrçamento nº " +
       String(o.numero).padStart(4, "0") + " — " + A.data(o.criado_em) + "\n\nCliente: " + o.cliente + "\n";
     if (o.endereco) t += "Local: " + o.endereco + "\n";
     t += "\n";
-    o.itens.forEach(function (i) {
-      t += "• " + i.descricao + " — " + A.numero(i.qtd, 3) + " " + i.un + " × " + A.dinheiro(i.valor) + " = " + A.dinheiro(i.qtd * i.valor) + "\n";
+    var tc = calcOrc(o);
+    gruposCliente(o).forEach(function (g) {
+      t += "*" + g.titulo + "*\n";
+      g.itens.forEach(function (i) {
+        var u = unCliente(i, o);
+        t += "• " + i.descricao + " — " + A.numero(i.qtd, 3) + " " + i.un + (g.comValor ? " × " + A.dinheiro(u) + " = " + A.dinheiro(i.qtd * u) : "") + "\n";
+      });
+      t += "\n";
     });
-    if (Number(o.desconto)) t += "\nDesconto: − " + A.dinheiro(o.desconto);
-    t += "\n*Total: " + A.dinheiro(o.total) + "*\n";
+    if (tc.mc && tc.mat) t += "Materiais: " + A.dinheiro(tc.mat) + "\n";
+    if (tc.serv) t += "Mão de obra: " + A.dinheiro(tc.serv) + "\n";
+    if (Number(o.desconto)) t += "Desconto: − " + A.dinheiro(o.desconto) + "\n";
+    t += "*Total: " + A.dinheiro(tc.total) + "*\n";
     if (o.pagamento) t += "Pagamento: " + o.pagamento + "\n";
     if (o.prazo) t += "Prazo: " + o.prazo + "\n";
     t += "Validade: " + o.validade_dias + " dias";
@@ -2571,10 +2632,11 @@
       function azul() { doc.setTextColor(20, 50, 92); }
       function preto() { doc.setTextColor(20, 20, 20); }
       function fonte(peso, tam) { doc.setFont("helvetica", peso); doc.setFontSize(tam); }
+      var comValorTab = true;
       function cabeTabela() {
         fonte("bold", 8); doc.setTextColor(90, 90, 90);
         doc.text("DESCRIÇÃO", L + 1, y); doc.text("QTD", 122, y, { align: "right" }); doc.text("UN", 125, y);
-        doc.text("VALOR UN.", 162, y, { align: "right" }); doc.text("SUBTOTAL", R - 1, y, { align: "right" });
+        if (comValorTab) { doc.text("VALOR UN.", 162, y, { align: "right" }); doc.text("SUBTOTAL", R - 1, y, { align: "right" }); }
         y += 2; doc.setDrawColor(200); doc.setLineWidth(0.3); doc.line(L, y, R, y); y += 4.5;
       }
       function espaco(alt) { if (y + alt > 278) { doc.addPage(); y = 18; return true; } return false; }
@@ -2603,20 +2665,19 @@
       y += 5;
 
       // itens
-      [["material", "Materiais"], ["servico", "Mão de obra / serviços"]].forEach(function (g) {
-        var itens = o.itens.filter(function (i) { return (g[0] === "material") === (i.tipo === "material"); });
-        if (!itens.length) return;
+      gruposCliente(o).forEach(function (g) {
+        var itens = g.itens; comValorTab = g.comValor;
         espaco(20);
-        fonte("bold", 12); azul(); doc.text(tx(g[1]), L, y); y += 6;
+        fonte("bold", 12); azul(); doc.text(tx(g.titulo), L, y); y += 6;
         cabeTabela();
         itens.forEach(function (i) {
           fonte("normal", 9.5); preto();
-          var d = doc.splitTextToSize(tx(i.descricao), 88), alt = d.length * 4.4 + 2.4;
+          var u = unCliente(i, o), d = doc.splitTextToSize(tx(i.descricao), g.comValor ? 88 : 100), alt = d.length * 4.4 + 2.4;
           if (espaco(alt)) cabeTabela();
           fonte("normal", 9.5); preto();
           doc.text(d, L + 1, y);
           doc.text(tx(A.numero(i.qtd, 3)), 122, y, { align: "right" }); doc.text(tx(i.un), 125, y);
-          doc.text(tx(A.dinheiro(i.valor)), 162, y, { align: "right" }); doc.text(tx(A.dinheiro(i.qtd * i.valor)), R - 1, y, { align: "right" });
+          if (g.comValor) { doc.text(tx(A.dinheiro(u)), 162, y, { align: "right" }); doc.text(tx(A.dinheiro(i.qtd * u)), R - 1, y, { align: "right" }); }
           y += alt - 2.4; doc.setDrawColor(225); doc.setLineWidth(0.2); doc.line(L, y - 1.6, R, y - 1.6); y += 3.2;
         });
         y += 3;
@@ -2626,11 +2687,11 @@
       espaco(32);
       var xt = 120;
       fonte("normal", 10); preto();
-      [["Materiais", t.mat], ["Mão de obra", t.serv]].concat(Number(o.desconto) ? [["Desconto", -Number(o.desconto)]] : []).forEach(function (l) {
+      (t.mc && t.mat ? [["Materiais", t.mat]] : []).concat(t.serv ? [["Mão de obra", t.serv]] : []).concat(Number(o.desconto) ? [["Desconto", -Number(o.desconto)]] : []).forEach(function (l) {
         doc.text(l[0], xt, y); doc.text((l[1] < 0 ? "- " : "") + tx(A.dinheiro(Math.abs(l[1]))), R, y, { align: "right" }); y += 5.5;
       });
       doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.6); doc.line(xt, y - 2.5, R, y - 2.5); y += 3;
-      fonte("bold", 14); doc.text("TOTAL", xt, y); doc.text(tx(A.dinheiro(o.total)), R, y, { align: "right" }); y += 10;
+      fonte("bold", 14); doc.text("TOTAL", xt, y); doc.text(tx(A.dinheiro(t.total)), R, y, { align: "right" }); y += 10;
 
       // condições
       [["Forma de pagamento: ", o.pagamento], ["Prazo de execução: ", o.prazo], ["Observações: ", o.observacoes]].forEach(function (c) {
@@ -2659,13 +2720,12 @@
 
   function escreverImpressao(w, o) {
     var E = A.CFG.EMPRESA || {}, t = calcOrc(o);
-    function bloco(tipo, titulo) {
-      var itens = o.itens.filter(function (i) { return (tipo === "material") === (i.tipo === "material"); });
-      if (!itens.length) return "";
-      return "<h3>" + titulo + '</h3><table><thead><tr><th>Descrição</th><th class="n">Qtd</th><th>Un</th><th class="n">Valor un.</th><th class="n">Subtotal</th></tr></thead><tbody>' +
-        itens.map(function (i) {
-          return "<tr><td>" + esc(i.descricao) + '</td><td class="n">' + A.numero(i.qtd, 3) + "</td><td>" + esc(i.un) + '</td><td class="n">' + A.dinheiro(i.valor) +
-            '</td><td class="n">' + A.dinheiro(i.qtd * i.valor) + "</td></tr>";
+    function bloco(g) {
+      return "<h3>" + esc(g.titulo) + '</h3><table><thead><tr><th>Descrição</th><th class="n">Qtd</th><th>Un</th>' + (g.comValor ? '<th class="n">Valor un.</th><th class="n">Subtotal</th>' : "") + "</tr></thead><tbody>" +
+        g.itens.map(function (i) {
+          var u = unCliente(i, o);
+          return "<tr><td>" + esc(i.descricao) + '</td><td class="n">' + A.numero(i.qtd, 3) + "</td><td>" + esc(i.un) + "</td>" +
+            (g.comValor ? '<td class="n">' + A.dinheiro(u) + '</td><td class="n">' + A.dinheiro(i.qtd * u) + "</td>" : "") + "</tr>";
         }).join("") + "</tbody></table>";
     }
     var validade = new Date(o.criado_em); validade.setDate(validade.getDate() + Number(o.validade_dias || 15));
@@ -2686,10 +2746,11 @@
       '<div class="num"><b>ORÇAMENTO Nº ' + String(o.numero).padStart(4, "0") + "</b><br>Data: " + A.data(o.criado_em) + "<br>Válido até: " + A.data(validade) + "</div></div>" +
       '<div class="cli"><b>Cliente:</b> ' + esc(o.cliente) + (o.telefone ? " · " + esc(o.telefone) : "") + (o.email ? " · " + esc(o.email) : "") + (o.endereco ? "<br><b>Local:</b> " + esc(o.endereco) : "") +
       (o.categoria ? "<br><b>Serviço:</b> " + esc(CAT_ORC[o.categoria] || o.categoria) : "") + "</div>" +
-      bloco("material", "Materiais") + bloco("servico", "Mão de obra / serviços") +
-      '<div class="tot"><div><span>Materiais</span><span>' + A.dinheiro(t.mat) + "</span></div><div><span>Mão de obra</span><span>" + A.dinheiro(t.serv) + "</span></div>" +
+      gruposCliente(o).map(bloco).join("") +
+      '<div class="tot">' + (t.mc && t.mat ? "<div><span>Materiais</span><span>" + A.dinheiro(t.mat) + "</span></div>" : "") +
+      (t.serv ? "<div><span>Mão de obra</span><span>" + A.dinheiro(t.serv) + "</span></div>" : "") +
       (Number(o.desconto) ? "<div><span>Desconto</span><span>− " + A.dinheiro(o.desconto) + "</span></div>" : "") +
-      '<div class="g"><span>Total</span><span>' + A.dinheiro(o.total) + "</span></div></div>" +
+      '<div class="g"><span>Total</span><span>' + A.dinheiro(t.total) + "</span></div></div>" +
       '<div class="cond">' + (o.pagamento ? "<p><b>Forma de pagamento:</b> " + esc(o.pagamento) + "</p>" : "") + (o.prazo ? "<p><b>Prazo de execução:</b> " + esc(o.prazo) + "</p>" : "") +
       (o.observacoes ? '<p><b>Observações:</b><br><span style="white-space:pre-wrap">' + esc(o.observacoes) + "</span></p>" : "") + "</div>" +
       '<div class="ass"><div>' + esc(E.nome || "AGE Elétrica e Pintura") + "</div><div>Cliente — de acordo</div></div>" +
