@@ -12,6 +12,7 @@
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
   var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
+  var GRUPO_MAT_ORC = "Materiais (dos orçamentos)";
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
@@ -2219,7 +2220,7 @@
           // serviço escolhido da 💲 tabela de preços: vira mão de obra e traz a unidade e o preço
           var pc = ev && ev.target && ev.target.classList.contains("i-desc") && window.AGE_PRECOS ? window.AGE_PRECOS.acharServico(S, M.categoria, i.descricao) : null;
           if (pc) {
-            i.tipo = "servico"; i.descricao = pc.descricao; i.un = pc.un || i.un;
+            i.tipo = pc.grupo === GRUPO_MAT_ORC ? "material" : "servico"; i.descricao = pc.descricao; i.un = pc.un || i.un;
             if (pc.valor !== null && pc.valor !== undefined && !i.valor) i.valor = Number(pc.valor);
             desenharItens(); return;
           }
@@ -2269,6 +2270,28 @@
     function focarUltimo() { var x = $$(".i-desc", el); if (x.length) x[x.length - 1].focus(); }
     desenharItens();
 
+    // itens novos com preço entram sozinhos na 💲 tabela de preços (e aparecem como sugestão nos próximos orçamentos);
+    // os que já vieram de um orçamento ficam com o último preço usado; os da tabela base/ABRAPP não mudam
+    function aprenderItens(itens, cat) {
+      if ((cat !== "eletrica" && cat !== "pintura") || S.semPrecos || !window.AGE_PRECOS) return;
+      var novos = [], mudar = [], vistos = {};
+      itens.forEach(function (i) {
+        var v = Math.round((Number(i.valor) || 0) * 100) / 100, d = String(i.descricao || "").trim(), chave = semAcento(d).trim();
+        if (!v || d.length < 3 || vistos[chave]) return;
+        vistos[chave] = 1;
+        var ja = window.AGE_PRECOS.acharServico(S, cat, d);
+        if (!ja) novos.push({ categoria: cat, grupo: i.tipo === "material" ? GRUPO_MAT_ORC : "Serviços (dos orçamentos)", descricao: d.slice(0, 300), un: i.un || "un", valor: v, fonte: "Orçamento" });
+        else if (ja.valor === null || ja.valor === undefined || (ja.fonte === "Orçamento" && Number(ja.valor) !== v)) mudar.push({ id: ja.id, valor: v });
+      });
+      if (!novos.length && !mudar.length) return;
+      var ps = [];
+      if (novos.length) ps.push(q(sb.from("precos").insert(novos).select()).then(function (ns) { ns.forEach(function (n) { trocar(S.precos, n); }); }));
+      mudar.forEach(function (m) { ps.push(q(sb.from("precos").update({ valor: m.valor, atualizado_em: new Date().toISOString() }).eq("id", m.id).select().single()).then(function (n) { trocar(S.precos, n); })); });
+      Promise.all(ps).then(function () {
+        listaPrecos();
+        if (novos.length) A.avisar(novos.length + " item(ns) novo(s) guardado(s) na 💲 tabela de preços", "ok");
+      }).catch(function () { /* o orçamento já foi salvo; a tabela tenta de novo no próximo salvamento */ });
+    }
     function salvar() {
       lerCampos();
       if (!M.cliente) return Promise.reject(new Error("Informe o cliente."));
@@ -2283,6 +2306,7 @@
         trocar(S.orc, n);
         S.orc.sort(function (a, b) { return b.numero - a.numero; });
         M = Object.assign(M, n);
+        aprenderItens(itens, M.categoria);
         desenharItens();
         var titulo = el.closest(".modal").querySelector(".cab h2");
         titulo.textContent = "Orçamento nº " + String(n.numero).padStart(4, "0");
