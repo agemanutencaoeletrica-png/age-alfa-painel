@@ -513,9 +513,103 @@
       return P.q(P.sb.storage.from("fotos").upload(cam, a.bl, { contentType: a.tipo })).then(function () { return cam; });
     }).catch(function () { return null; });
   }
+  // ---------------- 🏦 extrato do banco (PDF): as entradas viram "comprovantes" para dar baixa nas notas ----------------
+  function pareceExtrato(t) { return /lan[cç]amentos\s+do\s+per[ií]odo|saldo\s+anterior|extrato\s+(de\s+)?conta|entradas\s+e\s+sa[ií]das/i.test(String(t || "")); }
+  // todas as páginas do PDF com a posição de cada texto (o extrato do mês tem várias páginas)
+  function pecasTodas(f) {
+    return f.arrayBuffer().then(function (buf) { return window.pdfjsLib.getDocument({ data: buf }).promise; }).then(function (doc) {
+      var ps = [], seq = Promise.resolve();
+      for (var n = 1; n <= doc.numPages; n++) (function (n) {
+        seq = seq.then(function () { return doc.getPage(n); }).then(function (pg) { return pg.getTextContent(); }).then(function (tc) {
+          tc.items.forEach(function (it) { ps.push({ s: it.str, x: it.transform[4], y: it.transform[5] - (n - 1) * 2000, w: it.width || 0 }); });
+        });
+      })(n);
+      return seq.then(function () { return ps; });
+    });
+  }
+  // colunas Data · Lançamentos/Histórico · Razão Social · CNPJ/CPF · Valor · Saldo, pela posição; devolve as entradas (créditos)
+  function extratoDoPdf(pecas) {
+    var P2 = [];
+    // alguns PDFs juntam colunas vizinhas num pedaço só ("09/09/2026 PIX RECEBIDO", "Valor (R$) Saldo (R$)"): separa, estimando a posição de cada parte
+    pecas.forEach(function (p) {
+      var t = String(p.s).trim(); if (!t) return;
+      var partes = [], m;
+      if ((m = t.match(/^(\d{2}\/\d{2}(?:\/\d{2,4})?)\s+(.+)$/))) partes = [m[1], m[2]];
+      else if ((m = t.match(/^(valor[^]*?)\s+(saldo.*)$/i))) partes = [m[1], m[2]];
+      else partes = [t];
+      var pos = 0;
+      partes.forEach(function (pt) { var i = t.indexOf(pt, pos); P2.push({ s: pt, x: p.x + (p.w || 0) * (i / t.length), y: p.y, w: (p.w || 0) * (pt.length / t.length) }); pos = i + pt.length; });
+    });
+    // cabeçalhos (um por página): "Data" com "Valor" na mesma linha
+    var heads = P2.filter(function (p) { return /^data$/i.test(p.s) && P2.some(function (q) { return Math.abs(q.y - p.y) < 3 && /^valor/i.test(q.s); }); }).map(function (hd) {
+      var mesma = function (re) { return P2.filter(function (q) { return Math.abs(q.y - hd.y) < 3 && re.test(q.s); })[0] || null; };
+      var H = { y: hd.y, data: hd, desc: mesma(/^(lan[cç]amentos?|hist[oó]rico|descri[cç][aã]o)/i), nome: mesma(/^(raz[aã]o\s+social|nome|favorecido|pagador|remetente)/i), doc: mesma(/^(cnpj|cpf)/i),
+        valor: mesma(/^valor/i), saldo: mesma(/^saldo/i) };
+      H.cols = ["data", "desc", "nome", "doc", "valor", "saldo"].filter(function (k) { return H[k]; }).map(function (k) { return { k: k, x: H[k].x }; }).sort(function (q, r) { return q.x - r.x; });
+      return H;
+    }).filter(function (H) { return H.desc && H.valor; }).sort(function (q, r) { return r.y - q.y; });
+    if (!heads.length) return null;
+    var headDe = function (y) { return heads.filter(function (H) { return H.y > y + 2; }).sort(function (q, r) { return q.y - r.y; })[0] || null; };   // o cabeçalho logo acima
+    var colTexto = function (H, p) { var c = null; H.cols.forEach(function (x) { if (x.x <= p.x + 4) c = x.k; }); return c; };
+    var DIN = /^[-+]?\s?(?:R\$\s?)?\d{1,3}(?:\.\d{3})*,\d{2}\s?[-DC+]?$/i;
+    var linhas = P2.filter(function (p) { var H = headDe(p.y); return H && /^\d{2}\/\d{2}(\/\d{2,4})?$/.test(p.s) && Math.abs(p.x - H.data.x) < 15; }).sort(function (q, r) { return r.y - q.y; })
+      .map(function (d) { return { y: d.y, H: headDe(d.y), dataP: d, data: d.s, desc: [], nome: [], doc: [], nums: [], valor: null, neg: false }; });
+    // linha de cada texto: a da mesma altura, ou (continuação) a última data acima dele, antes da próxima
+    var deLinha = function (p) {
+      var mesmaL = linhas.filter(function (l) { return Math.abs(l.y - p.y) < 3.5; })[0];
+      if (mesmaL) return { l: mesmaL, cont: false };
+      var acima = linhas.filter(function (l) { return l.y > p.y && l.y - p.y < 45 && l.H === headDe(p.y); }).sort(function (q, r) { return q.y - r.y; })[0];
+      return acima ? { l: acima, cont: true } : null;
+    };
+    P2.forEach(function (p) {
+      var H = headDe(p.y); if (!H) return;
+      var x = deLinha(p); if (!x) return;
+      var l = x.l;
+      if (p === l.dataP) return;
+      if (DIN.test(p.s)) { if (!x.cont) l.nums.push(p); return; }
+      var k = colTexto(H, p);
+      if (k === "doc") l.doc.push(p.s); else if (k === "nome") l.nome.push(p.s); else if (k === "desc" || (k === "data" && !x.cont)) l.desc.push(p.s);
+    });
+    var iso = function (t) { var m = t.match(/^(\d{2})\/(\d{2})(?:\/(\d{2,4}))?$/); if (!m) return null; var a = m[3] ? (m[3].length === 2 ? "20" + m[3] : m[3]) : String(new Date().getFullYear()); return a + "-" + m[2] + "-" + m[1]; };
+    var out = { creditos: [], debitos: 0 };
+    linhas.forEach(function (l) {
+      var ns = l.nums.sort(function (a, b) { return a.x - b.x; }), saldoAntes = l.H.saldo ? l.H.saldo.x + 5 : 1e9;
+      var v = ns.length > 1 ? ns[0] : ns.length === 1 && ns[0].x + ns[0].w <= saldoAntes ? ns[0] : null;
+      if (v) { l.valor = Math.abs(A.lerNumero(v.s)); l.neg = /^-|-$|D$/i.test(v.s.replace(/\s/g, "")); }
+      // CNPJ/CPF grudado na razão social
+      var nomeTxt = l.nome.join(" "), md = nomeTxt.match(/\d{2}\.?\d{3}\.?\d{3}\s?\/\s?\d{4}-?\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2}/);
+      if (md) { l.doc.push(md[0]); l.nome = [nomeTxt.replace(md[0], " ")]; }
+      var desc = l.desc.join(" ").replace(/\s+/g, " ").trim();
+      if (!(l.valor > 0) || /^saldo|saldo\s+(anterior|em\s+conta|do\s+dia|final)/i.test(desc)) return;
+      if (l.neg) { out.debitos++; return; }
+      out.creditos.push({ data: iso(l.data), desc: desc, nome: l.nome.join(" ").replace(/\s+/g, " ").trim(), doc: dig(l.doc.join("")), valor: l.valor });
+    });
+    return out;
+  }
   function loteDepositos(fs, depois) {
-    var itens = [];
-    var j = A.janela('<div id="ld-st" class="peq">📖 Lendo os comprovantes...</div><div id="ld-res"></div>', { titulo: "💰 Vários comprovantes de depósito", larga: true, fixa: true });
+    var itens = [], extratos = [], compCache = [];
+    var j = A.janela('<div id="ld-st" class="peq">📖 Lendo os comprovantes...</div><div id="ld-res"></div>', { titulo: "💰 Comprovantes e extrato", larga: true, fixa: true });
+    // extrato: cada ENTRADA vira uma linha (as saídas são ignoradas); a impressão digital é a da própria linha do extrato
+    function linhasDoExtrato(it, f) {
+      return pecasTodas(f).then(function (pecas) {
+        var ex = extratoDoPdf(pecas), pos = itens.indexOf(it);
+        if (!ex) { it.motivoFixo = "Não consegui ler as colunas deste extrato"; return; }
+        extratos.push({ nome: f.name, entradas: ex.creditos.length, saidas: ex.debitos });
+        if (!ex.creditos.length) { it.motivoFixo = "Extrato sem entradas (créditos) no período"; return; }
+        itens.splice(pos, 1);
+        return Promise.all(ex.creditos.map(function (c) {
+          return impressao("EXTRATO|" + c.data + "|" + c.valor.toFixed(2) + "|" + c.desc + "|" + c.nome + "|" + c.doc).then(function (h) {
+            itens.push({ f: { name: "🏦 " + [c.desc, c.nome].filter(Boolean).join(" · ") }, extrato: true, img: f, valor: c.valor, data: c.data, id: null, hash: h, pg: { nome: c.nome || c.desc, doc: c.doc } });
+          });
+        }));
+      });
+    }
+    // o mesmo arquivo (o extrato) é guardado uma vez só para todas as linhas
+    function subirUmaVez(f, data) {
+      var x = compCache.filter(function (c) { return c.f === f; })[0];
+      if (!x) { x = { f: f, p: subirComp(f, data) }; compCache.push(x); }
+      return x.p;
+    }
     var el = j.el;
     fs.reduce(function (pr, f, i) {
       return pr.then(function () {
@@ -525,6 +619,7 @@
         return impressao(f).then(function (h) {
           it.hash = h;
           return window.AGE_PAG.lerArquivo(f).then(function (r) {
+            if ((/pdf/.test(f.type) || /\.pdf$/i.test(f.name || "")) && pareceExtrato(r.texto)) return linhasDoExtrato(it, f);
             var px = window.AGE_PAG.lerPix(r.texto);
             it.valor = px.valor; it.data = px.data; it.id = px.id ? String(px.id).replace(/\s/g, "").toUpperCase() : null; it.pg = pagadorDe(r.texto); it.img = r.imagem || f;
           });
@@ -534,11 +629,15 @@
       // cada comprovante pega a sua nota, do mais antigo para o mais novo, sem repetir nota nem comprovante
       var fora = {}, vistos = [];
       itens.slice().sort(function (a, b) { return String(a.data || "9").localeCompare(String(b.data || "9")); }).forEach(function (it) {
+        if (it.motivoFixo) { it.motivo = it.motivoFixo; return; }
         if (it.erro) { it.motivo = "Não consegui ler o comprovante"; return; }
         if (!(it.valor > 0)) { it.motivo = "Não achei o valor"; return; }
         var us = jaUsado({ id: it.id, hash: it.hash });
         if (us.length) { it.motivo = "Comprovante já usado (" + (ehAvulso(us[0]) ? "avulso" : "nota " + (us[0].numero_nota || "s/ nº")) + ")"; return; }
         if (vistos.some(function (v) { return (it.hash && v.hash === it.hash) || (it.id && v.id === it.id); })) { it.motivo = "Comprovante repetido neste lote"; return; }
+        // entrada do extrato que já teve baixa pelo comprovante (mesmo valor no mesmo dia)
+        var jb = it.extrato && (P.S.receitas || []).filter(function (n) { return n.recebido && n.recebido_em === it.data && Math.abs((Number(n.valor_recebido) || contas(n).liq) - it.valor) < 0.01; })[0];
+        if (jb) { it.motivo = "Já baixado (" + (ehAvulso(jb) ? "avulso" : "nota " + (jb.numero_nota || "s/ nº")) + ", mesmo valor e dia)"; return; }
         vistos.push(it);
         it.ops = casar(it.valor, it.pg, fora);
         if (it.ops.length) { it.esc = 0; it.usar = true; it.ops[0].forEach(function (n) { fora[n.id] = 1; }); }
@@ -549,14 +648,15 @@
     function nomeOp(g) { return g.map(function (n) { return "Nota " + (n.numero_nota || "s/ nº"); }).join(" + ") + " · " + empresaDe(g[0]) + " · " + dinheiro(g.reduce(function (t, n) { return t + contas(n).liq; }, 0)); }
     function desenhar() {
       var marcados = itens.filter(function (it) { return it.usar && !it.salvo; }), tot = marcados.reduce(function (t, it) { return t + it.valor; }, 0);
-      $("#ld-st", el).innerHTML = itens.length + " comprovante(s) lidos · <b>" + itens.filter(function (it) { return it.ops && it.ops.length; }).length + "</b> com nota que bate" +
+      $("#ld-st", el).innerHTML = (extratos.length ? extratos.map(function (x) { return "🏦 " + esc(x.nome || "extrato") + ": " + x.entradas + " entrada(s), " + x.saidas + " saída(s) ignoradas"; }).join("<br>") + "<br>" : "") +
+        itens.length + " lançamento(s) · <b>" + itens.filter(function (it) { return it.ops && it.ops.length; }).length + "</b> com nota que bate" +
         (itens.some(function (it) { return it.semNota; }) ? " · " + itens.filter(function (it) { return it.semNota; }).length + " sem nota com esse valor" : "") +
         (itens.some(function (it) { return it.motivo; }) ? " · " + itens.filter(function (it) { return it.motivo; }).length + " ficam de fora" : "");
       $("#ld-res", el).innerHTML = '<div class="tabela-caixa"><table><thead><tr><th></th><th>Comprovante</th><th>Data</th><th class="num">Valor</th><th>Quem pagou</th><th>Dá baixa em</th></tr></thead><tbody>' +
         itens.map(function (it, i) {
           var cel;
           if (it.salvo) cel = '<span class="selo bom">✅ ' + esc(it.salvo) + "</span>";
-          else if (it.motivo) cel = '<span class="selo ' + (/já usado|repetido/.test(it.motivo) ? "atencao" : "critico") + '" style="white-space:normal;display:inline-block;max-width:260px;line-height:1.3">' + esc(it.motivo) + "</span>";
+          else if (it.motivo) cel = '<span class="selo ' + (/já usado|repetido|já baixado/i.test(it.motivo) ? "atencao" : "critico") + '" style="white-space:normal;display:inline-block;max-width:260px;line-height:1.3">' + esc(it.motivo) + "</span>";
           else if (it.semNota) cel = '<span class="selo atencao">Nenhuma nota a receber com esse valor</span><label class="marca-linha peq" style="margin-top:4px"><input type="checkbox" data-ld-av="' + i + '"' + (it.usar ? " checked" : "") + "> lançar como recebimento avulso</label>";
           else cel = (it.ops.length > 1 ? '<select data-ld-op="' + i + '">' + it.ops.map(function (g, k) { return '<option value="' + k + '"' + (k === it.esc ? " selected" : "") + ">" + esc(nomeOp(g)) + "</option>"; }).join("") + "</select>" :
             "<b>" + esc(nomeOp(it.ops[0])) + "</b>") + (mesmaEmpresa(it.ops[it.esc][0], it.pg) ? ' <span class="selo bom">mesma empresa que pagou</span>' : "");
@@ -585,7 +685,7 @@
         lista.reduce(function (pr, it) {
           return pr.then(function () {
             if (jaUsado({ id: it.id, hash: it.hash }).length) { it.motivo = "Comprovante já usado"; it.usar = false; return; }
-            return subirComp(it.img, it.data).then(function (cam) {
+            return (it.extrato ? subirUmaVez(it.img, it.data) : subirComp(it.img, it.data)).then(function (cam) {
               var dep = { deposito_id: it.id, deposito_hash: it.hash, comprovante_receb: cam };
               if (it.semNota) {
                 return gravarReceita(null, Object.assign({ avulso: true, cliente: (it.pg && it.pg.nome) || "Recebimento avulso", destino: (it.pg && it.pg.nome) || null, obra_id: null, numero_nota: null,
@@ -611,7 +711,7 @@
     }
   }
   function deposito(depois) {
-    var j = A.janela('<p class="peq mudo" style="margin-top:0">Mande o comprovante do depósito/Pix que <b>você recebeu</b> (foto, PDF ou o texto). O app acha a nota a receber com o mesmo valor líquido e marca como recebida, guardando o comprovante. No computador também dá para copiar a imagem e apertar <b>Ctrl+V</b> aqui.</p>' +
+    var j = A.janela('<p class="peq mudo" style="margin-top:0">Mande o comprovante do depósito/Pix que <b>você recebeu</b> (foto, PDF ou o texto) ou o <b>extrato do banco em PDF</b>. O app acha a nota a receber com o mesmo valor líquido e marca como recebida, guardando o comprovante. No computador também dá para copiar a imagem e apertar <b>Ctrl+V</b> aqui.</p>' +
       '<div class="acoes" style="margin-top:0"><button class="prim" id="dp-arq-b">📷 Comprovante (foto ou PDF)</button><button id="dp-colar">📋 Colar texto</button></div>' +
       '<input type="file" id="dp-arq" accept="image/*,application/pdf,.pdf,.zip,application/zip" multiple class="oculto">' +
       '<div id="dp-cx-txt" class="oculto"><textarea id="dp-txt" rows="6" placeholder="Cole aqui o texto do comprovante"></textarea><div class="acoes" style="margin-top:4px"><button class="peq" id="dp-ler-txt">Ler</button></div></div>' +
@@ -639,7 +739,10 @@
         dep.hash = h;
         var us = jaUsado(dep);   // o mesmo arquivo: nem precisa ler
         if (us.length) { st(""); $("#dp-res", el).innerHTML = htmlUsado(us); return; }
-        return window.AGE_PAG.lerArquivo(f).then(function (r) { lerTexto(r.texto, r.imagem || f); });
+        return window.AGE_PAG.lerArquivo(f).then(function (r) {
+          if ((/pdf/.test(f.type) || /\.pdf$/i.test(f.name || "")) && pareceExtrato(r.texto)) { j.fechar(); loteDepositos([f], depois); return; }   // extrato: tabela com todas as entradas
+          lerTexto(r.texto, r.imagem || f);
+        });
       }).catch(function (e) { st("Não consegui ler: " + A.msgErro(e), "critico"); });
     }
     function mostrar(valor, data, pg, px) {
@@ -769,6 +872,7 @@
     if (/nfc-?e|cupom\s+fiscal|danfe|documento\s+auxiliar\s+da\s+nota\s+fiscal\s+(de\s+consumidor\s+)?eletr[oô]nica/i.test(t) && !nfse) return "É nota ou cupom de compra de material. Lance em 🧾 Compras.";
     var pagto = /E\d{20}[0-9A-Za-z]{11}/.test(t.replace(/\s/g, "")) ||   // ID de Pix (E + banco + data/hora + código)
       (/comprovante|pix|transfer[eê]ncia|\bTED\b|dep[oó]sito|recebido\s+de|pago\s+para|enviado\s+para/i.test(t) && /ag[eê]ncia|institui[cç][aã]o|id\s+da\s+transa|autentica/i.test(t));
+    if (pareceExtrato(t) && !nfse) return "É um extrato do banco. Use 💰 Recebi um depósito (ele acha as notas de cada entrada).";
     if (pagto && !nfse) return "É um comprovante de pagamento. Use 💰 Recebi um depósito.";
     if (!nfse) return "Não reconheci uma nota fiscal de serviço neste arquivo. Se for uma nota e o app não leu, use ➕ Lançar à mão.";
     var meu = dig((A.CFG.EMPRESA || {}).documento);
