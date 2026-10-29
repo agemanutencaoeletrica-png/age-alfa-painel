@@ -2395,13 +2395,15 @@
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
       '<label for="eo2-obs">Observações</label><textarea id="eo2-obs" rows="3"></textarea>' +
       '<label for="eo2-st">Situação</label><select id="eo2-st">' + Object.keys(STATUS_ORC).map(function (k) { return '<option value="' + k + '">' + STATUS_ORC[k] + "</option>"; }).join("") + "</select>" +
-      '<p class="mudo peq" id="eo2-auto" style="margin:8px 0 0">💾 O orçamento salva sozinho enquanto você digita (com o cliente preenchido).</p>' +
+      '<p class="peq" id="eo2-auto" style="position:sticky;bottom:0;z-index:2;margin:8px -16px 0;padding:8px 16px;background:var(--sup2);border-top:1px solid var(--borda);font-weight:600">💾 O orçamento salva sozinho enquanto você digita (com o cliente preenchido).</p>' +
       '<div class="acoes"><button class="prim" id="eo2-salvar">Salvar</button>' +
       (podeCompartilharArquivo() ? '<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>' : "") +
       '<button id="eo2-pdf">📄 Baixar PDF</button></div>' +
       '<div class="acoes" style="margin-top:8px"><button class="zap" id="eo2-zap">📲 WhatsApp do cliente</button><button id="eo2-email-b">✉ E-mail do cliente</button>' +
       '<button id="eo2-imprimir">🖨 Imprimir</button>' + (!soMateriais(M) ? '<button id="eo2-gmat">🧱 Gerar orçamento de materiais</button>' : "") + '<button id="eo2-dup">📋 Usar como modelo</button>' + (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
-      { titulo: M.numero ? nomeOrc(M) + " nº " + String(M.numero).padStart(4, "0") : soMateriais(M) ? "Novo orçamento de materiais" : "Novo orçamento", larga: true, fixa: true });
+      { titulo: M.numero ? nomeOrc(M) + " nº " + String(M.numero).padStart(4, "0") : soMateriais(M) ? "Novo orçamento de materiais" : "Novo orçamento", larga: true, fixa: true,
+        // fechou a janela: grava na hora o que ainda não foi para o servidor
+        aoFechar: function () { document.removeEventListener("visibilitychange", aoSumir); salvarJa(); } });
     var el = j.el;
     function preencher() {
       $("#eo2-doc", el).value = M.documento ? fmtDoc(M.documento) : "";
@@ -2437,7 +2439,7 @@
     var tAuto = null, gravando = false, deNovo = false;
     function agendarAuto() {
       clearTimeout(tAuto);
-      if (!M.cliente) return;
+      if (!M.cliente) { mostrarAuto("✏️ Preencha o cliente para o orçamento ser salvo sozinho no servidor (até lá, o rascunho fica neste aparelho)."); return; }
       tAuto = setTimeout(function () {
         if (!document.body.contains(el)) return;
         if (gravando) { deNovo = true; return; }
@@ -2452,6 +2454,23 @@
         }).then(function () { gravando = false; if (deNovo) { deNovo = false; agendarAuto(); } });
       }, 2000);
     }
+    // gravação imediata (fechar a janela, trocar de aba/app, minimizar): não espera os 2 segundos
+    var apagado = false;
+    function salvarJa() {
+      if (!rascPronto || apagado) return;
+      clearTimeout(tAuto); clearTimeout(tRasc);
+      lerCampos();
+      if (assinatura() === salvoSig) return;
+      try { if (temAlgo()) localStorage.setItem(chaveRasc, JSON.stringify({ em: Date.now(), M: M })); } catch (e) { /* sem armazenamento */ }
+      if (!M.cliente) return;
+      if (gravando) { deNovo = true; return; }
+      gravando = true;
+      salvar(true).then(function () { mostrarAuto("✅ Salvo automaticamente às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })); },
+        function (e) { mostrarAuto("⚠ Não salvou no servidor: " + A.msgErro(e) + " — o rascunho está guardado neste aparelho."); A.avisar("⚠ O orçamento não foi salvo no servidor (" + A.msgErro(e) + "). O rascunho ficou neste aparelho.", "erro"); })
+        .then(function () { gravando = false; if (deNovo) { deNovo = false; if (document.body.contains(el)) agendarAuto(); else salvarJa(); } });
+    }
+    function aoSumir() { if (document.visibilityState === "hidden") salvarJa(); }
+    document.addEventListener("visibilitychange", aoSumir);
     function mostrarAuto(t) { var x = $("#eo2-auto", el); if (x) x.textContent = t; }
     function assinatura() {
       return JSON.stringify([M.documento, M.cliente, M.telefone, M.email, M.endereco, M.categoria, M.desconto, M.validade_dias, M.pagamento, M.prazo, M.observacoes, M.status,
@@ -3112,7 +3131,7 @@
     };
     if ($("#eo2-apagar", el)) $("#eo2-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar este orçamento?")) return;
-      q(sb.from("orcamentos").delete().eq("id", M.id)).then(function () { tirar(S.orc, M.id); j.fechar(); A.avisar("Apagado", "ok"); rota(); }).catch(falhou);
+      q(sb.from("orcamentos").delete().eq("id", M.id)).then(function () { tirar(S.orc, M.id); apagado = true; apagarRasc(); j.fechar(); A.avisar("Apagado", "ok"); rota(); }).catch(falhou);
     };
   }
 
