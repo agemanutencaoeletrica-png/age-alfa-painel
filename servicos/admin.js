@@ -56,6 +56,22 @@
       "• Substituir o circuito do chuveiro (127 V) por cabo de 6 mm² de boa qualidade, certificado pelo Inmetro.\n" +
       "• Conferir os disjuntores e as conexões dos circuitos trocados e testar o funcionamento ao final."
   }];
+  // primeira letra maiúscula (do campo, ou de cada linha nos textos longos) enquanto você digita
+  function maiusculaInicial(t, linhas) {
+    var up = function (c) { return c.toLocaleUpperCase("pt-BR"); };
+    return linhas ? String(t || "").replace(/(^|\n)([ \t]*[•\-–✓✔*]?[ \t]*)([a-zà-ÿ])/g, function (m, a, b, c) { return a + b + up(c); })
+      : String(t || "").replace(/^(\s*)([a-zà-ÿ])/, function (m, a, c) { return a + up(c); });
+  }
+  function ligarMaiuscula(inp, linhas) {
+    if (!inp) return;
+    inp.setAttribute("autocapitalize", "sentences");
+    inp.addEventListener("input", function () {
+      var v = this.value, n = maiusculaInicial(v, linhas);
+      if (n === v) return;
+      var a = this.selectionStart, b = this.selectionEnd; this.value = n;
+      try { this.setSelectionRange(a, b); } catch (e) { /* campo sem cursor */ }
+    });
+  }
   function temLaudo(o) { return !!(o && o.laudo && (String(o.laudo.vistoria || "").trim() || String(o.laudo.solucao || "").trim())); }
   // texto do laudo em parágrafos e tópicos (linhas que começam com •, -, ✓ ou *)
   function linhasLaudo(t) {
@@ -2379,13 +2395,15 @@
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
       '<label for="eo2-obs">Observações</label><textarea id="eo2-obs" rows="3"></textarea>' +
       '<label for="eo2-st">Situação</label><select id="eo2-st">' + Object.keys(STATUS_ORC).map(function (k) { return '<option value="' + k + '">' + STATUS_ORC[k] + "</option>"; }).join("") + "</select>" +
-      '<p class="mudo peq" id="eo2-auto" style="margin:8px 0 0">💾 O orçamento salva sozinho enquanto você digita (com o cliente preenchido).</p>' +
+      '<p class="peq" id="eo2-auto" style="position:sticky;bottom:0;z-index:2;margin:8px -16px 0;padding:8px 16px;background:var(--sup2);border-top:1px solid var(--borda);font-weight:600">💾 O orçamento salva sozinho enquanto você digita (com o cliente preenchido).</p>' +
       '<div class="acoes"><button class="prim" id="eo2-salvar">Salvar</button>' +
       (podeCompartilharArquivo() ? '<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>' : "") +
       '<button id="eo2-pdf">📄 Baixar PDF</button></div>' +
       '<div class="acoes" style="margin-top:8px"><button class="zap" id="eo2-zap">📲 WhatsApp do cliente</button><button id="eo2-email-b">✉ E-mail do cliente</button>' +
       '<button id="eo2-imprimir">🖨 Imprimir</button>' + (!soMateriais(M) ? '<button id="eo2-gmat">🧱 Gerar orçamento de materiais</button>' : "") + '<button id="eo2-dup">📋 Usar como modelo</button>' + (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
-      { titulo: M.numero ? nomeOrc(M) + " nº " + String(M.numero).padStart(4, "0") : soMateriais(M) ? "Novo orçamento de materiais" : "Novo orçamento", larga: true, fixa: true });
+      { titulo: M.numero ? nomeOrc(M) + " nº " + String(M.numero).padStart(4, "0") : soMateriais(M) ? "Novo orçamento de materiais" : "Novo orçamento", larga: true, fixa: true,
+        // fechou a janela: grava na hora o que ainda não foi para o servidor
+        aoFechar: function () { document.removeEventListener("visibilitychange", aoSumir); salvarJa(); } });
     var el = j.el;
     function preencher() {
       $("#eo2-doc", el).value = M.documento ? fmtDoc(M.documento) : "";
@@ -2398,6 +2416,8 @@
       if ($("#eo2-vist", el)) { $("#eo2-vist", el).value = M.laudo.vistoria || ""; $("#eo2-sol", el).value = M.laudo.solucao || ""; }
     }
     preencher();
+    ["#eo2-cli", "#eo2-end", "#eo2-pag", "#eo2-prazo"].forEach(function (k) { ligarMaiuscula($(k, el)); });
+    ["#eo2-obs", "#eo2-vist", "#eo2-sol"].forEach(function (k) { ligarMaiuscula($(k, el), true); });
 
     // rascunho no aparelho: o que foi digitado e ainda não foi salvo volta se a página recarregar, fechar ou cair a internet
     var chaveRasc = "age_rascunho_orc_" + (M.id || "novo"), tRasc = null, rascPronto = false;
@@ -2419,7 +2439,7 @@
     var tAuto = null, gravando = false, deNovo = false;
     function agendarAuto() {
       clearTimeout(tAuto);
-      if (!M.cliente) return;
+      if (!M.cliente) { mostrarAuto("✏️ Preencha o cliente para o orçamento ser salvo sozinho no servidor (até lá, o rascunho fica neste aparelho)."); return; }
       tAuto = setTimeout(function () {
         if (!document.body.contains(el)) return;
         if (gravando) { deNovo = true; return; }
@@ -2434,6 +2454,23 @@
         }).then(function () { gravando = false; if (deNovo) { deNovo = false; agendarAuto(); } });
       }, 2000);
     }
+    // gravação imediata (fechar a janela, trocar de aba/app, minimizar): não espera os 2 segundos
+    var apagado = false;
+    function salvarJa() {
+      if (!rascPronto || apagado) return;
+      clearTimeout(tAuto); clearTimeout(tRasc);
+      lerCampos();
+      if (assinatura() === salvoSig) return;
+      try { if (temAlgo()) localStorage.setItem(chaveRasc, JSON.stringify({ em: Date.now(), M: M })); } catch (e) { /* sem armazenamento */ }
+      if (!M.cliente) return;
+      if (gravando) { deNovo = true; return; }
+      gravando = true;
+      salvar(true).then(function () { mostrarAuto("✅ Salvo automaticamente às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })); },
+        function (e) { mostrarAuto("⚠ Não salvou no servidor: " + A.msgErro(e) + " — o rascunho está guardado neste aparelho."); A.avisar("⚠ O orçamento não foi salvo no servidor (" + A.msgErro(e) + "). O rascunho ficou neste aparelho.", "erro"); })
+        .then(function () { gravando = false; if (deNovo) { deNovo = false; if (document.body.contains(el)) agendarAuto(); else salvarJa(); } });
+    }
+    function aoSumir() { if (document.visibilityState === "hidden") salvarJa(); }
+    document.addEventListener("visibilitychange", aoSumir);
     function mostrarAuto(t) { var x = $("#eo2-auto", el); if (x) x.textContent = t; }
     function assinatura() {
       return JSON.stringify([M.documento, M.cliente, M.telefone, M.email, M.endereco, M.categoria, M.desconto, M.validade_dias, M.pagamento, M.prazo, M.observacoes, M.status,
@@ -2504,6 +2541,7 @@
           var x = $(k, tr); if (!x) return;
           x.addEventListener("blur", function () { if (/[A-Za-zÀ-ÿ]/.test(x.value) || !String(x.value).trim()) return; var v = A.lerNumero(x.value); x.value = v ? reais2(v) : ""; });
         });
+        ligarMaiuscula($(".i-desc", tr));
         tr.oninput = tr.onchange = function (ev) {
           // linha já redesenhada (o "change" do campo antigo chega depois): ignora
           if (desenhando || !tr.isConnected) return;
@@ -2556,6 +2594,15 @@
       var cat = $("#eo2-cat", el) ? $("#eo2-cat", el).value : M.categoria, cs = cat === "eletrica" || cat === "pintura" ? [cat] : ["eletrica", "pintura"];
       var tab = window.AGE_PRECOS ? window.AGE_PRECOS.paraOrcamento(S, cat) : [], vistos = {}, base = [];
       tab.forEach(function (x) { vistos[semAcento(x.descricao).trim()] = 1; });
+      // o que já foi escrito em orçamentos anteriores (aparece na hora, antes mesmo de ir para a tabela)
+      (S.orc || []).forEach(function (o) {
+        if ((cat === "eletrica" || cat === "pintura") && o.categoria && o.categoria !== cat && o.categoria !== "eletrica_pintura") return;
+        (o.itens || []).forEach(function (i) {
+          var k = semAcento(i.descricao).trim(); if (!k || vistos[k]) return; vistos[k] = 1;
+          base.push({ id: "orc-" + o.id + "-" + k, categoria: o.categoria, grupo: i.tipo === "material" ? GRUPO_MAT_ORC : "Serviços (dos orçamentos)", descricao: i.descricao,
+            un: i.un || "un", valor: Number(i.valor) || null, ativo: true, base: true });
+        });
+      });
       cs.forEach(function (c) {
         [[window.AGE_MATERIAIS_BASE, "m"], [window.AGE_PRECOS_BASE, "s"]].forEach(function (L) {
           var lista = L[0] && L[0][c] ? L[0][c].itens : [];
@@ -2639,20 +2686,26 @@
 
     // itens novos com preço entram sozinhos na 💲 tabela de preços (e aparecem como sugestão nos próximos orçamentos);
     // os que já vieram de um orçamento ficam com o último preço usado; os da tabela base/ABRAPP não mudam
+    // o que você digita fica guardado (com ou sem preço) e aparece como sugestão nas próximas vezes;
+    // área sem elétrica/pintura definida: decide pelo nome do item (ex.: tinta → pintura)
+    var aprendendo = S.aprendendo || (S.aprendendo = {});
     function aprenderItens(itens, cat) {
-      if ((cat !== "eletrica" && cat !== "pintura") || S.semPrecos || !window.AGE_PRECOS) return;
+      if (S.semPrecos || !window.AGE_PRECOS) return;
       var novos = [], mudar = [], vistos = {};
       itens.forEach(function (i) {
         var v = Math.round((Number(i.valor) || 0) * 100) / 100, d = String(i.descricao || "").trim(), chave = semAcento(d).trim();
-        if (!v || d.length < 3 || vistos[chave]) return;
-        vistos[chave] = 1;
-        var ja = window.AGE_PRECOS.acharServico(S, cat, d);
-        if (!ja) novos.push({ categoria: cat, grupo: i.tipo === "material" ? GRUPO_MAT_ORC : "Serviços (dos orçamentos)", descricao: d.slice(0, 300), un: i.un || "un", valor: v, fonte: "Orçamento" });
-        else if (ja.valor === null || ja.valor === undefined || (ja.fonte === "Orçamento" && Number(ja.valor) !== v)) mudar.push({ id: ja.id, valor: v });
+        var c = cat === "eletrica" || cat === "pintura" ? cat : (window.AGE_COMPRAS && window.AGE_COMPRAS.areaPelosItens([{ item: d }])) || "eletrica";
+        if (d.length < 3 || !/[A-Za-zÀ-ú]{3,}/.test(d) || vistos[c + chave] || aprendendo[c + chave]) return;
+        vistos[c + chave] = 1;
+        var ja = window.AGE_PRECOS.acharServico(S, c, d);
+        if (!ja) { aprendendo[c + chave] = 1; novos.push({ categoria: c, grupo: i.tipo === "material" ? GRUPO_MAT_ORC : "Serviços (dos orçamentos)", descricao: d.slice(0, 300), un: i.un || "un", valor: v || null, fonte: "Orçamento" }); }
+        else if (v && (ja.valor === null || ja.valor === undefined || (ja.fonte === "Orçamento" && Number(ja.valor) !== v))) mudar.push({ id: ja.id, valor: v });
       });
       if (!novos.length && !mudar.length) return;
       var ps = [];
-      if (novos.length) ps.push(q(sb.from("precos").insert(novos).select()).then(function (ns) { ns.forEach(function (n) { trocar(S.precos, n); }); }));
+      if (novos.length) ps.push(q(sb.from("precos").insert(novos).select()).then(function (ns) { ns.forEach(function (n) { trocar(S.precos, n); }); })
+        .then(function () { novos.forEach(function (n) { delete aprendendo[n.categoria + semAcento(n.descricao).trim()]; }); },
+          function (e) { novos.forEach(function (n) { delete aprendendo[n.categoria + semAcento(n.descricao).trim()]; }); throw e; }));
       mudar.forEach(function (m) { ps.push(q(sb.from("precos").update({ valor: m.valor, atualizado_em: new Date().toISOString() }).eq("id", m.id).select().single()).then(function (n) { trocar(S.precos, n); })); });
       Promise.all(ps).then(function () {
         listaPrecos();
@@ -2669,7 +2722,7 @@
         if (corr.length) A.avisar("✍ Corrigido: " + corr.join(", "), "ok");
       }
       var itens = M.itens.filter(function (i) { return i.descricao.trim(); }).map(function (i) {
-        var x = { tipo: i.tipo, descricao: i.descricao.trim(), qtd: Number(i.qtd) || 0, un: i.un, valor: Math.round((Number(i.valor) || 0) * 100) / 100 };
+        var x = { tipo: i.tipo, descricao: maiusculaInicial(i.descricao.trim()), qtd: Number(i.qtd) || 0, un: i.un, valor: Math.round((Number(i.valor) || 0) * 100) / 100 };
         if (i.tipo === "ambos") x.valor_mat = Math.round((Number(i.valor_mat) || 0) * 100) / 100;
         return x;
       });
@@ -3078,7 +3131,7 @@
     };
     if ($("#eo2-apagar", el)) $("#eo2-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar este orçamento?")) return;
-      q(sb.from("orcamentos").delete().eq("id", M.id)).then(function () { tirar(S.orc, M.id); j.fechar(); A.avisar("Apagado", "ok"); rota(); }).catch(falhou);
+      q(sb.from("orcamentos").delete().eq("id", M.id)).then(function () { tirar(S.orc, M.id); apagado = true; apagarRasc(); j.fechar(); A.avisar("Apagado", "ok"); rota(); }).catch(falhou);
     };
   }
 

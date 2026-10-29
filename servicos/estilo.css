@@ -81,7 +81,7 @@ input, select, textarea { width: 100%; font: inherit; color: var(--texto); backg
   border-radius: 9px; padding: 10px 11px; min-height: 42px; }
 textarea { min-height: 80px; resize: vertical; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outline-offset: 0; border-color: transparent; }
-input[type="checkbox"] { width: 20px; height: 20px; min-height: 0; vertical-align: middle; margin: 0 6px 0 0; accent-color: var(--prim); }
+input[type="checkbox"], input[type="radio"] { flex: 0 0 auto; padding: 0; width: 20px; height: 20px; min-height: 0; vertical-align: middle; margin: 0 6px 0 0; accent-color: var(--prim); }
 .marca-linha { display: flex; align-items: center; font-weight: 700; color: var(--texto); font-size: 15px; margin: 10px 0 0; }
 .duas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .filtros { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
