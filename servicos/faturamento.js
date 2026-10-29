@@ -556,7 +556,7 @@
         itens.map(function (it, i) {
           var cel;
           if (it.salvo) cel = '<span class="selo bom">✅ ' + esc(it.salvo) + "</span>";
-          else if (it.motivo) cel = '<span class="selo ' + (/já usado|repetido/.test(it.motivo) ? "atencao" : "critico") + '">' + esc(it.motivo) + "</span>";
+          else if (it.motivo) cel = '<span class="selo ' + (/já usado|repetido/.test(it.motivo) ? "atencao" : "critico") + '" style="white-space:normal;display:inline-block;max-width:260px;line-height:1.3">' + esc(it.motivo) + "</span>";
           else if (it.semNota) cel = '<span class="selo atencao">Nenhuma nota a receber com esse valor</span><label class="marca-linha peq" style="margin-top:4px"><input type="checkbox" data-ld-av="' + i + '"' + (it.usar ? " checked" : "") + "> lançar como recebimento avulso</label>";
           else cel = (it.ops.length > 1 ? '<select data-ld-op="' + i + '">' + it.ops.map(function (g, k) { return '<option value="' + k + '"' + (k === it.esc ? " selected" : "") + ">" + esc(nomeOp(g)) + "</option>"; }).join("") + "</select>" :
             "<b>" + esc(nomeOp(it.ops[0])) + "</b>") + (mesmaEmpresa(it.ops[it.esc][0], it.pg) ? ' <span class="selo bom">mesma empresa que pagou</span>' : "");
@@ -811,7 +811,7 @@
         '<td class="peq">' + esc(it.f.name || "") + "</td><td><b>" + esc(d.numero || "—") + "</b></td><td>" + esc(d.data ? A.dataSimples(d.data) : "—") + "</td><td>" + esc(d.tomador || "—") + "</td>" +
         '<td class="num">' + (bruto ? dinheiro(bruto) : "—") + '</td><td class="num">' + (ret ? dinheiro(ret) + '<div class="peq mudo">' + pct(ret / bruto * 100) + "</div>" : "—") + '</td><td class="num"><b>' + (liq ? dinheiro(liq) : "—") + "</b></td>" +
         "<td>" + (it.ok ? (it.salva ? '<span class="selo bom">✅ lançada</span>' : it.falhou ? '<span class="selo critico">' + esc(it.falhou) + "</span>" : '<span class="selo">pronta</span> <button class="peq" data-lt-ed="' + i + '">Conferir</button>') :
-          '<span class="selo ' + (/já lançada|repetido/i.test(it.motivo) ? "atencao" : "critico") + '">' + esc(it.motivo) + "</span>") + "</td></tr>";
+          '<span class="selo ' + (/já lançada|repetido/i.test(it.motivo) ? "atencao" : "critico") + '" style="white-space:normal;display:inline-block;max-width:260px;line-height:1.3">' + esc(it.motivo) + "</span>") + "</td></tr>";
     }
     function desenhar() {
       var prontas = itens.filter(function (it) { return it.ok && it.usar && !it.salva; });
