@@ -52,6 +52,19 @@
     });
   }
   function ehAvulso(n) { return !!(n.avulso || (n.retencoes && n.retencoes.avulso)); }
+  // nota já lançada? mesma chave da NFS-e, ou mesmo número de nota (sem zeros à esquerda). Avulso não tem número e não conta.
+  function numNota(t) { var d = String(t || "").replace(/\D/g, "").replace(/^0+/, ""); return d || ""; }
+  function notaRepetida(numero, chave, idAtual) {
+    var nu = numNota(numero), ch = String(chave || "").replace(/\D/g, "");
+    return (P.S.receitas || []).filter(function (x) {
+      if (x.id === idAtual || ehAvulso(x)) return false;
+      return (ch && String(x.chave_nfse || "").replace(/\D/g, "") === ch) || (nu && numNota(x.numero_nota) === nu);
+    })[0] || null;
+  }
+  function textoRepetida(x) {
+    return "⛔ A nota nº " + esc(x.numero_nota || "s/ nº") + " já foi lançada: " + esc(empresaDe(x)) + " · bruto " + dinheiro(contas(x).bruto) + " · emitida em " + esc(A.dataSimples(x.emitida_em)) +
+      (x.recebido ? " · ✅ recebida" : " · ⏳ a receber") + ". Ela não pode ser lançada de novo.";
+  }
   // empresa (tomador) da nota: pelo CNPJ, senão pelo nome
   function empresaDe(n) { return n.cliente || rotuloDe(n) || "Sem empresa"; }
   function chaveEmpresa(n) { var d = dig(n.tomador_cnpj); return d.length >= 11 ? "c:" + d : "n:" + norm(empresaDe(n)); }
@@ -582,6 +595,8 @@
       (op.erro ? '<div class="aviso erro">Não consegui ler o arquivo. Preencha à mão.</div>' : "") +
       (op.lida && (d.valorIncerto || !(d.bruto || d.valor)) ? '<div class="aviso">⚠️ Não achei o valor da nota com clareza: <b>confira os valores</b>.</div>' : "") +
       (dif ? '<div class="aviso">⚠️ O valor bruto (' + dinheiro(d.bruto) + ") e o líquido (" + dinheiro(d.valor) + ") são diferentes e não achei quais impostos foram retidos: coloquei a diferença em <b>Outras retenções</b>. Confira na nota.</div>" : "") +
+      (!n0 && notaRepetida(d.numero, d.chave, null) ? '<div class="aviso erro" id="ft-rep-ini">' + textoRepetida(notaRepetida(d.numero, d.chave, null)) +
+        '<div class="acoes" style="margin-top:6px"><button class="peq" id="ft-abrir-rep">📂 Abrir a nota já lançada</button></div></div>' : "") +
       '<label class="marca-linha" style="margin:4px 0 8px"><input type="checkbox" id="ft-avulso"> 💵 Recebimento avulso (serviço sem nota fiscal)</label>' +
       (d.nacional ? '<div class="aviso ok">🧾 NFS-e do padrão nacional lida: confira os valores abaixo.</div>' : "") +
       (op.bruto ? '<details class="peq" style="margin:4px 0"><summary>🔍 ver o texto que o app leu</summary><pre style="white-space:pre-wrap;max-height:200px;overflow:auto;font-size:11px">' + esc(String(op.bruto).slice(0, 5000)) + "</pre></details>" : "") +
@@ -628,6 +643,7 @@
     $("#ft-avulso", el).checked = n0 ? ehAvulso(n0) : !!op.avulso;
     if (op.avulso && !n0) { $("#ft-rec", el).checked = true; verRec(); if (op.valor) $("#ft-valor", el).value = num2(op.valor); if (op.data) { $("#ft-data", el).value = op.data; $("#ft-rec-em", el).value = op.data; } }
     $("#ft-avulso", el).onchange = verAvulso;
+    if ($("#ft-abrir-rep", el)) $("#ft-abrir-rep", el).onclick = function () { var x = notaRepetida(d.numero, d.chave, null); j.fechar(); formulario({ nota: x }, depois); };
     // empresa já usada antes: o CNPJ vem junto
     $("#ft-cli", el).onchange = function () {
       var cn = clientes[this.value.trim()];
@@ -672,9 +688,9 @@
       if (av) { dados.numero_nota = null; dados.retencoes = {}; dados.valor = v.bruto; }
       if (!n0 && d.chave) dados.chave_nfse = d.chave;
       if (!n0 && op.comprovante) { dados.comprovante_receb = op.comprovante; dados.valor_recebido = op.valor || null; }
-      // mesma nota lançada duas vezes (mesmo número e valor)
-      var rep = dados.numero_nota && P.S.receitas.filter(function (x) { return x.id !== (n0 && n0.id) && x.numero_nota === dados.numero_nota && Math.abs(contas(x).bruto - v.bruto) < 0.01; })[0];
-      if (rep && b.dataset.confirmou !== "1") { $("#ft-erro", el).innerHTML = '<div class="aviso erro">⚠️ A nota nº ' + esc(rep.numero_nota) + " de " + dinheiro(contas(rep).bruto) + " já foi lançada (" + esc(empresaDe(rep)) + ").</div>"; b.dataset.confirmou = "1"; b.textContent = "Salvar mesmo assim"; return; }
+      // a mesma nota não entra duas vezes (mesma chave da NFS-e ou mesmo número): bloqueia, sem "salvar mesmo assim"
+      var rep = !av && notaRepetida(dados.numero_nota, dados.chave_nfse || (n0 && n0.chave_nfse), n0 && n0.id);
+      if (rep) { $("#ft-erro", el).innerHTML = '<div class="aviso erro">' + textoRepetida(rep) + "</div>"; return; }
       A.ocupado(b, true, "Salvando...");
       var f = op.arquivo, ehPdf = f && (/pdf/.test(f.type) || /\.pdf$/i.test(f.name || ""));
       var pArq = !f ? Promise.resolve(null) : (/^image\//.test(f.type) ? A.prepararFoto(f, [], 1800).then(function (bl) { return { bl: bl, ext: "jpg", tipo: "image/jpeg" }; })
@@ -694,6 +710,7 @@
         A.ocupado(b, false);
         var m = A.msgErro(e);
         if (/valor_bruto|retencoes|imposto_empresa|tomador_cnpj/.test(m)) m = "O banco ainda não tem os campos de impostos. Rode no Supabase o supabase.sql atualizado e depois notify pgrst, 'reload schema';";
+        if (/receitas_chave_idx|receitas_numero_idx|duplicate key/i.test(m)) m = "⛔ Esta nota já foi lançada (mesma chave ou mesmo número). Ela não pode ser lançada de novo.";
         $("#ft-erro", el).innerHTML = '<div class="aviso erro">' + esc(m) + "</div>";
       });
     };
