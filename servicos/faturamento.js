@@ -751,11 +751,14 @@
       var cab = '<div class="cartao" style="margin-top:8px"><b>Depósito de ' + dinheiro(valor) + "</b> · " + esc(A.dataSimples(data)) + (pg && pg.nome ? " · de " + esc(pg.nome) : "") + "</div>";
       if (!ops.length) {
         var abertas = (P.S.receitas || []).filter(function (n) { return !n.recebido; }).sort(function (a, b) { return Math.abs(contas(a).liq - valor) - Math.abs(contas(b).liq - valor); }).slice(0, 6);
-        $("#dp-res", el).innerHTML = cab + '<div class="aviso">Nenhuma nota a receber com o líquido de ' + dinheiro(valor) + ". As mais perto do valor:</div>" +
+        $("#dp-res", el).innerHTML = cab + (valor < 1 ? '<div class="aviso erro">⚠️ Valor de ' + dinheiro(valor) + " é muito baixo: parece um saldo, não um depósito. Se for um extrato, mande o PDF do extrato com as entradas do período.</div>" : "") +
+          '<div class="aviso">Nenhuma nota a receber com o líquido de ' + dinheiro(valor) + ". As mais perto do valor:</div>" +
           (abertas.length ? abertas.map(function (n) {
             var c = contas(n), dif = Math.round((valor - c.liq) * 100) / 100;
-            return '<div class="cartao" style="margin:6px 0"><b>Nota ' + esc(n.numero_nota || "s/ nº") + " · " + esc(empresaDe(n)) + "</b> · líquido " + dinheiro(c.liq) + ' · <span class="selo atencao">diferença ' + dinheiro(dif) + "</span>" +
-              '<div class="acoes" style="margin-top:6px"><button class="peq" data-dp-usar="' + n.id + '">Marcar esta como recebida mesmo assim</button></div></div>';
+            // "mesmo assim" só quando a diferença é pequena (até 5% do líquido): nunca dar baixa numa nota de 16 mil com um depósito de centavos
+            var perto = Math.abs(dif) <= Math.max(1, c.liq * 0.05);
+            return '<div class="cartao" style="margin:6px 0"><b>Nota ' + esc(n.numero_nota || "s/ nº") + " · " + esc(empresaDe(n)) + "</b> · líquido " + dinheiro(c.liq) + ' · <span class="selo ' + (perto ? "atencao" : "critico") + '">diferença ' + dinheiro(dif) + "</span>" +
+              (perto ? '<div class="acoes" style="margin-top:6px"><button class="peq" data-dp-usar="' + n.id + '">Marcar esta como recebida mesmo assim</button></div>' : '<div class="peq mudo">Diferença grande demais para dar baixa por este depósito.</div>') + "</div>";
           }).join("") : '<div class="mudo peq">Não há notas a receber.</div>') +
           '<div class="acoes"><button id="dp-avulso">💵 Lançar como recebimento avulso (sem nota)</button></div>';
       } else {
