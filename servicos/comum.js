@@ -106,7 +106,11 @@
     function tecla(ev) { if (ev.key === "Escape" && fundo === $$(".fundo-modal").pop()) fechar(); }
     document.addEventListener("keydown", tecla);
     $(".fechar", fundo).onclick = fechar;
-    fundo.addEventListener("mousedown", function (ev) { if (ev.target === fundo && !op.fixa) fechar(); });
+    // fecha ao clicar FORA da janela — mas não ao usar a barra de rolagem (ela é parte do fundo) nem ao arrastar
+    // a seleção de dentro para fora: o clique tem de começar e terminar no fundo
+    var comecouFora = false;
+    fundo.addEventListener("mousedown", function (ev) { comecouFora = ev.target === fundo && ev.clientX < fundo.clientWidth && ev.clientY < fundo.clientHeight; });
+    fundo.addEventListener("click", function (ev) { if (comecouFora && ev.target === fundo && !op.fixa) fechar(); comecouFora = false; });
     return { el: $(".corpo", fundo), fechar: fechar };
   }
 

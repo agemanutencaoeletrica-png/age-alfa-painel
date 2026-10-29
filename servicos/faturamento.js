@@ -9,7 +9,7 @@
   var filtro = { aba: "notas", periodo: "ano", busca: "", sit: "" };
 
   function dinheiro(v) { return A.dinheiro(Number(v) || 0); }
-  function num2(v) { return v || v === 0 ? Number(v).toFixed(2).replace(".", ",") : ""; }
+  function num2(v) { return v || v === 0 ? Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""; }   // 17.100,00
   function semAcento(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
   function norm(t) { return semAcento(t).replace(/\(.*?\)/g, " ").replace(/[^a-z0-9]+/g, " ").replace(/\b(ltda|me|epp|eireli|sa|s a)\b/g, " ").replace(/\s+/g, " ").trim(); }
   function dig(t) { return String(t || "").replace(/\D/g, ""); }
@@ -247,7 +247,11 @@
       '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
       '<div class="filtros"><select id="ft-per" aria-label="Período"><option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="ano">Este ano</option><option value="tudo">Tudo</option></select>' +
       (filtro.aba !== "resultado" ? '<select id="ft-sit" aria-label="Situação"><option value="">Todas</option><option value="areceber">⏳ A receber</option><option value="recebido">✅ Recebidas</option></select>' : "") +
-      '<input type="search" id="ft-busca" placeholder="Buscar cliente, obra, nº da nota..."></div><div id="ft-res"></div>';
+      '<input type="search" id="ft-busca" placeholder="Buscar cliente, obra, nº da nota..."></div>' + htmlRasc() + '<div id="ft-res"></div>';
+    if ($("#ft-rasc-ok")) {
+      $("#ft-rasc-ok").onclick = function () { var r = lerRasc(); if (r) continuarRasc(r, function () { ver(c, P); }); };
+      $("#ft-rasc-x").onclick = function () { if (!A.confirmar("Descartar a nota não salva?")) return; apagarRasc(); ver(c, P); };
+    }
     $("#ft-per").value = filtro.periodo; if ($("#ft-sit")) $("#ft-sit").value = filtro.sit; $("#ft-busca").value = filtro.busca;
     $$("[data-ftaba]", c).forEach(function (b) { b.onclick = function () { filtro.aba = b.dataset.ftaba; ver(c, P); }; });
     $("#ft-per").onchange = function () { filtro.periodo = this.value; desenhar(); };
@@ -616,6 +620,33 @@
     });
   }
 
+  // ---------------- 📝 rascunho da nota: o que foi preenchido fica guardado neste aparelho até salvar ----------------
+  var CHAVE_RASC = "age_rasc_nota";
+  var CAMPOS_RASC = ["ft-cli", "ft-cnpj", "ft-obra", "ft-num", "ft-data", "ft-valor", "ft-aliq", "ft-emp", "ft-desc", "ft-rec-em"].concat(RET.map(function (x) { return "ft-r-" + x[0]; }));
+  var MARCAS_RASC = ["ft-rec", "ft-avulso"];
+  function lerRasc() { try { var r = JSON.parse(localStorage.getItem(CHAVE_RASC) || "null"); return r && Date.now() - r.em < 30 * 864e5 ? r : null; } catch (e) { return null; } }
+  function apagarRasc() { try { localStorage.removeItem(CHAVE_RASC); } catch (e) { /* sem armazenamento */ } }
+  function guardarRasc(r) {
+    try { localStorage.setItem(CHAVE_RASC, JSON.stringify(r)); return true; }
+    catch (e) { try { var r2 = Object.assign({}, r, { arq: null }); localStorage.setItem(CHAVE_RASC, JSON.stringify(r2)); return true; } catch (e2) { return false; } }   // arquivo grande demais: guarda só os campos
+  }
+  function resumoRasc(r) {
+    var c = r.campos || {};
+    return [c["ft-cli"] || (r.op && r.op.lida && r.op.lida.tomador) || "sem empresa", c["ft-num"] ? "nº " + c["ft-num"] : "", c["ft-valor"] ? "R$ " + c["ft-valor"] : ""].filter(Boolean).join(" · ");
+  }
+  function continuarRasc(r, depois) {
+    var op = Object.assign({}, r.op || {}, { rascunho: r });
+    if (op.notaId) op.nota = P.porId(P.S.receitas, op.notaId);
+    if (!r.arq) { formulario(op, depois); return; }
+    fetch(r.arq.url).then(function (x) { return x.blob(); }).then(function (bl) { op.arquivo = new File([bl], r.arq.nome || "nota", { type: r.arq.tipo || bl.type }); })
+      .catch(function () { /* sem o arquivo: segue com os campos */ }).then(function () { formulario(op, depois); });
+  }
+  function htmlRasc() {
+    var r = lerRasc(); if (!r) return "";
+    return '<div class="aviso" id="ft-rasc" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>📝 Nota não salva: <b>' + esc(resumoRasc(r)) + "</b> <span class=\"peq mudo\">(guardada em " +
+      esc(A.data(new Date(r.em))) + " " + new Date(r.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + ')</span></span><button class="prim peq" id="ft-rasc-ok">Continuar</button><button class="peq" id="ft-rasc-x">Descartar</button></div>';
+  }
+
   // ---------------- receber arquivo e formulário ----------------
   function receber(f, depois) {
     var j = A.janela('<div class="peq" id="ft-st">📖 Lendo a nota de serviço...</div>', { titulo: "🧾 Nota de serviço" });
@@ -655,7 +686,12 @@
       '<label for="ft-desc">Serviço</label><input id="ft-desc" maxlength="300" placeholder="Ex.: pintura das faixas amarelas e demarcações de combate a incêndio">' +
       '<div class="duas"><div><label class="marca-linha" style="margin-top:28px"><input type="checkbox" id="ft-rec"> ✅ Já recebi</label></div><div id="ft-rec-c"><label for="ft-rec-em">Recebido em</label><input type="date" id="ft-rec-em"></div></div>' +
       '<div id="ft-erro"></div><div class="acoes"><button class="prim" id="ft-salvar">Salvar</button>' + (n0 ? '<button class="perigo" id="ft-apagar">Apagar</button>' : "") + "</div>",
-      { titulo: n0 ? "🧾 Nota de serviço" : "🧾 Nova nota de serviço", larga: true });
+      { titulo: n0 ? "🧾 Nota de serviço" : "🧾 Nova nota de serviço", larga: true, fixa: true, aoFechar: function () {   // fixa: clicar fora não fecha (só o ✕ ou Esc)
+        if (salvou || !mexeu) return;
+        A.avisar("📝 Guardei o que você preencheu. Para continuar, toque em “Continuar” em Notas e resultado.", "ok");
+        if (depois) depois();
+      } });
+    var salvou = false, mexeu = !!op.lida || !!op.rascunho || !!op.avulso;
     var el = j.el, c0 = n0 ? contas(n0) : null, ret0 = n0 ? n0.retencoes || {} : retLida;
     $("#ft-cli", el).value = n0 ? n0.cliente || "" : d.tomador || "";
     $("#ft-cnpj", el).value = fmtCnpj(n0 ? n0.tomador_cnpj : d.cnpj);
@@ -718,6 +754,33 @@
     $$(".ft-r", el).forEach(function (i) { i.oninput = conta; });
     if (!n0 && $("#ft-aliq", el).value.trim()) pelaAliq();
     verAvulso();
+    // rascunho: volta o que estava preenchido
+    if (op.rascunho) {
+      var rc = op.rascunho.campos || {};
+      CAMPOS_RASC.forEach(function (id) { var x = $("#" + id, el); if (x && rc[id] !== undefined) x.value = rc[id]; });
+      MARCAS_RASC.forEach(function (id) { var x = $("#" + id, el); if (x && rc[id] !== undefined) x.checked = !!rc[id]; });
+      if (RET.some(function (x) { return rc["ft-r-" + x[0]]; })) $("#ft-ret-box", el).open = true;
+      verRec(); verAvulso(); conta();
+      A.avisar("📝 Continuando a nota que não foi salva.", "ok");
+    }
+    // guarda sozinho a cada mudança (e já ao abrir uma nota lida do arquivo)
+    var arqRasc = op.rascunho ? op.rascunho.arq : null, tRasc = null;
+    function salvarRasc() {
+      if (salvou) return;
+      var campos = {};
+      CAMPOS_RASC.forEach(function (id) { var x = $("#" + id, el); if (x) campos[id] = x.value; });
+      MARCAS_RASC.forEach(function (id) { var x = $("#" + id, el); if (x) campos[id] = x.checked; });
+      guardarRasc({ em: Date.now(), campos: campos, arq: arqRasc,
+        op: { notaId: n0 ? n0.id : null, lida: op.lida || null, comprovante: op.comprovante || null, deposito: op.deposito || null, avulso: !!op.avulso, valor: op.valor || null, data: op.data || null, bruto: op.bruto ? String(op.bruto).slice(0, 5000) : null } });
+    }
+    var mudou = function () { mexeu = true; clearTimeout(tRasc); tRasc = setTimeout(salvarRasc, 300); };
+    el.addEventListener("input", mudou); el.addEventListener("change", mudou);
+    if (op.arquivo && !arqRasc && op.arquivo.size < 3500000) {
+      var fr = new FileReader();
+      fr.onload = function () { arqRasc = { url: fr.result, nome: op.arquivo.name || "nota", tipo: op.arquivo.type || "" }; if (mexeu) salvarRasc(); };
+      fr.readAsDataURL(op.arquivo);
+    }
+    if (mexeu) salvarRasc();
     $("#ft-salvar", el).onclick = function () {
       var b = this, v = ler(), cli = $("#ft-cli", el).value.trim(), txt = $("#ft-obra", el).value.trim() || cli;
       var erro = !txt ? "Informe a empresa (tomador)." : !(v.bruto > 0) ? "Informe o valor bruto da nota." : !(v.liq > 0) ? "Os impostos retidos passam do valor bruto: confira." : !$("#ft-data", el).value ? "Informe a data de emissão." : "";
@@ -744,6 +807,7 @@
         if (cam) dados.arquivo = cam;
         return gravarReceita(n0 && n0.id, dados);
       }).then(function (n) {
+        salvou = true; clearTimeout(tRasc); apagarRasc();
         P.trocar(P.S.receitas, n); j.fechar();
         if (n.emitida_em < periodo().de) filtro.periodo = "tudo";
         A.avisar("🧾 Nota salva: " + empresaDe(n) + " · bruto " + dinheiro(contas(n).bruto) + " · ficou " + dinheiro(contas(n).ficou), "ok");
@@ -758,7 +822,7 @@
     };
     if ($("#ft-apagar", el)) $("#ft-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar esta nota de serviço?")) return;
-      P.q(P.sb.from("receitas").delete().eq("id", n0.id)).then(function () { P.tirar(P.S.receitas, n0.id); j.fechar(); if (depois) depois(); }).catch(P.falhou);
+      P.q(P.sb.from("receitas").delete().eq("id", n0.id)).then(function () { salvou = true; apagarRasc(); P.tirar(P.S.receitas, n0.id); j.fechar(); if (depois) depois(); }).catch(P.falhou);
     };
   }
 
