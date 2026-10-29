@@ -44,7 +44,7 @@
     });
     return { texto: novo, feitas: feitas };
   }
-  var GRUPO_MAT_ORC = "Materiais (dos orçamentos)";
+  var GRUPO_MAT_ORC = "Materiais (dos orçamentos)", GRUPO_MAT_NOTA = "Materiais (das notas e orçamentos das lojas)";
   // item da 💲 tabela que é material (lista de materiais ou aprendido de orçamento)
   function ehMaterialPreco(x) { return /^Materiais/.test(String((x && x.grupo) || "")); }
   function soMateriais(o) { return o && o.tipo === "materiais"; }
@@ -2274,7 +2274,11 @@
   // valores em reais sempre com 2 casas (ex.: 100,00)
   function reais2(v) { return Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function matCliente(o) { return o.materiais_cliente !== false; }
-  function valoresCliente(o) { return o.valores_cliente !== "total"; }
+  // orçamento de materiais: o cliente recebe o valor de cada material ('itens'), só o total ('total') ou só a lista, sem valores ('nenhum')
+  var MODOS_MAT = { itens: "Com o valor de cada material", total: "Só o valor total (sem o valor de cada material)", nenhum: "Sem valores: só o nome e a quantidade dos materiais" };
+  function modoMat(o) { return MODOS_MAT[o.valores_cliente] ? o.valores_cliente : "itens"; }
+  function semValores(o) { return soMateriais(o) && modoMat(o) === "nenhum"; }
+  function valoresCliente(o) { return soMateriais(o) ? modoMat(o) === "itens" : o.valores_cliente !== "total"; }
   function calcOrc(M) {
     var mat = 0, serv = 0, r2 = function (v) { return Math.round(v * 100) / 100; };
     M.itens.forEach(function (i) {
@@ -2295,11 +2299,12 @@
       valores_cliente: "itens", materiais_cliente: false, tipo: "servico"
     }, base || {});
     // orçamento só de materiais: valores dos materiais vão para o cliente, sem mão de obra
-    if (soMateriais(M)) { M.materiais_cliente = true; M.valores_cliente = "itens"; if (!base || !base.pagamento) M.pagamento = M.pagamento === "50% na aprovação e 50% na entrega do serviço" ? "À vista na aprovação" : M.pagamento; }
+    var notaPre = M._nota; delete M._nota;   // nota de 🧾 Compras para ler logo ao abrir
+    if (soMateriais(M)) { M.materiais_cliente = true; M.valores_cliente = modoMat(M); if (!base || !base.pagamento) M.pagamento = M.pagamento === "50% na aprovação e 50% na entrega do serviço" ? "À vista na aprovação" : M.pagamento; }
     M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
     if (soMateriais(M)) M.itens.forEach(function (i) { i.tipo = "material"; });
     if (!M.itens.length) M.itens.push(soMateriais(M) ? { tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 } : { tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 });
-    M.materiais_cliente = matCliente(M); M.valores_cliente = valoresCliente(M) ? "itens" : "total";
+    M.materiais_cliente = matCliente(M); M.valores_cliente = soMateriais(M) ? modoMat(M) : valoresCliente(M) ? "itens" : "total";
 
     var j = A.janela(
       '<label for="eo2-cli">Cliente *</label><input id="eo2-cli" maxlength="200">' +
@@ -2309,12 +2314,15 @@
       '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><select id="eo2-cat"><option value="">—</option>' +
       Object.keys(CAT_ORC).map(function (k) { return '<option value="' + k + '">' + CAT_ORC[k] + "</option>"; }).join("") + "</select></div></div>" +
       '<h3 style="margin-top:14px">Itens</h3><div id="eo2-itens"></div><datalist id="eo2-dl-precos"></datalist>' +
-      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button>' + (soMateriais(M) ? "" : '<button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-mais-ambos">+ Material + mão de obra</button>') + '<button class="peq" id="eo2-lista-mat" title="Escolher vários materiais da lista de uma vez">📋 Escolher da lista</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button></div>' +
+      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button>' + (soMateriais(M) ? "" : '<button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-mais-ambos">+ Material + mão de obra</button>') + '<button class="peq" id="eo2-lista-mat" title="Escolher vários materiais da lista de uma vez">📋 Escolher da lista</button><button class="peq" id="eo2-ler-nota" title="Materiais da nota fiscal ou do orçamento da loja (foto, PDF, XML, lista colada ou nota já lançada em Compras)">📷 Ler nota / orçamento da loja</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
       '<div class="cartao' + (soMateriais(M) ? " oculto" : "") + '" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-vitens"> Mostrar o valor de cada serviço de mão de obra</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-mcli"> Enviar também o valor dos materiais</label>' +
       '<p class="mudo peq" style="margin:4px 0 0">Desmarcado: os materiais vão só com a quantidade e o valor deles fica só no app. Para mandar os materiais com preço, use <b>🧱 Orçamento de materiais</b>.</p></div>' +
+      (soMateriais(M) ? '<div class="cartao" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
+        Object.keys(MODOS_MAT).map(function (k) { return '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-mmodo" value="' + k + '"> ' + MODOS_MAT[k] + "</label>"; }).join("") +
+        '<p class="mudo peq" style="margin:4px 0 0">Os valores continuam guardados no app; aqui você escolhe se o cliente vê ou não.</p></div>' : "") +
       '<div class="cartao" style="margin-top:10px" id="eo2-totais"></div>' +
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
       '<label for="eo2-obs">Observações</label><textarea id="eo2-obs" rows="3"></textarea>' +
@@ -2334,6 +2342,7 @@
       $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
       $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
       $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente;
+      $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.checked = r.value === modoMat(M); });
     }
     preencher();
 
@@ -2418,7 +2427,7 @@
           '<div class="l2' + (i.tipo === "ambos" ? " ambos" : "") + '"><label>Qtd<input class="i-qtd" inputmode="decimal"></label>' +
           '<label>Un<select class="i-un">' + UNIDADES.concat(UNIDADES.indexOf(i.un) < 0 && i.un ? [i.un] : []).map(function (u) { return "<option>" + esc(u) + "</option>"; }).join("") + "</select></label>" +
           (i.tipo === "ambos" ? '<label>Material un. (R$)<input class="i-vmat" inputmode="decimal"></label>' : "") +
-          '<label>' + (i.tipo === "material" ? "Valor un. (R$)" + (M.materiais_cliente ? "" : " · só no app") : i.tipo === "ambos" ? "Mão de obra un. (R$)" : "Valor un. (R$)") +
+          '<label>' + (i.tipo === "material" ? "Valor un. (R$)" + (M.materiais_cliente && !semValores(M) ? "" : " · só no app") : i.tipo === "ambos" ? "Mão de obra un. (R$)" : "Valor un. (R$)") +
           '<input class="i-valor" inputmode="decimal" placeholder="0,00"></label><div class="i-sub forte"></div>' +
           '<div class="i-aviso aviso erro peq oculto" style="grid-column:1/-1;margin:4px 0 0">Neste campo vai só o número (ex.: 250 ou 12,50). O nome do serviço ou do material vai no campo grande ao lado do tipo.</div>' +
           '<button class="peq i-tirar" aria-label="Remover item">✕</button></div></div>';
@@ -2489,6 +2498,7 @@
       M.desconto = A.lerNumero($("#eo2-desc", el).value); M.validade_dias = Math.max(1, parseInt($("#eo2-val", el).value, 10) || 15);
       M.pagamento = val(el, "#eo2-pag"); M.prazo = val(el, "#eo2-prazo"); M.observacoes = val(el, "#eo2-obs"); M.status = $("#eo2-st", el).value;
       M.valores_cliente = $("#eo2-vitens", el).checked ? "itens" : "total"; M.materiais_cliente = $("#eo2-mcli", el).checked;
+      if (soMateriais(M)) { var rm = $('input[name="eo2-mmodo"]:checked', el); M.valores_cliente = rm ? rm.value : "itens"; M.materiais_cliente = true; }
     }
     function totais() {
       lerCampos(); guardarRasc();
@@ -2500,7 +2510,7 @@
       $("#eo2-totais", el).innerHTML = '<div class="linha"><span>🧱 Materiais' + (t.mc ? "" : ' <span class="selo">só no app</span>') + '</span><span class="dir">' + A.dinheiro(t.mat) + "</span></div>" +
         (soMateriais(M) ? "" : '<div class="linha"><span>👷 Mão de obra / serviços</span><span class="dir">' + A.dinheiro(t.serv) + "</span></div>") +
         (M.desconto ? '<div class="linha"><span>Desconto</span><span class="dir">− ' + A.dinheiro(M.desconto) + "</span></div>" : "") +
-        '<div class="linha forte" style="font-size:18px;margin-top:4px"><span>Total para o cliente</span><span class="dir">' + A.dinheiro(t.total) + "</span></div>" +
+        '<div class="linha forte" style="font-size:18px;margin-top:4px"><span>' + (semValores(M) ? "Total (só no app: o cliente recebe a lista sem valores)" : "Total para o cliente") + '</span><span class="dir">' + A.dinheiro(t.total) + "</span></div>" +
         (!t.mc && t.mat ? '<div class="linha mudo peq"><span>Custo total com os materiais (só no app)</span><span class="dir">' + A.dinheiro(t.custo) + "</span></div>" : "");
     }
     $("#eo2-desc", el).oninput = totais;
@@ -2512,10 +2522,12 @@
     // trocar a opção dos materiais muda o rótulo do valor e o total para o cliente
     $("#eo2-mcli", el).addEventListener("change", function () { lerCampos(); desenharItens(); });
     $("#eo2-vitens", el).addEventListener("change", totais);
+    $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.addEventListener("change", function () { lerCampos(); desenharItens(); }); });
     function focarUltimo() { var x = $$(".i-desc", el); if (x.length) x[x.length - 1].focus(); }
     desenharItens();
     if (M.id) { lerCampos(); salvoSig = assinatura(); }
     rascPronto = true;
+    if (notaPre) lerNotaLoja(notaPre);
     (function oferecerRasc() {
       var r = null;
       try { r = JSON.parse(localStorage.getItem(chaveRasc) || "null"); } catch (e) { r = null; }
@@ -2668,6 +2680,115 @@
       }).catch(falhou);
     };
     $("#eo2-lista-mat", el).onclick = function () { escolherMateriais(); };
+    $("#eo2-ler-nota", el).onclick = function () { lerNotaLoja(); };
+    // 📷 materiais da nota fiscal ou do orçamento da loja (foto, PDF, XML, lista colada ou nota já lançada em 🧾 Compras):
+    // entram no orçamento com a quantidade e o preço (com acréscimo, se quiser) e o preço da loja fica na 💲 tabela para as outras áreas
+    function lerNotaLoja(pre) {
+      lerCampos();
+      var CP = window.AGE_COMPRAS;
+      if (!CP) { A.avisar("O leitor de notas não carregou. Recarregue a página.", "erro"); return; }
+      var notas = (S.compras || []).filter(function (c) { return c.tipo !== "despesa" && (c.itens || []).length; })
+        .sort(function (a, b) { return String(b.comprado_em).localeCompare(String(a.comprado_em)); });
+      var jn = A.janela(
+        '<p class="peq mudo" style="margin-top:0">Leia a <b>nota fiscal</b> ou o <b>orçamento da loja</b> (foto, PDF ou o XML do e-mail), cole a lista ou use uma nota já lançada em 🧾 Compras. ' +
+        "Os materiais entram com a quantidade e o preço de cada item.</p>" +
+        '<div class="acoes" style="margin-top:0"><button class="prim" id="ln-foto">📷 Foto, PDF ou XML</button><button id="ln-colar">📋 Colar lista</button></div>' +
+        '<input type="file" id="ln-arq" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" class="oculto">' +
+        '<div id="ln-cx-colar" class="oculto"><textarea id="ln-txt" rows="5" placeholder="Uma linha por material: 10 | Cabo flexível 2,5 mm | 3,20"></textarea>' +
+        '<div class="acoes" style="margin-top:4px"><button class="peq" id="ln-ler-txt">Ler a lista</button></div></div>' +
+        (notas.length ? '<details style="margin-top:8px"' + (pre ? "" : " open") + '><summary><b>🧾 Notas já lançadas em Compras (' + notas.length + ")</b></summary>" +
+          '<input id="ln-busca" type="search" placeholder="🔍 Buscar loja ou material" style="margin-top:6px"><div id="ln-notas" style="max-height:30vh;overflow:auto;margin-top:6px"></div></details>' : "") +
+        '<div id="ln-status" class="peq" style="margin-top:8px"></div><div id="ln-prev"></div>',
+        { titulo: "📷 Ler nota ou orçamento da loja", larga: true });
+      var lidos = [], info = {};
+      function status(t, tipo) { $("#ln-status", jn.el).innerHTML = t ? '<span style="color:var(--' + (tipo || "texto") + ')">' + esc(t) + "</span>" : ""; }
+      var UN_NOTA = { und: "un", unid: "un", u: "un", pc: "pç", pca: "pç", peca: "pç", "peça": "pç", mt: "m", mts: "m", metro: "m", m2: "m²", rl: "rolo", rolos: "rolo", gl: "galão", galao: "galão", br: "barra", brs: "barra" };
+      function mostrar(itens, inf) {
+        info = inf || {};
+        lidos = (itens || []).map(function (x) {
+          var qtd = Number(x.qtd) || 1, unit = Number(x.unit) || (Number(x.valor) > 0 ? Math.round(x.valor / qtd * 100) / 100 : 0), un = String(x.un || "un").toLowerCase().replace(/\.$/, "");
+          return { ok: true, descricao: String(x.item || x.descricao || "").replace(/\s+/g, " ").trim(), qtd: qtd, un: UN_NOTA[un] || un || "un", unit: unit };
+        }).filter(function (x) { return x.descricao; });
+        if (!lidos.length) { $("#ln-prev", jn.el).innerHTML = ""; status("Não achei materiais. Tente uma foto mais reta e de perto, o PDF ou o XML da nota, ou cole a lista.", "critico"); return; }
+        status("");
+        var cat = M.categoria === "eletrica" || M.categoria === "pintura" ? M.categoria : info.area === "eletrica" || info.area === "pintura" ? info.area : CP.areaPelosItens(lidos.map(function (x) { return { item: x.descricao }; })) || "eletrica";
+        $("#ln-prev", jn.el).innerHTML = '<div class="cartao" style="margin-top:8px"><b>' + lidos.length + " material(is)" + (info.loja ? " · " + esc(info.loja) : "") + (info.data ? " · " + esc(A.dataSimples(info.data)) : "") + "</b>" +
+          '<p class="peq mudo" style="margin:2px 0 6px">Confira o nome, a quantidade e o preço (a leitura de foto pode errar) e desmarque o que não vai.</p>' +
+          '<div class="tabela-caixa"><table><thead><tr><th></th><th>Material</th><th class="num">Qtd</th><th>Un</th><th class="num">Preço da loja (un.)</th></tr></thead><tbody>' +
+          lidos.map(function (x, n) {
+            return '<tr data-ln="' + n + '"><td><input type="checkbox" class="ln-ok" checked aria-label="Usar"></td><td><input class="ln-desc" maxlength="300" style="min-width:180px"></td>' +
+              '<td><input class="ln-qtd" inputmode="decimal" style="width:70px"></td><td>' + esc(x.un) + '</td><td><input class="ln-unit" inputmode="decimal" style="width:100px" placeholder="0,00"></td></tr>';
+          }).join("") + "</tbody></table></div>" +
+          '<div class="duas"><div><label for="ln-margem">Acréscimo sobre o preço da loja (%)</label><input id="ln-margem" inputmode="decimal" placeholder="0"></div>' +
+          '<div><label for="ln-cat">Guardar os preços na 💲 tabela de</label><select id="ln-cat"' + (S.semPrecos ? " disabled" : "") + '><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option><option value="">Não guardar</option></select></div></div>' +
+          '<p class="peq mudo" style="margin:4px 0 0">Na 💲 tabela fica o <b>preço da loja</b> (sem o acréscimo): ele aparece nos próximos orçamentos e no 📋 Escolher da lista.</p>' +
+          '<div class="acoes"><button class="prim" id="ln-ok">Adicionar ao orçamento</button></div></div>';
+        $("#ln-cat", jn.el).value = S.semPrecos ? "" : cat;
+        $$("#ln-prev tr[data-ln]", jn.el).forEach(function (tr) {
+          var x = lidos[Number(tr.dataset.ln)];
+          $(".ln-desc", tr).value = x.descricao; $(".ln-qtd", tr).value = A.numero(x.qtd, 3); $(".ln-unit", tr).value = x.unit ? reais2(x.unit) : "";
+          tr.oninput = tr.onchange = function () {
+            x.ok = $(".ln-ok", tr).checked; x.descricao = $(".ln-desc", tr).value.trim(); x.qtd = A.lerNumero($(".ln-qtd", tr).value); x.unit = A.lerNumero($(".ln-unit", tr).value);
+          };
+        });
+        $("#ln-ok", jn.el).onclick = function () {
+          var usar = lidos.filter(function (x) { return x.ok && x.descricao; });
+          if (!usar.length) { A.avisar("Marque pelo menos um material.", "erro"); return; }
+          var mg = Math.max(0, A.lerNumero($("#ln-margem", jn.el).value) || 0), cat2 = $("#ln-cat", jn.el).value;
+          M.itens = M.itens.filter(function (i) { return String(i.descricao || "").trim() || Number(i.valor); });
+          usar.forEach(function (x) { M.itens.push({ tipo: "material", descricao: x.descricao, qtd: Number(x.qtd) || 1, un: x.un, valor: Math.round((Number(x.unit) || 0) * (1 + mg / 100) * 100) / 100 }); });
+          if (!M.categoria && cat2) { M.categoria = cat2; $("#eo2-cat", el).value = cat2; }
+          jn.fechar(); desenharItens(); guardarRasc();
+          A.avisar(usar.length + " material(is) adicionado(s) ao orçamento" + (mg ? " com " + A.numero(mg) + "% de acréscimo" : "") + ".", "ok");
+          guardarPrecosLoja(usar, cat2, info);
+        };
+      }
+      $("#ln-foto", jn.el).onclick = function () { $("#ln-arq", jn.el).value = ""; $("#ln-arq", jn.el).click(); };
+      $("#ln-arq", jn.el).onchange = function () {
+        var f = this.files[0]; if (!f) return;
+        $("#ln-prev", jn.el).innerHTML = "";
+        status("🔎 Lendo " + f.name + "... (foto pode levar até 1 minuto)");
+        CP.lerUmaNota(f, function (t) { status(t); }).then(function (r) {
+          var d = (r && r.dados) || {};
+          mostrar(d.itens, { loja: d.fornecedor, data: d.data });
+        }).catch(function (e) { status("Não consegui ler o arquivo: " + A.msgErro(e), "critico"); });
+      };
+      $("#ln-colar", jn.el).onclick = function () { $("#ln-cx-colar", jn.el).classList.remove("oculto"); $("#ln-txt", jn.el).focus(); };
+      $("#ln-ler-txt", jn.el).onclick = function () { mostrar(CP.lerLista($("#ln-txt", jn.el).value).itens, {}); };
+      function desenharNotas() {
+        var b = semAcento($("#ln-busca", jn.el).value).trim();
+        var ls = notas.filter(function (c) { return !b || b.split(/\s+/).every(function (p2) { return semAcento((c.fornecedor || "") + " " + (c.itens || []).map(function (y) { return y.item; }).join(" ")).indexOf(p2) >= 0; }); }).slice(0, 60);
+        $("#ln-notas", jn.el).innerHTML = ls.map(function (c) {
+          return '<button class="peq" data-lnota="' + c.id + '" style="display:block;width:100%;text-align:left;margin:0 0 4px">' + esc(A.dataSimples(c.comprado_em)) + " · <b>" + esc(c.fornecedor || "Loja não informada") + "</b> · " +
+            c.itens.length + " material(is) · " + A.dinheiro(Number(c.valor) || 0) + "</button>";
+        }).join("") || '<div class="vazio">Nada com essa busca.</div>';
+        $$("[data-lnota]", jn.el).forEach(function (bt) { bt.onclick = function () { usarNota(porId(S.compras, bt.dataset.lnota)); }; });
+      }
+      function usarNota(c) { if (c) mostrar(c.itens, { loja: c.fornecedor, data: c.comprado_em, area: c.area }); }
+      if (notas.length) { $("#ln-busca", jn.el).oninput = desenharNotas; desenharNotas(); }
+      if (pre) usarNota(pre);
+    }
+    // preço da loja na 💲 tabela: material novo entra; o que estava sem preço (ou veio de outra nota) fica com o preço desta nota
+    function guardarPrecosLoja(lista, cat, info) {
+      if ((cat !== "eletrica" && cat !== "pintura") || S.semPrecos || !window.AGE_PRECOS) return;
+      var novos = [], mudar = [], vistos = {}, obs = "Preço da loja" + (info.loja ? " " + info.loja : "") + (info.data ? " em " + A.dataSimples(String(info.data).slice(0, 10)) : "");
+      lista.forEach(function (x) {
+        var v = Math.round((Number(x.unit) || 0) * 100) / 100, d = String(x.descricao || "").trim(), k = semAcento(d).trim();
+        if (!v || d.length < 3 || vistos[k]) return;
+        vistos[k] = 1;
+        var ja = window.AGE_PRECOS.acharServico(S, cat, d);
+        if (!ja) novos.push({ categoria: cat, grupo: GRUPO_MAT_NOTA, descricao: d.slice(0, 300), un: x.un || "un", valor: v, obs: obs.slice(0, 300), fonte: "Nota" });
+        else if (ehMaterialPreco(ja) && (ja.valor === null || ja.valor === undefined || ja.fonte === "Nota")) mudar.push({ id: ja.id, valor: v });
+      });
+      if (!novos.length && !mudar.length) return;
+      var ps = [];
+      if (novos.length) ps.push(q(sb.from("precos").insert(novos).select()).then(function (ns) { ns.forEach(function (n) { trocar(S.precos, n); }); }));
+      mudar.forEach(function (m) { ps.push(q(sb.from("precos").update({ valor: m.valor, obs: obs.slice(0, 300), atualizado_em: new Date().toISOString() }).eq("id", m.id).select().single()).then(function (n) { trocar(S.precos, n); })); });
+      Promise.all(ps).then(function () {
+        listaPrecos();
+        A.avisar((novos.length + mudar.length) + " preço(s) da loja guardado(s) na 💲 tabela de preços", "ok");
+      }).catch(function (e) { A.avisar("Os materiais entraram no orçamento, mas a 💲 tabela não salvou: " + A.msgErro(e), "erro"); });
+    }
     // escolher vários materiais da 💲 tabela de uma vez (com busca e grupos)
     function escolherMateriais() {
       lerCampos();
@@ -2716,7 +2837,7 @@
   function gruposCliente(o) {
     var mc = matCliente(o), vi = valoresCliente(o);
     return [
-      { titulo: "Materiais", itens: o.itens.filter(function (i) { return i.tipo === "material"; }), comValor: mc },
+      { titulo: "Materiais", itens: o.itens.filter(function (i) { return i.tipo === "material"; }), comValor: soMateriais(o) ? vi : mc },
       { titulo: "Mão de obra / serviços", itens: o.itens.filter(function (i) { return i.tipo !== "material"; }), comValor: vi }
     ].filter(function (g) { return g.itens.length; });
   }
@@ -2735,10 +2856,13 @@
       });
       t += "\n";
     });
-    if (tc.mc && tc.mat) t += "Materiais: " + A.dinheiro(tc.mat) + "\n";
-    if (tc.serv) t += "Mão de obra: " + A.dinheiro(tc.serv) + "\n";
-    if (Number(o.desconto)) t += "Desconto: − " + A.dinheiro(o.desconto) + "\n";
-    t += "*Total: " + A.dinheiro(tc.total) + "*\n";
+    // lista de materiais sem valores: sem os totais
+    if (!semValores(o)) {
+      if (tc.mc && tc.mat) t += "Materiais: " + A.dinheiro(tc.mat) + "\n";
+      if (tc.serv) t += "Mão de obra: " + A.dinheiro(tc.serv) + "\n";
+      if (Number(o.desconto)) t += "Desconto: − " + A.dinheiro(o.desconto) + "\n";
+      t += "*Total: " + A.dinheiro(tc.total) + "*\n";
+    }
     if (o.pagamento) t += "Pagamento: " + o.pagamento + "\n";
     if (o.prazo) t += "Prazo: " + o.prazo + "\n";
     t += "Validade: " + o.validade_dias + " dias";
@@ -2853,15 +2977,17 @@
         y += 3;
       });
 
-      // totais
-      espaco(32);
+      // totais (a lista de materiais sem valores não leva)
       var xt = 120;
+      if (!semValores(o)) {
+      espaco(32);
       fonte("normal", 10); preto();
       (t.mc && t.mat ? [["Materiais", t.mat]] : []).concat(t.serv ? [["Mão de obra", t.serv]] : []).concat(Number(o.desconto) ? [["Desconto", -Number(o.desconto)]] : []).forEach(function (l) {
         doc.text(l[0], xt, y); doc.text((l[1] < 0 ? "- " : "") + tx(A.dinheiro(Math.abs(l[1]))), R, y, { align: "right" }); y += 5.5;
       });
       doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.6); doc.line(xt, y - 2.5, R, y - 2.5); y += 3;
       fonte("bold", 14); doc.text("TOTAL", xt, y); doc.text(tx(A.dinheiro(t.total)), R, y, { align: "right" }); y += 10;
+      }
 
       // condições
       [["Forma de pagamento: ", o.pagamento], ["Prazo de execução: ", o.prazo], ["Observações: ", o.observacoes]].forEach(function (c) {
@@ -2922,10 +3048,10 @@
       '<div class="cli"><b>Cliente:</b> ' + esc(o.cliente) + (o.documento ? " · <b>" + rotuloDoc(o.documento) + ":</b> " + esc(fmtDoc(o.documento)) : "") + (o.telefone ? " · " + esc(o.telefone) : "") + (o.email ? " · " + esc(o.email) : "") + (o.endereco ? "<br><b>Local:</b> " + esc(o.endereco) : "") +
       (o.categoria ? "<br><b>Serviço:</b> " + esc(CAT_ORC[o.categoria] || o.categoria) : "") + "</div>" +
       gruposCliente(o).map(bloco).join("") +
-      '<div class="tot">' + (t.mc && t.mat ? "<div><span>Materiais</span><span>" + A.dinheiro(t.mat) + "</span></div>" : "") +
+      (semValores(o) ? "" : '<div class="tot">' + (t.mc && t.mat ? "<div><span>Materiais</span><span>" + A.dinheiro(t.mat) + "</span></div>" : "") +
       (t.serv ? "<div><span>Mão de obra</span><span>" + A.dinheiro(t.serv) + "</span></div>" : "") +
       (Number(o.desconto) ? "<div><span>Desconto</span><span>− " + A.dinheiro(o.desconto) + "</span></div>" : "") +
-      '<div class="g"><span>Total</span><span>' + A.dinheiro(t.total) + "</span></div></div>" +
+      '<div class="g"><span>Total</span><span>' + A.dinheiro(t.total) + "</span></div></div>") +
       '<div class="cond">' + (o.pagamento ? "<p><b>Forma de pagamento:</b> " + esc(o.pagamento) + "</p>" : "") + (o.prazo ? "<p><b>Prazo de execução:</b> " + esc(o.prazo) + "</p>" : "") +
       (o.observacoes ? '<p><b>Observações:</b><br><span style="white-space:pre-wrap">' + esc(o.observacoes) + "</span></p>" : "") + "</div>" +
       (E.fraseOrcamento ? '<p style="text-align:center;font-weight:bold;color:#14325c;margin-top:18px">' + esc(E.fraseOrcamento) + (E.telefone ? " · WhatsApp: " + esc(E.telefone) : "") + "</p>" : "") +
@@ -3870,7 +3996,9 @@
     get sb() { return sb; }, S: S, q: q, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
     val: val, nulo: nulo, htmlFoto: htmlFoto, hidratarFotos: hidratarFotos, infoFoto: infoFoto, registrarInfoPonto: registrarInfoPonto,
     opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,
-    rota: rota, atualizarAbas: function () { desenharAbas(location.hash.slice(1) || "hoje"); }, resumoServ: resumoServ, importarChamado: importarChamado, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES, carregarLeaflet: carregarLeaflet
+    rota: rota, atualizarAbas: function () { desenharAbas(location.hash.slice(1) || "hoje"); }, resumoServ: resumoServ, importarChamado: importarChamado, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES, carregarLeaflet: carregarLeaflet,
+    // 🧾 Compras → orçamento de materiais com os itens de uma nota
+    orcMateriais: function (c) { editarOrcamento(null, { tipo: "materiais", categoria: c.area === "eletrica" || c.area === "pintura" ? c.area : "", _nota: c }); }
   };
 
   iniciar();
