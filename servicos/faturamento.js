@@ -262,9 +262,9 @@
       if (!this.files.length) return;
       A.abrirZips(this.files).then(function (fs) {
         if (!fs.length) { A.avisar("O ZIP não tem fotos, PDF nem XML de nota.", "erro"); return; }
-        // várias notas: uma depois da outra
-        var proxima = function () { var f = fs.shift(); if (f) receber(f, function () { if (fs.length) proxima(); else ver(c, P); }); else ver(c, P); };
-        proxima();
+        // várias notas: lê todas e mostra uma tabela para conferir e salvar juntas
+        if (fs.length > 1) lote(fs, function () { ver(c, P); });
+        else receber(fs[0], function () { ver(c, P); });
       }).catch(function (e) { A.avisar(A.msgErro(e), "erro"); });
     };
     $("#ft-mao").onclick = function () { formulario({}, function () { ver(c, P); }); };
@@ -648,6 +648,99 @@
   }
 
   // ---------------- receber arquivo e formulário ----------------
+  // ---------------- várias notas de uma vez ----------------
+  function ehNFSe(d, texto) {
+    if (d.nacional) return true;
+    var t = String(texto || "");
+    if (/n[aã]o\s+[eé]\s+documento\s+fiscal|documento\s+auxiliar\s+de\s+venda|or[cç]amento/i.test(t) && !/nfs-?e/i.test(t)) return false;
+    return /nfs-?e|nota\s+fiscal\s+(eletr[oô]nica\s+)?de\s+servi[cç]os?|<\s*(?:\w+:)?(?:CompNfse|Nfse|InfNfse)\b/i.test(t) && (d.bruto || d.valor) > 0;
+  }
+  function lote(fs, depois) {
+    var itens = [], aliq = aliqGuardada();
+    var j = A.janela('<div id="lt-st" class="peq">📖 Lendo as notas...</div><div id="lt-res"></div>', { titulo: "🧾 Lançar várias notas", larga: true, fixa: true });
+    var el = j.el;
+    fs.reduce(function (pr, f, i) {
+      return pr.then(function () {
+        $("#lt-st", el).textContent = "📖 Lendo " + (i + 1) + " de " + fs.length + ": " + (f.name || "arquivo") + "...";
+        return window.AGE_PAG.lerArquivo(f).then(function (r) { var d = lerNFSe(r.texto, r.pecas); itens.push({ f: f, d: d, texto: r.texto, nfse: ehNFSe(d, r.texto) }); },
+          function () { itens.push({ f: f, d: {}, erro: true }); });
+      });
+    }, Promise.resolve()).then(function () {
+      // situação de cada uma: pronta, já lançada, repetida no próprio lote, não é nota de serviço
+      var vistos = {};
+      itens.forEach(function (it) {
+        var d = it.d;
+        if (it.erro) { it.motivo = "Não consegui ler o arquivo"; return; }
+        if (!it.nfse) { it.motivo = "Não é nota fiscal de serviço (ex.: orçamento de loja)"; return; }
+        var rep2 = notaRepetida(d.numero, d.chave, null);
+        if (rep2) { it.motivo = "Já lançada (" + (rep2.recebido ? "✅ recebida" : "⏳ a receber") + ")"; return; }
+        var k = d.chave || "n" + numNota(d.numero);
+        if (k !== "n" && vistos[k]) { it.motivo = "Arquivo repetido neste lote"; return; }
+        vistos[k] = 1;
+        if (!(d.bruto || d.valor)) { it.motivo = "Não achei o valor"; return; }
+        it.ok = true; it.usar = true;
+      });
+      desenhar();
+    });
+    function linha(it, i) {
+      var d = it.nfse ? it.d : {}, bruto = Number(d.bruto) || Number(d.valor) || 0, ret = RET.reduce(function (t, x) { return t + (Number((d.retencoes || {})[x[0]]) || 0); }, 0);
+      var liq = Number(d.valor) || bruto - ret;   // o que não é nota de serviço aparece sem valores
+      return "<tr" + (it.ok ? "" : ' class="mudo"') + "><td>" + (it.ok ? '<input type="checkbox" data-lt="' + i + '"' + (it.usar ? " checked" : "") + ' aria-label="Lançar">' : "") + "</td>" +
+        '<td class="peq">' + esc(it.f.name || "") + "</td><td><b>" + esc(d.numero || "—") + "</b></td><td>" + esc(d.data ? A.dataSimples(d.data) : "—") + "</td><td>" + esc(d.tomador || "—") + "</td>" +
+        '<td class="num">' + (bruto ? dinheiro(bruto) : "—") + '</td><td class="num">' + (ret ? dinheiro(ret) + '<div class="peq mudo">' + pct(ret / bruto * 100) + "</div>" : "—") + '</td><td class="num"><b>' + (liq ? dinheiro(liq) : "—") + "</b></td>" +
+        "<td>" + (it.ok ? (it.salva ? '<span class="selo bom">✅ lançada</span>' : it.falhou ? '<span class="selo critico">' + esc(it.falhou) + "</span>" : '<span class="selo">pronta</span> <button class="peq" data-lt-ed="' + i + '">Conferir</button>') :
+          '<span class="selo ' + (/já lançada|repetido/i.test(it.motivo) ? "atencao" : "critico") + '">' + esc(it.motivo) + "</span>") + "</td></tr>";
+    }
+    function desenhar() {
+      var prontas = itens.filter(function (it) { return it.ok && it.usar && !it.salva; });
+      var tot = prontas.reduce(function (t, it) { var d = it.d; return t + (Number(d.valor) || Number(d.bruto) || 0); }, 0);
+      $("#lt-st", el).innerHTML = itens.length + " arquivo(s) lidos · <b>" + itens.filter(function (it) { return it.ok; }).length + "</b> nota(s) para lançar" +
+        (itens.some(function (it) { return !it.ok; }) ? " · " + itens.filter(function (it) { return !it.ok; }).length + " ficam de fora" : "");
+      $("#lt-res", el).innerHTML = '<div class="tabela-caixa"><table><thead><tr><th></th><th>Arquivo</th><th>Nº</th><th>Emissão</th><th>Empresa</th><th class="num">Bruto</th><th class="num">Retido</th><th class="num">Líquido</th><th></th></tr></thead><tbody>' +
+        itens.map(linha).join("") + "</tbody></table></div>" +
+        '<div class="duas"><div><label for="lt-aliq">Imposto da empresa (DAS / Simples, % do bruto) — para todas</label><input id="lt-aliq" inputmode="decimal" placeholder="Ex.: 6" value="' + esc(aliq) + '"></div>' +
+        '<div><label for="lt-obra">Obra / cliente (vazio = o app sugere pela empresa)</label><input id="lt-obra" list="lt-dl" maxlength="200">' + datalist("lt-dl") + "</div></div>" +
+        '<div class="acoes"><button class="prim" id="lt-salvar"' + (prontas.length ? "" : " disabled") + ">💾 Lançar " + prontas.length + " nota(s) · líquido " + dinheiro(tot) + '</button><button id="lt-fechar">Fechar</button></div>';
+      $$("[data-lt]", el).forEach(function (cb) { cb.onchange = function () { itens[Number(cb.dataset.lt)].usar = cb.checked; desenhar(); }; });
+      $$("[data-lt-ed]", el).forEach(function (b) {
+        b.onclick = function () {   // conferir uma: abre o formulário dela; ao salvar, marca como lançada aqui
+          var it = itens[Number(b.dataset.ltEd)];
+          formulario({ lida: it.d, arquivo: it.f, bruto: it.texto }, function () { if (notaRepetida(it.d.numero, it.d.chave, null)) it.salva = true; desenhar(); });
+        };
+      });
+      $("#lt-aliq", el).oninput = function () { aliq = this.value.trim(); try { localStorage.setItem(CHAVE_ALIQ, aliq); } catch (e) { /* sem armazenamento */ } };
+      $("#lt-fechar", el).onclick = function () { j.fechar(); if (depois) depois(); };
+      $("#lt-salvar", el).onclick = function () {
+        var b = this, lista = itens.filter(function (it) { return it.ok && it.usar && !it.salva; }), al = A.lerNumero($("#lt-aliq", el).value) || 0, obraTxt = $("#lt-obra", el).value.trim();
+        A.ocupado(b, true, "Lançando...");
+        lista.reduce(function (pr, it) {
+          return pr.then(function () {
+            var d = it.d;
+            if (notaRepetida(d.numero, d.chave, null)) { it.falhou = "já lançada"; return; }   // salva por outro caminho enquanto conferia
+            var bruto = Number(d.bruto) || Number(d.valor), ret = {};
+            RET.forEach(function (x) { var v = Number((d.retencoes || {})[x[0]]) || 0; if (v > 0) ret[x[0]] = v; });
+            var tr = Object.keys(ret).reduce(function (t, k) { return t + ret[k]; }, 0), liq = Number(d.valor) || Math.round((bruto - tr) * 100) / 100;
+            if (!tr && bruto - liq > 0.009) ret.outras = Math.round((bruto - liq) * 100) / 100;   // diferença sem imposto identificado
+            var rs = resolver(obraTxt || sugerirObra(d.tomador) || d.tomador || "Sem empresa");
+            var dados = { obra_id: rs.obra_id, destino: rs.destino, cliente: d.tomador || null, numero_nota: d.numero || null, emitida_em: d.data || A.isoLocal(new Date()),
+              valor: liq, valor_bruto: bruto, retencoes: ret, imposto_empresa: al > 0 ? Math.round(bruto * al) / 100 : null, tomador_cnpj: d.cnpj || null,
+              descricao: d.descricao || null, recebido: false, recebido_em: null, chave_nfse: d.chave || null };
+            var f = it.f, ehPdf = /pdf/.test(f.type) || /\.pdf$/i.test(f.name || "");
+            var pArq = (/^image\//.test(f.type) ? A.prepararFoto(f, [], 1800).then(function (bl) { return { bl: bl, ext: "jpg", tipo: "image/jpeg" }; }) : Promise.resolve({ bl: f, ext: ehPdf ? "pdf" : "xml", tipo: ehPdf ? "application/pdf" : "text/xml" }))
+              .then(function (a) { var cam = "admin/receitas/" + dados.emitida_em + "-" + A.uuid() + "." + a.ext; return P.q(P.sb.storage.from("fotos").upload(cam, a.bl, { contentType: a.tipo })).then(function () { return cam; }); })
+              .catch(function () { return null; });
+            return pArq.then(function (cam) { if (cam) dados.arquivo = cam; return gravarReceita(null, dados); })
+              .then(function (n) { P.trocar(P.S.receitas, n); it.salva = true; })
+              .catch(function (e) { it.falhou = /duplicate|receitas_chave_idx/i.test(A.msgErro(e)) ? "já lançada" : "erro: " + A.msgErro(e).slice(0, 60); });
+          });
+        }, Promise.resolve()).then(function () {
+          var ok2 = lista.filter(function (it) { return it.salva; }), tot = ok2.reduce(function (t, it) { return t + (Number(it.d.valor) || Number(it.d.bruto) || 0); }, 0);
+          A.avisar("🧾 " + ok2.length + " nota(s) lançada(s) · líquido a receber " + dinheiro(tot) + (ok2.length < lista.length ? " · " + (lista.length - ok2.length) + " com problema (veja na tabela)" : ""), ok2.length === lista.length ? "ok" : "erro");
+          if (ok2.length === lista.length) { j.fechar(); if (depois) depois(); } else desenhar();
+        });
+      };
+    }
+  }
   function receber(f, depois) {
     var j = A.janela('<div class="peq" id="ft-st">📖 Lendo a nota de serviço...</div>', { titulo: "🧾 Nota de serviço" });
     window.AGE_PAG.lerArquivo(f).then(function (r) {
