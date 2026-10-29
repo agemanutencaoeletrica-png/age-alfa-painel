@@ -39,7 +39,7 @@
     }, { bruto: 0, ret: 0, liq: 0, emp: 0, imp: 0, ficou: 0, areceber: 0, recebido: 0, nAr: 0, nRec: 0 });
   }
   // grava a nota; banco ainda sem as colunas novas (recebimento/avulso): grava sem elas e avisa para rodar o SQL
-  var NOVAS = ["comprovante_receb", "valor_recebido", "chave_nfse", "avulso"];
+  var NOVAS = ["comprovante_receb", "valor_recebido", "chave_nfse", "avulso", "deposito_id", "deposito_hash"];
   function gravarReceita(id, dados) {
     var ir = function (d) { return P.q(id ? P.sb.from("receitas").update(d).eq("id", id).select().single() : P.sb.from("receitas").insert(d).select().single()); };
     return ir(dados).catch(function (e) {
@@ -489,18 +489,47 @@
       '<details style="margin-top:8px"><summary>Ou digite o valor e a data</summary><div class="duas"><div><label for="dp-valor">Valor que caiu (R$)</label><input id="dp-valor" inputmode="decimal"></div>' +
       '<div><label for="dp-data">Data</label><input type="date" id="dp-data" value="' + A.isoLocal(new Date()) + '"></div></div><div class="acoes"><button class="peq" id="dp-buscar">Procurar a nota</button></div></details>' +
       '<div id="dp-st" class="peq" style="margin-top:8px"></div><div id="dp-res"></div>', { titulo: "💰 Recebi um depósito", larga: true });
-    var el = j.el, arquivo = null;
+    var el = j.el, arquivo = null, dep = { id: null, hash: null };
+    // "impressão digital" do comprovante: o mesmo arquivo (ou o mesmo texto) mandado de novo é reconhecido mesmo sem o ID do Pix
+    function impressao(dado) {
+      var fazer = function (buf) { return window.crypto && crypto.subtle ? crypto.subtle.digest("SHA-256", buf).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (b) { return ("0" + b.toString(16)).slice(-2); }).join(""); }) : Promise.resolve(null); };
+      if (typeof dado === "string") return fazer(new TextEncoder().encode(dado.replace(/\s+/g, " ").trim().toLowerCase())).catch(function () { return null; });
+      return dado.arrayBuffer().then(fazer).catch(function () { return null; });
+    }
+    // o mesmo comprovante já deu baixa em alguma nota?
+    function jaUsado(d) {
+      var idN = String(d.id || "").replace(/\s/g, "").toUpperCase();
+      // outra foto do mesmo comprovante: o leitor pode trocar 1 ou 2 letras do ID (O/0, I/1)
+      var quase = function (a2, b2) { if (!a2 || !b2 || a2.length !== b2.length || a2.length < 20) return a2 === b2 && !!a2; var dif = 0; for (var k = 0; k < a2.length; k++) if (a2[k] !== b2[k] && ++dif > 2) return false; return true; };
+      return (P.S.receitas || []).filter(function (n) { return (idN && quase(String(n.deposito_id || "").toUpperCase(), idN)) || (d.hash && n.deposito_hash === d.hash); });
+    }
+    function htmlUsado(us) {
+      return '<div class="aviso erro" id="dp-usado"><b>⛔ Este comprovante já foi usado</b> e não pode ser aceito de novo.<br>' + us.map(function (n) {
+        return (ehAvulso(n) ? "Recebimento avulso" : "Nota " + esc(n.numero_nota || "s/ nº")) + " · " + esc(empresaDe(n)) + " · " + dinheiro(Number(n.valor_recebido) || contas(n).liq) + (n.recebido_em ? " · recebido em " + esc(A.dataSimples(n.recebido_em)) : "");
+      }).join("<br>") + "</div>";
+    }
     function st(t, tipo) { $("#dp-st", el).innerHTML = t ? '<span style="color:var(--' + (tipo || "texto") + ')">' + esc(t) + "</span>" : ""; }
     function lerTexto(t, f) {
       var px = window.AGE_PAG.lerPix(t), pg = pagadorDe(t);
       if (!(px.valor > 0)) { st("Não achei o valor no comprovante. Digite o valor e a data abaixo.", "critico"); el.querySelector("details").open = true; return; }
       $("#dp-valor", el).value = num2(px.valor); if (px.data) $("#dp-data", el).value = px.data;
       arquivo = f || null;
-      mostrar(px.valor, px.data || A.isoLocal(new Date()), pg, px);
+      dep.id = px.id ? String(px.id).replace(/\s/g, "").toUpperCase() : null;
+      (f ? Promise.resolve(dep.hash) : impressao(t).then(function (h) { dep.hash = h; })).then(function () {
+        var us = jaUsado(dep);
+        if (us.length) { st(""); $("#dp-res", el).innerHTML = htmlUsado(us); return; }
+        mostrar(px.valor, px.data || A.isoLocal(new Date()), pg, px);
+      });
     }
     function ler(f) {
       st("📖 Lendo o comprovante... (foto pode levar até 1 minuto)");
-      window.AGE_PAG.lerArquivo(f).then(function (r) { lerTexto(r.texto, r.imagem || f); }).catch(function (e) { st("Não consegui ler: " + A.msgErro(e), "critico"); });
+      dep = { id: null, hash: null };
+      impressao(f).then(function (h) {
+        dep.hash = h;
+        var us = jaUsado(dep);   // o mesmo arquivo: nem precisa ler
+        if (us.length) { st(""); $("#dp-res", el).innerHTML = htmlUsado(us); return; }
+        return window.AGE_PAG.lerArquivo(f).then(function (r) { lerTexto(r.texto, r.imagem || f); });
+      }).catch(function (e) { st("Não consegui ler: " + A.msgErro(e), "critico"); });
     }
     function mostrar(valor, data, pg, px) {
       var ops = casar(valor, pg);
@@ -530,7 +559,7 @@
       if ($("#dp-avulso", el)) $("#dp-avulso", el).onclick = function () {
         guardarComp(data).then(function (cam) {
           j.fechar();
-          formulario({ avulso: true, valor: valor, data: data, comprovante: cam, lida: { tomador: pg && pg.nome ? pg.nome : "", cnpj: pg && pg.doc && pg.doc.length >= 11 ? pg.doc : "" } }, depois);
+          formulario({ avulso: true, valor: valor, data: data, comprovante: cam, deposito: { id: dep.id, hash: dep.hash }, lida: { tomador: pg && pg.nome ? pg.nome : "", cnpj: pg && pg.doc && pg.doc.length >= 11 ? pg.doc : "" } }, depois);
         });
       };
     }
@@ -544,6 +573,8 @@
       }).catch(function () { A.avisar("O comprovante não foi guardado, mas o recebimento será marcado.", "erro"); return null; });
     }
     function marcar(notas, valor, data, botao) {
+      var us = jaUsado(dep);
+      if (us.length) { $("#dp-res", el).innerHTML = htmlUsado(us); return; }
       A.ocupado(botao, true, "Salvando...");
       var tot = notas.reduce(function (t, n) { return t + contas(n).liq; }, 0);
       guardarComp(data).then(function (cam) {
@@ -551,7 +582,7 @@
           return pr.then(function () {
             // várias notas num depósito: cada uma recebe a sua parte (o líquido dela; a diferença de centavos fica na última)
             var parte = notas.length === 1 ? valor : n === notas[notas.length - 1] ? Math.round((valor - (tot - contas(n).liq)) * 100) / 100 : contas(n).liq;
-            return gravarReceita(n.id, { recebido: true, recebido_em: data, comprovante_receb: cam, valor_recebido: parte }).then(function (x) { P.trocar(P.S.receitas, x); });
+            return gravarReceita(n.id, { recebido: true, recebido_em: data, comprovante_receb: cam, valor_recebido: parte, deposito_id: dep.id, deposito_hash: dep.hash }).then(function (x) { P.trocar(P.S.receitas, x); });
           });
         }, Promise.resolve());
       }).then(function () {
@@ -567,7 +598,17 @@
     $("#dp-buscar", el).onclick = function () {
       var v = A.lerNumero($("#dp-valor", el).value);
       if (!(v > 0)) { st("Digite o valor que caiu.", "critico"); return; }
-      mostrar(v, $("#dp-data", el).value || A.isoLocal(new Date()), null, null);
+      var dt = $("#dp-data", el).value || A.isoLocal(new Date());
+      dep = { id: null, hash: null };
+      // digitado (sem comprovante): se já há recebimento com o mesmo valor e a mesma data, pergunta antes
+      var parecido = (P.S.receitas || []).filter(function (n) { return n.recebido && n.recebido_em === dt && Math.abs((Number(n.valor_recebido) || contas(n).liq) - v) < 0.01; });
+      if (parecido.length && this.dataset.confirmou !== "1") {
+        $("#dp-res", el).innerHTML = '<div class="aviso">⚠️ Já existe recebimento de ' + dinheiro(v) + " em " + esc(A.dataSimples(dt)) + ": " + parecido.map(function (n) { return (ehAvulso(n) ? "avulso" : "nota " + esc(n.numero_nota || "s/ nº")) + " · " + esc(empresaDe(n)); }).join("; ") +
+          ". Se for <b>outro</b> depósito, toque em “Procurar a nota” de novo.</div>";
+        this.dataset.confirmou = "1"; return;
+      }
+      this.dataset.confirmou = "";
+      mostrar(v, dt, null, null);
     };
     el.addEventListener("paste", function (ev) {
       var fs = Array.prototype.slice.call((ev.clipboardData && ev.clipboardData.files) || []).filter(function (f) { return /^image\/|pdf/.test(f.type); });
@@ -688,6 +729,7 @@
       if (av) { dados.numero_nota = null; dados.retencoes = {}; dados.valor = v.bruto; }
       if (!n0 && d.chave) dados.chave_nfse = d.chave;
       if (!n0 && op.comprovante) { dados.comprovante_receb = op.comprovante; dados.valor_recebido = op.valor || null; }
+      if (!n0 && op.deposito) { dados.deposito_id = op.deposito.id || null; dados.deposito_hash = op.deposito.hash || null; if (!dados.valor_recebido) dados.valor_recebido = op.valor || null; }
       // a mesma nota não entra duas vezes (mesma chave da NFS-e ou mesmo número): bloqueia, sem "salvar mesmo assim"
       var rep = !av && notaRepetida(dados.numero_nota, dados.chave_nfse || (n0 && n0.chave_nfse), n0 && n0.id);
       if (rep) { $("#ft-erro", el).innerHTML = '<div class="aviso erro">' + textoRepetida(rep) + "</div>"; return; }

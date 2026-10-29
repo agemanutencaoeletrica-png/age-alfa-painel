@@ -394,6 +394,10 @@ alter table public.receitas add column if not exists chave_nfse        text;
 alter table public.receitas add column if not exists avulso            boolean not null default false;
 -- a mesma NFS-e não entra duas vezes (o app também bloqueia pelo número da nota)
 create unique index if not exists receitas_chave_idx on public.receitas (chave_nfse) where chave_nfse is not null;
+-- o mesmo comprovante de depósito não dá baixa duas vezes: ID do Pix e "impressão digital" do arquivo
+alter table public.receitas add column if not exists deposito_id   text;
+alter table public.receitas add column if not exists deposito_hash text;
+create index if not exists receitas_deposito_idx on public.receitas (deposito_id) where deposito_id is not null;
 alter table public.pagamentos add column if not exists obra_id uuid references public.obras (id) on delete set null;
 alter table public.pagamentos add column if not exists destino text;
 
