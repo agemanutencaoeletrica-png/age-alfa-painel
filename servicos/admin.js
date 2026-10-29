@@ -30,7 +30,10 @@
     refletor: "refletor", refletores: "refletores", lampada: "lâmpada", lampadas: "lâmpadas", luminaria: "luminária", luminarias: "luminárias",
     tomadas: "tomadas", interruptor: "interruptor", chuveiro: "chuveiro", chuveiros: "chuveiros", poste: "poste", postes: "postes",
     rapido: "rápido", tecnico: "técnico", tecnica: "técnica", eletronico: "eletrônico", automatico: "automático", automatica: "automática",
-    cabeamento: "cabeamento", subterraneo: "subterrâneo", subterranea: "subterrânea", aereo: "aéreo", aerea: "aérea"
+    cabeamento: "cabeamento", subterraneo: "subterrâneo", subterranea: "subterrânea", aereo: "aéreo", aerea: "aérea",
+    nessecario: "necessário", nessecaria: "necessária", nescessario: "necessário", nescessaria: "necessária", necessario: "necessário", necessaria: "necessária",
+    solucao: "solução", solucoes: "soluções", constatacao: "constatação", tefon: "teflon", teflom: "teflon", curvasde: "curvas de", ceramica: "cerâmica",
+    receptaculo: "receptáculo", receptaculos: "receptáculos", identificacao: "identificação", aterramento: "aterramento", policarbonato: "policarbonato"
   };
   // corrige palavra a palavra mantendo MAIÚSCULAS / Primeira maiúscula; devolve o texto e a lista do que mudou
   function corrigirTexto(t) {
@@ -44,6 +47,27 @@
     });
     return { texto: novo, feitas: feitas };
   }
+  // 🔍 laudo técnico do orçamento (vistoria e solução): modelo pronto + os que o dono salvar
+  var MODELOS_LAUDO = [{
+    id: "padrao-rede-chuveiro", padrao: true, titulo: "Rede principal e chuveiro com cabo inadequado",
+    vistoria: "Na visita técnica ao local, constatamos que o cabo da rede principal, que vai do padrão de entrada até o quadro de luz (QL), é de 6 mm² e de baixa qualidade. " +
+      "Por isso, ele aquece e pode queimar com facilidade, com risco de desligamentos e de incêndio. O mesmo problema foi encontrado no circuito do chuveiro.",
+    solucao: "• Substituir a rede principal (do padrão até o QL) de 6 mm² por cabo de 10 mm², conforme a norma técnica ABNT NBR 5410.\n" +
+      "• Substituir o circuito do chuveiro (127 V) por cabo de 6 mm² de boa qualidade, certificado pelo Inmetro.\n" +
+      "• Conferir os disjuntores e as conexões dos circuitos trocados e testar o funcionamento ao final."
+  }];
+  function temLaudo(o) { return !!(o && o.laudo && (String(o.laudo.vistoria || "").trim() || String(o.laudo.solucao || "").trim())); }
+  // texto do laudo em parágrafos e tópicos (linhas que começam com •, -, ✓ ou *)
+  function linhasLaudo(t) {
+    return String(t || "").split(/\n+/).map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) {
+      var top = /^[•\-–✓✔*▪]/.test(l);
+      return { topico: top, texto: top ? l.replace(/^[•\-–✓✔*▪]+\s*/, "") : l };
+    });
+  }
+  var LAUDO_PARTES = [["vistoria", "Vistoria técnica"], ["solucao", "Solução"]];
+  function modelosLaudo() { return MODELOS_LAUDO.concat(S.modelosLaudo || []); }
+  function guardarModelosLocal() { try { localStorage.setItem("age_modelos_laudo", JSON.stringify((S.modelosLaudo || []).filter(function (m) { return m.local; }))); } catch (e) { /* sem armazenamento */ } }
+  function lerModelosLocal() { try { return JSON.parse(localStorage.getItem("age_modelos_laudo") || "[]"); } catch (e) { return []; } }
   var GRUPO_MAT_ORC = "Materiais (dos orçamentos)", GRUPO_MAT_NOTA = "Materiais (das notas e orçamentos das lojas)";
   // item da 💲 tabela que é material (lista de materiais ou aprendido de orçamento)
   function ehMaterialPreco(x) { return /^Materiais/.test(String((x && x.grupo) || "")); }
@@ -438,7 +462,8 @@
       q(sb.from("prospects").select("*").order("criado_em", { ascending: false })).catch(function (e) { S.erroProsp = A.msgErro(e); return null; }),
       q(sb.from("servicos").select("etapa").limit(1)).then(function () { return true; }).catch(function () { return false; }),
       q(sb.from("precos").select("*").order("descricao")).catch(function (e) { S.erroPrecos = A.msgErro(e); return null; }),
-      q(sb.from("candidatos").select("*").order("criado_em", { ascending: false }).limit(500)).catch(function () { return null; })
+      q(sb.from("candidatos").select("*").order("criado_em", { ascending: false }).limit(500)).catch(function () { return null; }),
+      q(sb.from("modelos_laudo").select("*").order("titulo")).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -451,6 +476,8 @@
       S.semEtapa = !r[14];   // banco ainda sem a coluna servicos.etapa (rode o bloco do supabase.sql)
       S.semPrecos = !r[15]; S.precos = r[15] || [];
       S.semCand = !r[16]; S.cand = r[16] || [];
+      // modelos de laudo: sem a tabela (SQL não rodado), ficam neste aparelho
+      S.semModLaudo = !r[17]; S.modelosLaudo = r[17] || lerModelosLocal().map(function (m) { m.local = true; return m; });
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
     });
   }
@@ -2150,7 +2177,8 @@
           ". Comprovante Pix: toque em 💰. Foto de serviço: compartilhe pelo app do funcionário (<b>AGE Ponto</b>).</p>" : "") +
         '<div class="acoes">' + (rc.arquivos.length || /pix|comprovante|transfer/i.test(rc.texto || "") ? '<button class="prim" id="rc-pix">💰 Registrar pagamento Pix</button>' : "") +
         (rc.arquivos.length || /nota|cupom|nfc|cnpj|total/i.test(rc.texto || "") ? '<button id="rc-nota">🧾 Registrar nota de compra</button>' : "") +
-        (rc.texto ? '<button' + (rc.arquivos.length ? "" : ' class="prim"') + ' id="rc-cx">📋 Colocar na caixa de chamados</button><button id="rc-novo">➕ Novo serviço com este texto</button>' : "") +
+        (rc.texto ? '<button' + (rc.arquivos.length ? "" : ' class="prim"') + ' id="rc-cx">📋 Colocar na caixa de chamados</button><button id="rc-novo">➕ Novo serviço com este texto</button>' +
+          '<button id="rc-orc" title="Separa a lista de materiais, o escopo e o laudo nos campos do orçamento">📝 Novo orçamento com este texto</button>' : "") +
         '<button id="rc-copiar">Copiar o texto</button></div>', { titulo: "📥 Recebido pelo compartilhamento" });
       if ($("#rc-nota", j.el)) $("#rc-nota", j.el).onclick = function () { j.fechar(); location.hash = "#compras"; window.AGE_COMPRAS.receber(rc, P); };
       if ($("#rc-pix", j.el)) $("#rc-pix", j.el).onclick = function () { j.fechar(); location.hash = "#pagamentos"; window.AGE_PAG.receber(rc, P); };
@@ -2158,6 +2186,7 @@
         j.fechar(); location.hash = "#servicos"; importarChamado();
         var t = $("#ch-txt"); if (t) { t.value = rc.texto; t.dispatchEvent(new Event("input")); }
       };
+      if ($("#rc-orc", j.el)) $("#rc-orc", j.el).onclick = function () { j.fechar(); location.hash = "#orcamentos"; editarOrcamento(null, { _texto: rc.texto }); };
       if ($("#rc-novo", j.el)) $("#rc-novo", j.el).onclick = function () { j.fechar(); novoServico(null, { obs: rc.texto.slice(0, 2000), desc: rc.texto.slice(0, 2000) }); };
       $("#rc-copiar", j.el).onclick = function () { copiar(rc.texto || ""); A.avisar("Texto copiado", "ok"); };
     });
@@ -2222,7 +2251,8 @@
     editarOrcamento(null, {
       categoria: o.categoria || "", itens: JSON.parse(JSON.stringify(o.itens || [])), desconto: Number(o.desconto) || 0,
       pagamento: o.pagamento || "", prazo: o.prazo || "", validade_dias: o.validade_dias || 15, observacoes: o.observacoes || "",
-      valores_cliente: o.valores_cliente || "itens", materiais_cliente: o.materiais_cliente === true, tipo: o.tipo || "servico"
+      valores_cliente: o.valores_cliente || "itens", materiais_cliente: o.materiais_cliente === true, tipo: o.tipo || "servico",
+      laudo: temLaudo(o) ? { vistoria: o.laudo.vistoria || "", solucao: o.laudo.solucao || "" } : null
     });
     A.avisar("📋 Itens do orçamento nº " + String(o.numero).padStart(4, "0") + " copiados. Preencha o cliente e ajuste o que mudou.", "ok");
   }
@@ -2300,6 +2330,8 @@
     }, base || {});
     // orçamento só de materiais: valores dos materiais vão para o cliente, sem mão de obra
     var notaPre = M._nota; delete M._nota;   // nota de 🧾 Compras para ler logo ao abrir
+    var textoPre = M._texto; delete M._texto;   // texto compartilhado com o app: separa nos campos logo ao abrir
+    M.laudo = temLaudo(M) ? { vistoria: M.laudo.vistoria || "", solucao: M.laudo.solucao || "" } : { vistoria: "", solucao: "" };
     if (soMateriais(M)) { M.materiais_cliente = true; M.valores_cliente = modoMat(M); if (!base || !base.pagamento) M.pagamento = M.pagamento === "50% na aprovação e 50% na entrega do serviço" ? "À vista na aprovação" : M.pagamento; }
     M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
     if (soMateriais(M)) M.itens.forEach(function (i) { i.tipo = "material"; });
@@ -2313,8 +2345,14 @@
       '<div class="duas"><div><label for="eo2-tel">WhatsApp do cliente</label><input id="eo2-tel" type="tel" maxlength="40"></div><div><label for="eo2-email">E-mail do cliente</label><input id="eo2-email" type="email" maxlength="200"></div></div>' +
       '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><select id="eo2-cat"><option value="">—</option>' +
       Object.keys(CAT_ORC).map(function (k) { return '<option value="' + k + '">' + CAT_ORC[k] + "</option>"; }).join("") + "</select></div></div>" +
+      (soMateriais(M) ? "" : '<details class="cartao" id="eo2-laudo-cx" style="margin-top:12px"' + (temLaudo(M) ? " open" : "") + '><summary><b>🔍 Laudo técnico (vistoria e solução)</b> <span class="peq mudo">· opcional, vai no PDF antes dos itens</span></summary>' +
+        '<div class="linha" style="margin-top:8px"><select id="eo2-lmod" aria-label="Modelo de laudo" style="flex:1 1 100%"></select><button class="peq" id="eo2-lsalvar" title="Guarda este laudo para usar em outros orçamentos">💾 Salvar como modelo</button>' +
+        '<button class="peq" id="eo2-lapagar" title="Apaga o modelo escolhido na lista">🗑 Apagar modelo</button></div>' +
+        '<label for="eo2-vist">Vistoria técnica (o que foi constatado)</label><textarea id="eo2-vist" rows="4" spellcheck="true" lang="pt-BR" maxlength="4000"></textarea>' +
+        '<label for="eo2-sol">Solução (o que será feito)</label><textarea id="eo2-sol" rows="4" spellcheck="true" lang="pt-BR" maxlength="4000"></textarea>' +
+        '<p class="mudo peq" style="margin:4px 0 0">Comece a linha com • ou - para virar tópico no PDF. Escolha um modelo e edite à vontade: o modelo não muda.</p></details>') +
       '<h3 style="margin-top:14px">Itens</h3><div id="eo2-itens"></div><datalist id="eo2-dl-precos"></datalist>' +
-      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button>' + (soMateriais(M) ? "" : '<button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-mais-ambos">+ Material + mão de obra</button>') + '<button class="peq" id="eo2-lista-mat" title="Escolher vários materiais da lista de uma vez">📋 Escolher da lista</button><button class="peq" id="eo2-ler-nota" title="Materiais da nota fiscal ou do orçamento da loja (foto, PDF, XML, lista colada ou nota já lançada em Compras)">📷 Ler nota / orçamento da loja</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button></div>' +
+      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button>' + (soMateriais(M) ? "" : '<button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-mais-ambos">+ Material + mão de obra</button>') + '<button class="peq" id="eo2-lista-mat" title="Escolher vários materiais da lista de uma vez">📋 Escolher da lista</button><button class="peq" id="eo2-ler-nota" title="Materiais da nota fiscal ou do orçamento da loja (foto, PDF, XML, lista colada ou nota já lançada em Compras)">📷 Ler nota / orçamento da loja</button><button class="peq" id="eo2-colar" title="Cole a lista de materiais, o escopo dos serviços ou a vistoria: o app separa cada coisa no seu campo">📝 Colar texto</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
       '<div class="cartao' + (soMateriais(M) ? " oculto" : "") + '" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-vitens"> Mostrar o valor de cada serviço de mão de obra</label>' +
@@ -2343,13 +2381,14 @@
       $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
       $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente;
       $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.checked = r.value === modoMat(M); });
+      if ($("#eo2-vist", el)) { $("#eo2-vist", el).value = M.laudo.vistoria || ""; $("#eo2-sol", el).value = M.laudo.solucao || ""; }
     }
     preencher();
 
     // rascunho no aparelho: o que foi digitado e ainda não foi salvo volta se a página recarregar, fechar ou cair a internet
     var chaveRasc = "age_rascunho_orc_" + (M.id || "novo"), tRasc = null, rascPronto = false;
     function temAlgo() {
-      return !!(M.cliente || M.telefone || M.endereco || M.itens.some(function (i) { return (i.descricao && i.descricao !== "Mão de obra") || Number(i.valor); }));
+      return !!(M.cliente || M.telefone || M.endereco || temLaudo(M) || M.itens.some(function (i) { return (i.descricao && i.descricao !== "Mão de obra") || Number(i.valor); }));
     }
     function guardarRasc() {
       if (!rascPronto) return;
@@ -2384,7 +2423,7 @@
     function mostrarAuto(t) { var x = $("#eo2-auto", el); if (x) x.textContent = t; }
     function assinatura() {
       return JSON.stringify([M.documento, M.cliente, M.telefone, M.email, M.endereco, M.categoria, M.desconto, M.validade_dias, M.pagamento, M.prazo, M.observacoes, M.status,
-        M.valores_cliente, M.materiais_cliente,
+        M.valores_cliente, M.materiais_cliente, (M.laudo || {}).vistoria || "", (M.laudo || {}).solucao || "",
         M.itens.map(function (i) { return [i.tipo, i.descricao, Number(i.qtd) || 0, i.un, Number(i.valor) || 0, Number(i.valor_mat) || 0]; })]);
     }
     var salvoSig = null;
@@ -2499,6 +2538,7 @@
       M.pagamento = val(el, "#eo2-pag"); M.prazo = val(el, "#eo2-prazo"); M.observacoes = val(el, "#eo2-obs"); M.status = $("#eo2-st", el).value;
       M.valores_cliente = $("#eo2-vitens", el).checked ? "itens" : "total"; M.materiais_cliente = $("#eo2-mcli", el).checked;
       if (soMateriais(M)) { var rm = $('input[name="eo2-mmodo"]:checked', el); M.valores_cliente = rm ? rm.value : "itens"; M.materiais_cliente = true; }
+      if ($("#eo2-vist", el)) M.laudo = { vistoria: $("#eo2-vist", el).value.trim(), solucao: $("#eo2-sol", el).value.trim() };
     }
     function totais() {
       lerCampos(); guardarRasc();
@@ -2528,6 +2568,7 @@
     if (M.id) { lerCampos(); salvoSig = assinatura(); }
     rascPronto = true;
     if (notaPre) lerNotaLoja(notaPre);
+    if (textoPre) colarTexto(textoPre);
     (function oferecerRasc() {
       var r = null;
       try { r = JSON.parse(localStorage.getItem(chaveRasc) || "null"); } catch (e) { r = null; }
@@ -2542,6 +2583,7 @@
       $("#eo2-rasc-sim", el).onclick = function () {
         var id = M.id, numero = M.numero;
         M = Object.assign(M, r.M, { id: id, numero: numero });
+        M.laudo = temLaudo(M) ? { vistoria: M.laudo.vistoria || "", solucao: M.laudo.solucao || "" } : { vistoria: "", solucao: "" };
         M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
         if (!M.itens.length) M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 });
         preencher(); listaPrecos(); desenharItens(); av.remove(); A.avisar("Rascunho recuperado. Clique em Salvar para guardar.", "ok");
@@ -2591,20 +2633,24 @@
       if (!S.semOpcOrc) { dados.valores_cliente = M.valores_cliente; dados.materiais_cliente = !!M.materiais_cliente; }
       if (S.semDocOrc) delete dados.documento;
       if (!S.semTipoOrc) dados.tipo = M.tipo || "servico";
+      if (!S.semLaudoOrc) dados.laudo = temLaudo(M) ? { vistoria: M.laudo.vistoria, solucao: M.laudo.solucao } : null;
       function gravar(d) { return q(M.id ? sb.from("orcamentos").update(d).eq("id", M.id).select().single() : sb.from("orcamentos").insert(d).select().single()); }
       return gravar(dados).catch(function (e) {
         // banco ainda sem as colunas novas: grava sem elas e avisa uma vez para rodar o SQL
-        var msg = A.msgErro(e) + " " + (e && e.message), opc = /valores_cliente|materiais_cliente/.test(msg), doc = /documento/.test(msg), tp = /'tipo' column|column "?tipo"?/.test(msg);
-        if ((!opc || S.semOpcOrc) && (!doc || S.semDocOrc) && (!tp || S.semTipoOrc)) throw e;
+        var msg = A.msgErro(e) + " " + (e && e.message), opc = /valores_cliente|materiais_cliente/.test(msg), doc = /documento/.test(msg), tp = /'tipo' column|column "?tipo"?/.test(msg), ld = /laudo/.test(msg);
+        if ((!opc || S.semOpcOrc) && (!doc || S.semDocOrc) && (!tp || S.semTipoOrc) && (!ld || S.semLaudoOrc)) throw e;
+        if (ld) { S.semLaudoOrc = true; delete dados.laudo; }
         if (tp) { S.semTipoOrc = true; delete dados.tipo; }
         if (opc) { S.semOpcOrc = true; delete dados.valores_cliente; delete dados.materiais_cliente; }
         if (doc) { S.semDocOrc = true; delete dados.documento; }
-        A.avisar("Para guardar as opções do que vai ao cliente, rode o supabase.sql no Supabase (colunas novas do orçamento).", "erro");
+        A.avisar("Parte do orçamento (" + [ld ? "laudo técnico" : "", opc ? "opções do que vai ao cliente" : "", doc ? "CPF/CNPJ" : "", tp ? "tipo" : ""].filter(Boolean).join(", ") +
+          ") não foi gravada no servidor: rode o supabase.sql no Supabase (colunas novas do orçamento).", "erro");
         return gravar(dados);
       }).then(function (n) {
         if (S.semOpcOrc) { n.valores_cliente = M.valores_cliente; n.materiais_cliente = !!M.materiais_cliente; }
         if (S.semDocOrc) n.documento = M.documento;
         if (S.semTipoOrc) n.tipo = M.tipo;
+        if (S.semLaudoOrc) n.laudo = temLaudo(M) ? M.laudo : null;
         trocar(S.orc, n);
         S.orc.sort(function (a, b) { return b.numero - a.numero; });
         var titulo = el.closest(".modal").querySelector(".cab h2");
@@ -2624,6 +2670,7 @@
           return n;
         }
         M = Object.assign(M, n);
+        M.laudo = temLaudo(M) ? { vistoria: M.laudo.vistoria || "", solucao: M.laudo.solucao || "" } : { vistoria: "", solucao: "" };
         // salvo no servidor: o rascunho deste aparelho não é mais necessário
         clearTimeout(tRasc); apagarRasc(); apagarRasc("age_rascunho_orc_novo"); chaveRasc = "age_rascunho_orc_" + n.id;
         aprenderItens(itens, M.categoria);
@@ -2681,6 +2728,153 @@
     };
     $("#eo2-lista-mat", el).onclick = function () { escolherMateriais(); };
     $("#eo2-ler-nota", el).onclick = function () { lerNotaLoja(); };
+    $("#eo2-colar", el).onclick = function () { colarTexto(); };
+
+    // 🔍 laudo técnico: escolher modelo, salvar o atual como modelo, apagar modelo
+    function listaModelos(sel) {
+      var x = $("#eo2-lmod", el); if (!x) return;
+      x.innerHTML = '<option value="">📑 Usar um modelo de laudo...</option>' + modelosLaudo().map(function (m) {
+        return '<option value="' + esc(m.id) + '">' + esc(m.titulo) + (m.padrao ? " (modelo pronto)" : "") + "</option>";
+      }).join("");
+      x.value = sel || "";
+    }
+    if ($("#eo2-lmod", el)) {
+      listaModelos();
+      $("#eo2-lmod", el).onchange = function () {
+        var m = modelosLaudo().filter(function (y) { return y.id === this.value; }, this)[0];
+        if (!m) return;
+        lerCampos();
+        if (temLaudo(M) && !A.confirmar("Trocar o laudo que está escrito pelo modelo “" + m.titulo + "”?")) { this.value = ""; return; }
+        $("#eo2-vist", el).value = m.vistoria || ""; $("#eo2-sol", el).value = m.solucao || "";
+        lerCampos(); guardarRasc(); A.avisar("📑 Modelo “" + m.titulo + "” colocado. Edite o que precisar para este cliente.", "ok");
+      };
+      $("#eo2-lsalvar", el).onclick = function () {
+        lerCampos();
+        if (!temLaudo(M)) { A.avisar("Escreva a vistoria ou a solução antes de salvar como modelo.", "erro"); return; }
+        var sug = (M.laudo.solucao || M.laudo.vistoria).replace(/^[•\-–✓✔*\s]+/, "").split(/[\n.]/)[0].slice(0, 60);
+        var titulo = window.prompt("Nome do modelo de laudo (para achar na lista):", sug);
+        if (titulo === null) return;
+        titulo = String(titulo).trim().slice(0, 120) || sug || "Modelo de laudo";
+        var dados = { titulo: titulo, vistoria: M.laudo.vistoria || null, solucao: M.laudo.solucao || null }, b = this;
+        function local() {
+          var n = Object.assign({ id: "local-" + Date.now(), local: true }, dados); S.modelosLaudo.push(n); guardarModelosLocal(); return n;
+        }
+        var pr = S.semModLaudo ? Promise.resolve(local()) : q(sb.from("modelos_laudo").insert(dados).select().single()).then(function (n) { S.modelosLaudo.push(n); return n; })
+          .catch(function (e) {
+            if (!/modelos_laudo|relation|does not exist|schema cache|not find/i.test(A.msgErro(e) + " " + (e && e.message))) throw e;
+            S.semModLaudo = true; A.avisar("Modelo guardado só neste aparelho. Para usar em todos, rode o supabase.sql no Supabase (tabela modelos_laudo).", "erro");
+            return local();
+          });
+        A.ocupado(b, true, "Salvando...");
+        pr.then(function (n) { A.ocupado(b, false); listaModelos(n.id); A.avisar("💾 Modelo de laudo “" + n.titulo + "” salvo", "ok"); })
+          .catch(function (e) { A.ocupado(b, false); falhou(e); });
+      };
+      $("#eo2-lapagar", el).onclick = function () {
+        var id = $("#eo2-lmod", el).value, m = modelosLaudo().filter(function (y) { return y.id === id; })[0];
+        if (!m) { A.avisar("Escolha na lista o modelo que quer apagar.", "erro"); return; }
+        if (m.padrao) { A.avisar("O modelo pronto não pode ser apagado (ele não muda: o que você edita fica só no orçamento).", "erro"); return; }
+        if (!A.confirmar("Apagar o modelo de laudo “" + m.titulo + "”? Os orçamentos que já usaram continuam iguais.")) return;
+        var pr = m.local ? Promise.resolve() : q(sb.from("modelos_laudo").delete().eq("id", m.id));
+        pr.then(function () { tirar(S.modelosLaudo, m.id); guardarModelosLocal(); listaModelos(); A.avisar("Modelo apagado", "ok"); }).catch(falhou);
+      };
+      // corretor nos campos do laudo
+      ["#eo2-vist", "#eo2-sol"].forEach(function (k) {
+        $(k, el).addEventListener("blur", function () {
+          var r = corrigirTexto(this.value.replace(/\bfoi contatado que\b/gi, function (w) { return w.replace(/contatado/i, function (c) { return c[0] === "C" ? "Constatado" : "constatado"; }); }));
+          if (r.texto === this.value) return;
+          this.value = r.texto; lerCampos(); guardarRasc();
+          if (r.feitas.length) A.avisar("✍ Corrigido: " + r.feitas.join(", "), "ok");
+        });
+      });
+    }
+
+    // 📝 texto colado ou compartilhado: lista de materiais, escopo dos serviços e laudo vão cada um para o seu campo
+    function colarTexto(pre) {
+      lerCampos();
+      if (!window.AGE_LERTXT) { A.avisar("O leitor de texto não carregou. Recarregue a página.", "erro"); return; }
+      var jt = A.janela('<p class="peq mudo" style="margin-top:0">Cole a <b>lista de materiais</b>, o <b>escopo dos serviços</b> e a <b>vistoria / solução</b> (do WhatsApp, do e-mail ou de um documento). ' +
+        "O app separa: materiais e serviços viram itens com quantidade e unidade" + (soMateriais(M) ? "" : ", a vistoria e a solução vão para o laudo técnico") + " e o título vai para as observações. Você confere antes de colocar.</p>" +
+        '<textarea id="ct-txt" rows="8" placeholder="Ex.:\n- 24 metros de eletroduto PVC 3/4&quot;;\n- 01 Disjuntor DIN 32 A;\nESCOPO DOS SERVIÇOS\n- Instalação do quadro"></textarea>' +
+        '<div class="acoes" style="margin-top:4px"><button class="prim" id="ct-ler">🔎 Separar nos campos</button></div><div id="ct-prev"></div>',
+        { titulo: "📝 Colar texto no orçamento", larga: true });
+      var R = null;
+      function separar() {
+        R = window.AGE_LERTXT.ler($("#ct-txt", jt.el).value);
+        var itens = R.itens, temL = !soMateriais(M) && (R.laudo.vistoria || R.laudo.solucao);
+        if (!itens.length && !temL && !R.titulo) { $("#ct-prev", jt.el).innerHTML = '<div class="aviso erro" style="margin-top:8px">Não achei itens nem laudo neste texto. Uma linha por material, com a quantidade no começo (ex.: 10 Tomada 20 A).</div>'; return; }
+        itens.forEach(function (x) {
+          x.ok = !x.repetido && (!soMateriais(M) || x.tipo === "material");
+          if (soMateriais(M)) x.tipo = x.tipo === "material" ? "material" : "servico";
+          // preço da 💲 tabela, se o item já estiver lá
+          var pc = window.AGE_PRECOS && !x.valor ? window.AGE_PRECOS.acharServico(S, M.categoria, x.descricao) : null;
+          if (pc && pc.valor !== null && pc.valor !== undefined) x.valor = Number(pc.valor);
+        });
+        var nS = itens.filter(function (x) { return x.tipo !== "material"; }).length, nM = itens.length - nS, sq = itens.filter(function (x) { return x.semQtd; }).length;
+        $("#ct-prev", jt.el).innerHTML = '<div class="cartao" style="margin-top:8px">' +
+          (itens.length ? "<b>" + nM + " material(is)" + (nS ? " e " + nS + " serviço(s)" : "") + "</b>" +
+            (sq ? ' <span class="selo atencao">' + sq + " sem quantidade no texto: confira</span>" : "") +
+            (soMateriais(M) && nS ? '<p class="peq mudo" style="margin:4px 0 0">Os serviços vêm desmarcados: este é um orçamento só de materiais.</p>' : "") +
+            '<div class="tabela-caixa" style="margin-top:6px"><table><thead><tr><th></th><th>Tipo</th><th>Descrição</th><th class="num">Qtd</th><th>Un</th><th class="num">Valor un.</th></tr></thead><tbody>' +
+            itens.map(function (x, n) {
+              return '<tr data-ct="' + n + '"><td><input type="checkbox" class="ct-ok" aria-label="Usar"></td><td><select class="ct-tipo" aria-label="Tipo" style="min-width:130px">' +
+                Object.keys(TIPOS_ITEM).filter(function (k) { return k !== "ambos" && (!soMateriais(M) || k === "material"); }).map(function (k) { return '<option value="' + k + '">' + TIPOS_ITEM[k] + "</option>"; }).join("") +
+                '</select></td><td><input class="ct-desc" maxlength="300" style="min-width:200px">' + (x.repetido ? ' <span class="selo">repetido</span>' : "") + "</td>" +
+                '<td><input class="ct-qtd" inputmode="decimal" style="width:70px' + (x.semQtd ? ";border-color:var(--atencao)" : "") + '"' + (x.semQtd ? ' title="Sem quantidade no texto: confira"' : "") + "></td>" +
+                '<td><select class="ct-un" aria-label="Unidade">' + UNIDADES.concat(UNIDADES.indexOf(x.un) < 0 ? [x.un] : []).map(function (u) { return "<option>" + esc(u) + "</option>"; }).join("") + "</select></td>" +
+                '<td><input class="ct-val" inputmode="decimal" placeholder="0,00" style="width:90px"></td></tr>';
+            }).join("") + "</tbody></table></div>" : "") +
+          (temL ? '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="ct-laudo" checked> Colocar no 🔍 laudo técnico a ' + [R.laudo.vistoria ? "vistoria" : "", R.laudo.solucao ? "solução" : ""].filter(Boolean).join(" e ") + " do texto</label>" : "") +
+          (R.titulo ? '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="ct-tit" checked> Colocar nas observações: <i>' + esc(R.titulo) + "</i></label>" : "") +
+          '<div class="acoes"><button class="prim" id="ct-ok">Colocar no orçamento</button></div></div>';
+        $$("#ct-prev tr[data-ct]", jt.el).forEach(function (tr) {
+          var x = itens[Number(tr.dataset.ct)];
+          $(".ct-ok", tr).checked = x.ok; $(".ct-tipo", tr).value = x.tipo === "material" ? "material" : "servico"; $(".ct-desc", tr).value = x.descricao;
+          $(".ct-qtd", tr).value = A.numero(x.qtd, 3); $(".ct-un", tr).value = x.un; $(".ct-val", tr).value = x.valor ? reais2(x.valor) : "";
+          tr.oninput = tr.onchange = function () {
+            x.ok = $(".ct-ok", tr).checked; x.tipo = $(".ct-tipo", tr).value; x.descricao = $(".ct-desc", tr).value.trim();
+            x.qtd = A.lerNumero($(".ct-qtd", tr).value); x.un = $(".ct-un", tr).value; x.valor = A.lerNumero($(".ct-val", tr).value);
+          };
+        });
+        $("#ct-ok", jt.el).onclick = aplicar;
+      }
+      function aplicar() {
+        var usar = R.itens.filter(function (x) { return x.ok && x.descricao; }), feito = [];
+        if (usar.length) {
+          M.itens = M.itens.filter(function (i) { return String(i.descricao || "").trim() || Number(i.valor); });
+          usar.forEach(function (x) {
+            var d = corrigirTexto(x.descricao).texto;
+            M.itens.push({ tipo: soMateriais(M) ? "material" : x.tipo, descricao: d, qtd: Number(x.qtd) || 1, un: x.un || "un", valor: Math.round((Number(x.valor) || 0) * 100) / 100 });
+          });
+          feito.push(usar.length + " item(ns)");
+        }
+        if ($("#ct-laudo", jt.el) && $("#ct-laudo", jt.el).checked) {
+          ["vistoria", "solucao"].forEach(function (k) {
+            var novo = corrigirTexto(String(R.laudo[k] || "").replace(/\bfoi contatado que\b/gi, "foi constatado que")).texto;
+            if (novo) M.laudo[k] = M.laudo[k] ? M.laudo[k] + "\n" + novo : novo;
+          });
+          var cx = $("#eo2-laudo-cx", el); if (cx) cx.open = true;
+          feito.push("laudo técnico");
+        }
+        if ($("#ct-tit", jt.el) && $("#ct-tit", jt.el).checked && R.titulo) {
+          // título em MAIÚSCULAS vira frase normal, sem perder siglas e medidas (CV, LED, PVC, IP65, 220 V)
+          var tit = R.titulo.split(/\s+/).map(function (w, k) {
+            if (/\d/.test(w) || /^(CV|LED|PVC|DIN|QL|QGBT|QDC|DR|DPS|NBR|ABNT|CFTV|SPDA|IP\d*)$/.test(w.replace(/[^A-Z0-9]/g, ""))) return w;
+            var lw = w.toLocaleLowerCase("pt-BR"); return k ? lw : lw.charAt(0).toLocaleUpperCase("pt-BR") + lw.slice(1);
+          }).join(" ");
+          M.observacoes = M.observacoes ? tit + "\n" + M.observacoes : tit;
+          feito.push("observações");
+        }
+        if (!feito.length) { A.avisar("Marque pelo menos um item.", "erro"); return; }
+        jt.fechar(); preencher(); desenharItens(); guardarRasc();
+        A.avisar("📝 Colocado no orçamento: " + feito.join(", ") + ". Confira os valores.", "ok");
+      }
+      $("#ct-ler", jt.el).onclick = separar;
+      $("#ct-txt", jt.el).addEventListener("paste", function () { setTimeout(separar, 0); });
+      if (pre) { $("#ct-txt", jt.el).value = pre; separar(); }
+      else if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(function (t) {
+        if (t && !$("#ct-txt", jt.el).value && window.AGE_LERTXT.ler(t).itens.length) { $("#ct-txt", jt.el).value = t; separar(); }
+      }).catch(function () { /* sem permissão: você cola com Ctrl+V */ });
+    }
     // 📷 materiais da nota fiscal ou do orçamento da loja (foto, PDF, XML, lista colada ou nota já lançada em 🧾 Compras):
     // entram no orçamento com a quantidade e o preço (com acréscimo, se quiser) e o preço da loja fica na 💲 tabela para as outras áreas
     function lerNotaLoja(pre) {
@@ -2754,7 +2948,14 @@
         }).catch(function (e) { status("Não consegui ler o arquivo: " + A.msgErro(e), "critico"); });
       };
       $("#ln-colar", jn.el).onclick = function () { $("#ln-cx-colar", jn.el).classList.remove("oculto"); $("#ln-txt", jn.el).focus(); };
-      $("#ln-ler-txt", jn.el).onclick = function () { mostrar(CP.lerLista($("#ln-txt", jn.el).value).itens, {}); };
+      $("#ln-ler-txt", jn.el).onclick = function () {
+        var tx = $("#ln-txt", jn.el).value, L = CP.lerLista(tx).itens;
+        // lista sem preço ("24 metros de eletroduto", "- 01 Disjuntor;"): o leitor de texto entende melhor
+        if (window.AGE_LERTXT && !L.some(function (x) { return Number(x.unit) > 0 || Number(x.valor) > 0; })) {
+          L = window.AGE_LERTXT.ler(tx).itens.filter(function (x) { return x.tipo === "material"; }).map(function (x) { return { item: x.descricao, qtd: x.qtd, un: x.un, unit: x.valor || 0 }; });
+        }
+        mostrar(L, {});
+      };
       function desenharNotas() {
         var b = semAcento($("#ln-busca", jn.el).value).trim();
         var ls = notas.filter(function (c) { return !b || b.split(/\s+/).every(function (p2) { return semAcento((c.fornecedor || "") + " " + (c.itens || []).map(function (y) { return y.item; }).join(" ")).indexOf(p2) >= 0; }); }).slice(0, 60);
@@ -2847,6 +3048,13 @@
       String(o.numero).padStart(4, "0") + " — " + A.data(o.criado_em) + "\n\nCliente: " + o.cliente + "\n" + (o.documento ? rotuloDoc(o.documento) + ": " + fmtDoc(o.documento) + "\n" : "");
     if (o.endereco) t += "Local: " + o.endereco + "\n";
     t += "\n";
+    if (temLaudo(o)) {
+      t += "*🔍 Laudo técnico*\n";
+      LAUDO_PARTES.forEach(function (pt) {
+        var ls = linhasLaudo(o.laudo[pt[0]]); if (!ls.length) return;
+        t += "*" + pt[1] + ":*\n" + ls.map(function (x) { return (x.topico ? "• " : "") + x.texto; }).join("\n") + "\n\n";
+      });
+    }
     var tc = calcOrc(o);
     gruposCliente(o).forEach(function (g) {
       t += "*" + g.titulo + "*\n";
@@ -2958,6 +3166,28 @@
       });
       y += 5;
 
+      // laudo técnico (vistoria e solução)
+      if (temLaudo(o)) {
+        espaco(24);
+        fonte("bold", 12); azul(); doc.text("LAUDO TÉCNICO", L, y); y += 1.8;
+        doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.5); doc.line(L, y, R, y); y += 5.5;
+        LAUDO_PARTES.forEach(function (pt) {
+          var ls = linhasLaudo(o.laudo[pt[0]]); if (!ls.length) return;
+          espaco(14);
+          doc.setFillColor(20, 50, 92); doc.rect(L, y - 3, 1.6, 4, "F");
+          fonte("bold", 10.5); azul(); doc.text(pt[1], L + 4, y); y += 5.5;
+          ls.forEach(function (x) {
+            fonte("normal", 10); preto();
+            var rec = x.topico ? 9 : 4, d = doc.splitTextToSize(tx(x.texto), R - L - rec);
+            espaco(d.length * 4.6 + 1);
+            if (x.topico) { doc.setFillColor(20, 50, 92); doc.circle(L + 5.5, y - 1.2, 0.8, "F"); }
+            doc.text(d, L + rec, y); y += d.length * 4.6 + 1.6;
+          });
+          y += 2.5;
+        });
+        y += 2;
+      }
+
       // itens
       gruposCliente(o).forEach(function (g) {
         var itens = g.itens; comValorTab = g.comValor;
@@ -3039,6 +3269,8 @@
       "h3{color:#14325c;margin:18px 0 6px;font-size:15px}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #ddd;padding:6px;text-align:left}" +
       "th{font-size:12px;text-transform:uppercase;color:#555}.n{text-align:right;white-space:nowrap}" +
       ".tot{margin-left:auto;width:300px;margin-top:14px}.tot div{display:flex;justify-content:space-between;padding:3px 0}.tot .g{font-size:18px;font-weight:bold;border-top:2px solid #14325c;padding-top:6px}" +
+      ".laudo{border-left:4px solid #14325c;background:#f7f9fc;border-radius:0 8px 8px 0;padding:4px 14px 8px;margin:14px 0}.laudo h3{margin-top:8px;text-transform:uppercase;letter-spacing:.5px}" +
+      ".laudo h4{color:#14325c;margin:10px 0 4px;font-size:14px}.laudo p{margin:4px 0}.laudo ul{margin:4px 0;padding-left:20px}.laudo li{margin:3px 0}" +
       ".cond{margin-top:18px}.ass{margin-top:60px;display:flex;gap:40px}.ass div{flex:1;border-top:1px solid #333;text-align:center;padding-top:4px;font-size:12px}" +
       "@media print{body{padding:0}button{display:none}}button{padding:10px 16px;font-size:15px;margin:0 0 16px;cursor:pointer}</style></head><body>" +
       '<button onclick="window.print()">🖨 Imprimir / salvar PDF</button>' +
@@ -3047,6 +3279,16 @@
       '<div class="num"><b>' + nomeOrc(o, true) + " Nº " + String(o.numero).padStart(4, "0") + "</b><br>Data: " + A.data(o.criado_em) + "<br>Válido até: " + A.data(validade) + "</div></div>" +
       '<div class="cli"><b>Cliente:</b> ' + esc(o.cliente) + (o.documento ? " · <b>" + rotuloDoc(o.documento) + ":</b> " + esc(fmtDoc(o.documento)) : "") + (o.telefone ? " · " + esc(o.telefone) : "") + (o.email ? " · " + esc(o.email) : "") + (o.endereco ? "<br><b>Local:</b> " + esc(o.endereco) : "") +
       (o.categoria ? "<br><b>Serviço:</b> " + esc(CAT_ORC[o.categoria] || o.categoria) : "") + "</div>" +
+      (temLaudo(o) ? '<div class="laudo"><h3>Laudo técnico</h3>' + LAUDO_PARTES.map(function (pt) {
+        var ls = linhasLaudo(o.laudo[pt[0]]); if (!ls.length) return "";
+        var h = "<h4>" + pt[1] + "</h4>", aberto = false;
+        ls.forEach(function (x) {
+          if (x.topico && !aberto) { h += "<ul>"; aberto = true; }
+          if (!x.topico && aberto) { h += "</ul>"; aberto = false; }
+          h += x.topico ? "<li>" + esc(x.texto) + "</li>" : "<p>" + esc(x.texto) + "</p>";
+        });
+        return h + (aberto ? "</ul>" : "");
+      }).join("") + "</div>" : "") +
       gruposCliente(o).map(bloco).join("") +
       (semValores(o) ? "" : '<div class="tot">' + (t.mc && t.mat ? "<div><span>Materiais</span><span>" + A.dinheiro(t.mat) + "</span></div>" : "") +
       (t.serv ? "<div><span>Mão de obra</span><span>" + A.dinheiro(t.serv) + "</span></div>" : "") +

@@ -134,6 +134,15 @@ alter table public.orcamentos add column if not exists materiais_cliente boolean
 alter table public.orcamentos alter column materiais_cliente set default false;
 alter table public.orcamentos add column if not exists documento text;          -- CPF ou CNPJ do cliente
 alter table public.orcamentos add column if not exists tipo text not null default 'servico';  -- 'servico' ou 'materiais' (orçamento só de materiais)
+alter table public.orcamentos add column if not exists laudo jsonb;          -- laudo técnico {vistoria, solucao}
+-- modelos de laudo técnico (vistoria e solução) para usar e editar nos orçamentos
+create table if not exists public.modelos_laudo (
+  id        uuid primary key default gen_random_uuid(),
+  titulo    text not null,
+  vistoria  text,
+  solucao   text,
+  criado_em timestamptz not null default now()
+);
 alter table public.obras      add column if not exists loja_id uuid references public.lojas (id) on delete set null;
 alter table public.servicos   add column if not exists criado_pelo_funcionario boolean not null default false;
 -- assinatura do responsável no local (gerente da loja / cliente) ao concluir
@@ -504,7 +513,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'candidatos'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'candidatos', 'modelos_laudo'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
