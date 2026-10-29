@@ -1251,6 +1251,21 @@
     P.baixar(new Blob([csv], { type: "text/csv;charset=utf-8" }), "resultado-obras-" + A.isoLocal(new Date()) + ".csv");
   }
 
-  window.AGE_FAT = { ver: ver, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
+  // arquivos que chegaram pelo "Compartilhar" do celular (WhatsApp, e-mail, galeria)
+  function arquivosDoCompartilhar(rc) {
+    var fs = (rc.arquivos || []).slice();
+    if (!fs.length && rc.texto) fs = [new File([rc.texto], "comprovante.txt", { type: "text/plain" })];
+    return fs;
+  }
+  function notasCompartilhadas(ctx, rc, depois) {
+    P = ctx; var fs = arquivosDoCompartilhar(rc);
+    if (!fs.length) return;
+    if (fs.length > 1) lote(fs, depois); else receber(fs[0], depois);
+  }
+  function depositosCompartilhados(ctx, rc, depois) {
+    P = ctx; var fs = arquivosDoCompartilhar(rc);
+    if (fs.length) loteDepositos(fs, depois);
+  }
+  window.AGE_FAT = { ver: ver, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, notasCompartilhadas: notasCompartilhadas, depositosCompartilhados: depositosCompartilhados, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
     datalist: function (ctx, id) { P = ctx; return datalist(id); }, aReceber: function (S) { return (S.receitas || []).filter(function (n) { return !n.recebido; }); } };
 })();

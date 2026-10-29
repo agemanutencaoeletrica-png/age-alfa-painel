@@ -1,7 +1,7 @@
 // Service worker do app de serviços da AGE (só vale dentro da pasta servicos/).
 // Sempre busca a versão nova na internet; se estiver sem sinal, abre a última
 // versão guardada. Dados do Supabase e fotos NUNCA ficam guardados aqui.
-var CACHE = "age-servicos-v94";
+var CACHE = "age-servicos-v95";
 var BASICOS = ["./index.html", "./funcionario.html", "./estilo.css", "./comum.js", "./admin.js", "./funcionario.js", "./geo.js", "./lojas-doc.js", "./prefeitura.js", "./pagamentos.js", "./fornecedores.js", "./compras.js", "./fechamento.js", "./faturamento.js", "./prospeccao.js", "./precos-base.js", "./materiais-base.js", "./leitor-texto.js", "./precos.js", "./config.js",
   "./icone.svg", "./icone-192.png", "./icone-512.png", "./manifest.webmanifest", "./manifest-funcionario.webmanifest"];
 
@@ -20,7 +20,7 @@ self.addEventListener("activate", function (e) {
 function receber(r) {
   var u = new URL(r.url), pagina = u.pathname.split("/").pop() || "index.html";
   return r.formData().then(function (fd) {
-    var arqs = fd.getAll("fotos").filter(function (f) { return f && f.size; }).slice(0, 10);
+    var arqs = fd.getAll("fotos").filter(function (f) { return f && f.size; }).slice(0, 20);
     return caches.delete("age-recebido").then(function () { return caches.open("age-recebido"); }).then(function (c) {
       var meta = { title: fd.get("title") || "", text: fd.get("text") || "", url: fd.get("url") || "", quando: Date.now(),
         arquivos: arqs.map(function (f) { return { nome: f.name, tipo: f.type }; }) };
