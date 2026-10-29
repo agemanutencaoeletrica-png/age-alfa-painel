@@ -317,13 +317,13 @@
             ultY = y;
           });
           // e a tabela pela posição na página (orçamento de loja com as colunas fora de ordem no texto)
-          var tabela = null;
-          try { tabela = tabelaDoPdf(tc.items.map(function (it) { return { s: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0 }; })); } catch (e) { tabela = null; }
+          var tabela = null, pecas = tc.items.map(function (it) { return { s: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0 }; });
+          try { tabela = tabelaDoPdf(pecas); } catch (e) { tabela = null; }
           // a primeira página vira imagem para guardar como comprovante
           var vp = pg.getViewport({ scale: 1.6 }), cv = document.createElement("canvas");
           cv.width = vp.width; cv.height = vp.height;
           return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise.then(function () {
-            return new Promise(function (ok) { cv.toBlob(function (b) { ok({ texto: linhas.join("\n"), imagem: b, tabela: tabela }); }, "image/jpeg", 0.85); });
+            return new Promise(function (ok) { cv.toBlob(function (b) { ok({ texto: linhas.join("\n"), imagem: b, tabela: tabela, pecas: pecas }); }, "image/jpeg", 0.85); });
           });
         });
       });

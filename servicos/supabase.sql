@@ -387,6 +387,11 @@ alter table public.receitas add column if not exists valor_bruto     numeric(12,
 alter table public.receitas add column if not exists retencoes       jsonb not null default '{}'::jsonb;
 alter table public.receitas add column if not exists imposto_empresa numeric(12,2);
 alter table public.receitas add column if not exists tomador_cnpj    text;
+-- recebimento: comprovante do depósito, valor que caiu, chave da NFS-e e recebimento avulso (serviço sem nota)
+alter table public.receitas add column if not exists comprovante_receb text;
+alter table public.receitas add column if not exists valor_recebido    numeric(12,2);
+alter table public.receitas add column if not exists chave_nfse        text;
+alter table public.receitas add column if not exists avulso            boolean not null default false;
 alter table public.pagamentos add column if not exists obra_id uuid references public.obras (id) on delete set null;
 alter table public.pagamentos add column if not exists destino text;
 
