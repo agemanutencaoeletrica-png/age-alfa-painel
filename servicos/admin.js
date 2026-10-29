@@ -2211,14 +2211,20 @@
     }).then(function (rc) {
       if (!rc || (!rc.texto && !rc.arquivos.length)) return;
       var j = A.janela((rc.texto ? '<div class="cartao peq" style="white-space:pre-wrap;max-height:220px;overflow:auto">' + esc(rc.texto.slice(0, 3000)) + "</div>" : "") +
-        (rc.arquivos.length ? '<p class="peq">📷 ' + rc.arquivos.length + " foto" + (rc.arquivos.length > 1 ? "s" : "") + " recebida" + (rc.arquivos.length > 1 ? "s" : "") +
-          ". Comprovante Pix: toque em 💰. Foto de serviço: compartilhe pelo app do funcionário (<b>AGE Ponto</b>).</p>" : "") +
-        '<div class="acoes">' + (rc.arquivos.length || /pix|comprovante|transfer/i.test(rc.texto || "") ? '<button class="prim" id="rc-pix">💰 Registrar pagamento Pix</button>' : "") +
+        (rc.arquivos.length ? '<p class="peq">📎 ' + rc.arquivos.length + " arquivo" + (rc.arquivos.length > 1 ? "s" : "") + " recebido" + (rc.arquivos.length > 1 ? "s" : "") +
+          ". Escolha o que é. Foto de serviço: compartilhe pelo app do funcionário (<b>AGE Ponto</b>).</p>" : "") +
+        '<div class="acoes">' +
+        (window.AGE_FAT && !S.semReceitas && (rc.arquivos.length || /nfs-?e|nota\s+fiscal/i.test(rc.texto || "")) ? '<button id="rc-nfse">🧾 Nota fiscal de serviço (que a AGE emitiu)</button>' : "") +
+        (window.AGE_FAT && !S.semReceitas && (rc.arquivos.length || /pix|comprovante|transfer|recebido|dep[oó]sito/i.test(rc.texto || "")) ? '<button id="rc-dep">💵 Depósito que recebi (dá baixa na nota)</button>' : "") +
+        (rc.arquivos.length || /pix|comprovante|transfer/i.test(rc.texto || "") ? '<button id="rc-pix">💰 Pagamento que fiz à equipe (Pix)</button>' : "") +
         (rc.arquivos.length || /nota|cupom|nfc|cnpj|total/i.test(rc.texto || "") ? '<button id="rc-nota">🧾 Registrar nota de compra</button>' : "") +
         (rc.texto ? '<button' + (rc.arquivos.length ? "" : ' class="prim"') + ' id="rc-cx">📋 Colocar na caixa de chamados</button><button id="rc-novo">➕ Novo serviço com este texto</button>' +
           '<button id="rc-orc" title="Separa a lista de materiais, o escopo e o laudo nos campos do orçamento">📝 Novo orçamento com este texto</button>' : "") +
         '<button id="rc-copiar">Copiar o texto</button></div>', { titulo: "📥 Recebido pelo compartilhamento" });
       if ($("#rc-nota", j.el)) $("#rc-nota", j.el).onclick = function () { j.fechar(); location.hash = "#compras"; window.AGE_COMPRAS.receber(rc, P); };
+      var aposFat = function () { if (location.hash.slice(1) === "faturamento") rota(); else location.hash = "#faturamento"; };
+      if ($("#rc-nfse", j.el)) $("#rc-nfse", j.el).onclick = function () { j.fechar(); location.hash = "#faturamento"; window.AGE_FAT.notasCompartilhadas(P, rc, aposFat); };
+      if ($("#rc-dep", j.el)) $("#rc-dep", j.el).onclick = function () { j.fechar(); location.hash = "#faturamento"; window.AGE_FAT.depositosCompartilhados(P, rc, aposFat); };
       if ($("#rc-pix", j.el)) $("#rc-pix", j.el).onclick = function () { j.fechar(); location.hash = "#pagamentos"; window.AGE_PAG.receber(rc, P); };
       if ($("#rc-cx", j.el)) $("#rc-cx", j.el).onclick = function () {
         j.fechar(); location.hash = "#servicos"; importarChamado();
