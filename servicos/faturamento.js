@@ -558,10 +558,13 @@
     var deLinha = function (p) {
       var mesmaL = linhas.filter(function (l) { return Math.abs(l.y - p.y) < 3.5; })[0];
       if (mesmaL) return { l: mesmaL, cont: false };
-      var acima = linhas.filter(function (l) { return l.y > p.y && l.y - p.y < 45 && l.H === headDe(p.y); }).sort(function (q, r) { return q.y - r.y; })[0];
+      // texto em 2 linhas centralizado na data (Itaú: metade acima, metade abaixo): vai para a data mais perto
+      var H1 = headDe(p.y), perto = linhas.filter(function (l) { return l.H === H1 && Math.abs(l.y - p.y) < 10; }).sort(function (q, r) { return Math.abs(q.y - p.y) - Math.abs(r.y - p.y); })[0];
+      if (perto) return { l: perto, cont: true };
+      var acima = linhas.filter(function (l) { return l.y > p.y && l.y - p.y < 45 && l.H === H1; }).sort(function (q, r) { return q.y - r.y; })[0];
       return acima ? { l: acima, cont: true } : null;
     };
-    P2.forEach(function (p) {
+    P2.sort(function (q, r) { return r.y - q.y || q.x - r.x; }).forEach(function (p) {
       var H = headDe(p.y); if (!H) return;
       var x = deLinha(p); if (!x) return;
       var l = x.l;
@@ -571,7 +574,7 @@
       if (k === "doc") l.doc.push(p.s); else if (k === "nome") l.nome.push(p.s); else if (k === "desc" || (k === "data" && !x.cont)) l.desc.push(p.s);
     });
     var iso = function (t) { var m = t.match(/^(\d{2})\/(\d{2})(?:\/(\d{2,4}))?$/); if (!m) return null; var a = m[3] ? (m[3].length === 2 ? "20" + m[3] : m[3]) : String(new Date().getFullYear()); return a + "-" + m[2] + "-" + m[1]; };
-    var out = { creditos: [], debitos: 0 };
+    var out = { creditos: [], debitos: 0, ignorados: 0 };
     linhas.forEach(function (l) {
       var ns = l.nums.sort(function (a, b) { return a.x - b.x; }), saldoAntes = l.H.saldo ? l.H.saldo.x + 5 : 1e9;
       var v = ns.length > 1 ? ns[0] : ns.length === 1 && ns[0].x + ns[0].w <= saldoAntes ? ns[0] : null;
@@ -582,19 +585,20 @@
       var desc = l.desc.join(" ").replace(/\s+/g, " ").trim();
       if (!(l.valor > 0) || /^saldo|saldo\s+(anterior|em\s+conta|do\s+dia|final)/i.test(desc)) return;
       if (l.neg) { out.debitos++; return; }
+      if (/rendimento|rend\s+pago|aplic|resgate|juros|^est\b|estorno|devolu/i.test(desc)) { out.ignorados++; return; }   // não é pagamento de cliente
       out.creditos.push({ data: iso(l.data), desc: desc, nome: l.nome.join(" ").replace(/\s+/g, " ").trim(), doc: dig(l.doc.join("")), valor: l.valor });
     });
     return out;
   }
   function loteDepositos(fs, depois) {
-    var itens = [], extratos = [], compCache = [];
+    var itens = [], extratos = [], compCache = [], abertoSem = false;
     var j = A.janela('<div id="ld-st" class="peq">📖 Lendo os comprovantes...</div><div id="ld-res"></div>', { titulo: "💰 Comprovantes e extrato", larga: true, fixa: true });
     // extrato: cada ENTRADA vira uma linha (as saídas são ignoradas); a impressão digital é a da própria linha do extrato
     function linhasDoExtrato(it, f) {
       return pecasTodas(f).then(function (pecas) {
         var ex = extratoDoPdf(pecas), pos = itens.indexOf(it);
         if (!ex) { it.motivoFixo = "Não consegui ler as colunas deste extrato"; return; }
-        extratos.push({ nome: f.name, entradas: ex.creditos.length, saidas: ex.debitos });
+        extratos.push({ nome: f.name, entradas: ex.creditos.length, saidas: ex.debitos, ignorados: ex.ignorados });
         if (!ex.creditos.length) { it.motivoFixo = "Extrato sem entradas (créditos) no período"; return; }
         itens.splice(pos, 1);
         return Promise.all(ex.creditos.map(function (c) {
@@ -648,12 +652,12 @@
     function nomeOp(g) { return g.map(function (n) { return "Nota " + (n.numero_nota || "s/ nº"); }).join(" + ") + " · " + empresaDe(g[0]) + " · " + dinheiro(g.reduce(function (t, n) { return t + contas(n).liq; }, 0)); }
     function desenhar() {
       var marcados = itens.filter(function (it) { return it.usar && !it.salvo; }), tot = marcados.reduce(function (t, it) { return t + it.valor; }, 0);
-      $("#ld-st", el).innerHTML = (extratos.length ? extratos.map(function (x) { return "🏦 " + esc(x.nome || "extrato") + ": " + x.entradas + " entrada(s), " + x.saidas + " saída(s) ignoradas"; }).join("<br>") + "<br>" : "") +
+      $("#ld-st", el).innerHTML = (extratos.length ? extratos.map(function (x) { return "🏦 " + esc(x.nome || "extrato") + ": " + x.entradas + " entrada(s) de clientes · " + x.saidas + " saída(s) e " + x.ignorados + " rendimento(s)/estorno(s) ignorados"; }).join("<br>") + "<br>" : "") +
         itens.length + " lançamento(s) · <b>" + itens.filter(function (it) { return it.ops && it.ops.length; }).length + "</b> com nota que bate" +
         (itens.some(function (it) { return it.semNota; }) ? " · " + itens.filter(function (it) { return it.semNota; }).length + " sem nota com esse valor" : "") +
         (itens.some(function (it) { return it.motivo; }) ? " · " + itens.filter(function (it) { return it.motivo; }).length + " ficam de fora" : "");
-      $("#ld-res", el).innerHTML = '<div class="tabela-caixa"><table><thead><tr><th></th><th>Comprovante</th><th>Data</th><th class="num">Valor</th><th>Quem pagou</th><th>Dá baixa em</th></tr></thead><tbody>' +
-        itens.map(function (it, i) {
+      var cabT = '<div class="tabela-caixa"><table><thead><tr><th></th><th>Comprovante</th><th>Data</th><th class="num">Valor</th><th>Quem pagou</th><th>Dá baixa em</th></tr></thead><tbody>';
+      var linhaLd = function (it, i) {
           var cel;
           if (it.salvo) cel = '<span class="selo bom">✅ ' + esc(it.salvo) + "</span>";
           else if (it.motivo) cel = '<span class="selo ' + (/já usado|repetido|já baixado/i.test(it.motivo) ? "atencao" : "critico") + '" style="white-space:normal;display:inline-block;max-width:260px;line-height:1.3">' + esc(it.motivo) + "</span>";
@@ -663,11 +667,18 @@
           return "<tr" + (it.motivo ? ' class="mudo"' : "") + "><td>" + (it.motivo || it.salvo || it.semNota ? "" : '<input type="checkbox" data-ld="' + i + '"' + (it.usar ? " checked" : "") + ' aria-label="Dar baixa">') + "</td>" +
             '<td class="peq">' + esc(it.f.name || "") + "</td><td>" + esc(it.data ? A.dataSimples(it.data) : "—") + '</td><td class="num"><b>' + (it.valor ? dinheiro(it.valor) : "—") + "</b></td><td>" +
             esc((it.pg && it.pg.nome) || "—") + "</td><td>" + cel + "</td></tr>";
-        }).join("") + "</tbody></table></div>" +
+      };
+      // primeiro o que bate com nota (e o que ficou de fora); as entradas sem nota ficam recolhidas (extrato do ano tem muitas)
+      var idx = itens.map(function (it, i) { return i; });
+      var princ = idx.filter(function (i) { return !itens[i].semNota || itens[i].salvo; }), sem = idx.filter(function (i) { return itens[i].semNota && !itens[i].salvo; });
+      $("#ld-res", el).innerHTML = (princ.length ? cabT + princ.map(function (i) { return linhaLd(itens[i], i); }).join("") + "</tbody></table></div>" : "") +
+        (sem.length ? '<details id="ld-sem"' + (abertoSem ? " open" : "") + ' style="margin-top:8px"><summary><b>Entradas sem nota com esse valor (' + sem.length + ")</b> <span class=\"peq mudo\">— marque as que quiser lançar como recebimento avulso</span></summary>" +
+          cabT + sem.map(function (i) { return linhaLd(itens[i], i); }).join("") + "</tbody></table></div></details>" : "") +
         '<p class="peq mudo">Confira cada linha. Quando há mais de uma nota com o mesmo valor, escolha qual o comprovante paga.</p>' +
         '<div class="acoes"><button class="prim" id="ld-salvar"' + (marcados.length ? "" : " disabled") + ">✅ Dar baixa em " + marcados.length + " comprovante(s) · " + dinheiro(tot) + '</button><button id="ld-fechar">Fechar</button></div>';
       $$("[data-ld]", el).forEach(function (cb) { cb.onchange = function () { itens[Number(cb.dataset.ld)].usar = cb.checked; desenhar(); }; });
-      $$("[data-ld-av]", el).forEach(function (cb) { cb.onchange = function () { itens[Number(cb.dataset.ldAv)].usar = cb.checked; desenhar(); }; });
+      $$("[data-ld-av]", el).forEach(function (cb) { cb.onchange = function () { itens[Number(cb.dataset.ldAv)].usar = cb.checked; abertoSem = true; desenhar(); }; });
+      if ($("#ld-sem", el)) $("#ld-sem", el).ontoggle = function () { abertoSem = this.open; };
       $$("[data-ld-op]", el).forEach(function (sl) {
         sl.onchange = function () {
           var it = itens[Number(sl.dataset.ldOp)], k = Number(sl.value);
