@@ -241,6 +241,67 @@
       return new Promise(function (ok) { cv.toBlob(function (b) { ok(b || f); }, "image/png"); });
     }).catch(function () { return f; });
   }
+  // tabela de materiais de um PDF digital (orçamento ou nota gerada pelo sistema da loja): usa a POSIÇÃO de cada texto na
+  // página. Acha o cabeçalho (Descrição, Quantidade, Unidade, Valor unitário, Total), põe cada número na sua coluna e junta
+  // a descrição que a loja quebrou em 2 linhas. Devolve { itens, total } ou null se não achar a tabela.
+  function tabelaDoPdf(pecas) {
+    var P = pecas.filter(function (p) { return p.s.trim(); });
+    var acha = function (re) { return P.filter(function (p) { return re.test(p.s.trim()); }); };
+    var cab = null;
+    acha(/^descri[cç][aã]o|^produto|^material|^mercadoria/i).some(function (d) {
+      var mesma = function (re) { return P.filter(function (p) { return Math.abs(p.y - d.y) < 4 && re.test(p.s.trim()); })[0] || null; };
+      var q = mesma(/^(quant|qtd|qtde|qde)/i), t = mesma(/^(valor\s*)?total|^vl\.?\s*total|^subtotal/i);
+      if (q && t) { cab = { y: d.y, desc: d, qtd: q, tot: t, un: mesma(/^(un|und|unid|unidade|u\.?m\.?)\.?$/i), unit: mesma(/unit|^valor\s*un|^vl\.?\s*un|^pre[cç]o|^v\.?\s*un/i),
+        extra: mesma(/^desc\.\s*\/|acr[eé]sc|^desconto$|^ipi$|^icms$/i) };   // "extra": coluna que não interessa, mas recebe números
+        return true;
+      }
+      return false;
+    });
+    if (!cab) return null;
+    var num = /^-?\d{1,3}(?:\.\d{3})*(?:,\d{1,4})?$|^-?\d+(?:,\d{1,4})?$/;
+    var colunas = ["qtd", "un", "unit", "extra", "tot"].filter(function (k) { return cab[k]; }).map(function (k) { return { k: k, c: cab[k].x + cab[k].w / 2 }; });
+    var fimY = -1e9;   // a tabela acaba no primeiro "Total ..." abaixo do cabeçalho que não é a coluna Total
+    P.forEach(function (p) { if (p.y < cab.y - 4 && /^(total|valor total|sub-?total|desconto|forma de pag|observa)/i.test(p.s.trim()) && p.y > fimY && p !== cab.tot) fimY = p.y; });
+    var corpo = P.filter(function (p) { return p.y < cab.y - 4 && p.y > fimY + 2; });
+    // linhas: onde há quantidade na coluna "Quantidade"
+    var colDe = function (p) { var cx = p.x + p.w / 2, m = null, dm = 1e9; colunas.forEach(function (c) { var d = Math.abs(c.c - cx); if (d < dm) { dm = d; m = c.k; } }); return m; };
+    var linhas = [];
+    corpo.forEach(function (p) {
+      var s = p.s.trim();
+      // só número que está mesmo embaixo de "Quantidade" (não um código no meio da descrição)
+      if (num.test(s) && colDe(p) === "qtd" && p.x + p.w > cab.qtd.x - 10 && !linhas.some(function (l) { return Math.abs(l.y - p.y) < 2; })) linhas.push({ y: p.y, qtd: A.lerNumero(s), desc: [] });
+    });
+    if (!linhas.length) return null;
+    linhas.sort(function (a, b) { return b.y - a.y; });
+    var gaps = linhas.slice(1).map(function (l, i) { return linhas[i].y - l.y; }).sort(function (x, y) { return x - y; });
+    var passo = gaps.length ? Math.max(6, gaps[Math.floor(gaps.length / 2)]) : 12;   // espaço típico entre linhas (mediana)
+    var maisPerto = function (y) { var m = null, dm = 1e9; linhas.forEach(function (l) { var d = Math.abs(l.y - y); if (d < dm) { dm = d; m = l; } }); return dm <= passo * 0.75 ? m : null; };
+    corpo.forEach(function (p) {
+      var s = p.s.trim(), l = maisPerto(p.y); if (!l) return;
+      var limiteDesc = cab.qtd.x - 2;
+      if (/[A-Za-zÀ-ú]/.test(s) && p.x >= cab.desc.x - 25 && p.x < limiteDesc) { l.desc.push(p); return; }
+      if (cab.un && colDe(p) === "un" && /^[A-Za-z²³]{1,5}\.?$/.test(s)) { l.un = s.toLowerCase().replace(/\.$/, ""); return; }
+      if (num.test(s)) { var k = colDe(p); if (k === "unit" && l.unit == null) l.unit = A.lerNumero(s); else if (k === "tot") l.valor = A.lerNumero(s); }
+    });
+    var itens = linhas.map(function (l) {
+      var item = l.desc.sort(function (a, b) { return b.y - a.y || a.x - b.x; }).map(function (p) { return p.s.trim(); }).join(" ").replace(/\s+/g, " ").trim();
+      var r = { item: item.slice(0, 160), qtd: l.qtd, un: l.un || "un", unit: l.unit != null ? Math.round(l.unit * 100) / 100 : null, valor: l.valor != null ? l.valor : null };
+      if (r.valor == null && r.unit) r.valor = Math.round(r.qtd * r.unit * 100) / 100;
+      if (r.unit == null && r.valor && r.qtd) r.unit = Math.round(r.valor / r.qtd * 100) / 100;
+      return r;
+    }).filter(function (r) { return r.item && r.qtd > 0; });
+    if (!itens.length) return null;
+    // total a pagar: "Total líquido" / "Total a pagar" / "Valor total" e o número logo abaixo (ou ao lado)
+    var total = null;
+    acha(/total\s*l[ií]quido|total\s*a\s*pagar|valor\s*total\s*(da\s*nota|a\s*pagar)?$|^total\s*geral|^total\s*da\s*(nota|venda|proposta)/i).some(function (h) {
+      if (h.y >= cab.y - 4) return false;
+      var cand = P.filter(function (p) { return num.test(p.s.trim()) && /,\d{2}$/.test(p.s.trim()) && ((p.y < h.y && h.y - p.y < 25 && Math.abs((p.x + p.w) - (h.x + h.w)) < 60) || (Math.abs(p.y - h.y) < 4 && p.x > h.x + h.w - 2)); })
+        .sort(function (a, b) { return Math.abs(a.y - h.y) - Math.abs(b.y - h.y) || a.x - b.x; });
+      if (cand.length) { total = A.lerNumero(cand[0].s.trim()); return true; }
+      return false;
+    });
+    return { itens: itens, total: total };
+  }
   function lerPdf(f) {
     return carregarScript(PDFJS + "pdf.min.js", function () { return !!window.pdfjsLib; }).then(function () {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js";
@@ -255,11 +316,14 @@
             if (ultY === null || Math.abs(y - ultY) > 3) linhas.push(it.str); else linhas[linhas.length - 1] += " " + it.str;
             ultY = y;
           });
+          // e a tabela pela posição na página (orçamento de loja com as colunas fora de ordem no texto)
+          var tabela = null;
+          try { tabela = tabelaDoPdf(tc.items.map(function (it) { return { s: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0 }; })); } catch (e) { tabela = null; }
           // a primeira página vira imagem para guardar como comprovante
           var vp = pg.getViewport({ scale: 1.6 }), cv = document.createElement("canvas");
           cv.width = vp.width; cv.height = vp.height;
           return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise.then(function () {
-            return new Promise(function (ok) { cv.toBlob(function (b) { ok({ texto: linhas.join("\n"), imagem: b }); }, "image/jpeg", 0.85); });
+            return new Promise(function (ok) { cv.toBlob(function (b) { ok({ texto: linhas.join("\n"), imagem: b, tabela: tabela }); }, "image/jpeg", 0.85); });
           });
         });
       });

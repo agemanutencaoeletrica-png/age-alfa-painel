@@ -87,7 +87,7 @@
     for (var i = 0; i < ls.length; i++) if (/cnpj/i.test(ls[i])) { iC = i; break; }
     // tira da linha o que não é nome (título da nota, CEP, telefone, endereço) e o pedaço solto no fim ("LIDER TINTAS L")
     var limparNome = function (x) {
-      return x.replace(/\b(documento auxiliar|nota fiscal|danfe|nfc-?e|consulta|chave de acesso|0\s*-\s*entrada|1\s*-\s*sa[ií]da)\b.*$/i, "")
+      return x.replace(/^\s*(denomina[cç][aã]o|raz[aã]o\s+social|nome\s+fantasia|nome\s+empresarial|emitente|fornecedor)\s*:?\s*/i, "").replace(/\b(documento auxiliar|nota fiscal|danfe|nfc-?e|consulta|chave de acesso|0\s*-\s*entrada|1\s*-\s*sa[ií]da)\b.*$/i, "")
         .replace(/\b(cep|fone|tel|telefone|cnpj|ie|rua|r\.|av\.?|avenida|rodovia)\b.*$/i, "").replace(/[^A-Za-zÀ-ú0-9&.' -]/g, " ")
         .replace(/\s+\S$/, "").replace(/\s+/g, " ").trim();
     };
@@ -110,7 +110,7 @@
       var mr = forte.test(f0) && f0.match(/[A-ZÀ-Ú0-9&.' -]*?\b(?:LTDA|EIRELI|EPP|S\.A\.|S\/A|ME)\b\.?/i);
       // sujeira antes do nome na foto ("Bugs. Na Rodol Ltda"): sai palavra terminada em pontuação e pedaço de 2 letras
       var wf = (mr ? mr[0] : f0).replace(/\s+/g, " ").trim().split(" ");
-      while (wf.length > 2 && (/[.:;,!]$/.test(wf[0]) || /^[A-ZÀ-Ú][a-zà-ú]$/.test(wf[0]) || /^[a-zà-ú]{1,3}$/.test(wf[0]) || /^[A-ZÀ-Ú]{1,2}$/.test(wf[0]))) wf.shift();
+      while (wf.length > 2 && wf[1] !== "&" && wf[0] !== "&" && (/[.:;,!]$/.test(wf[0]) || /^[A-ZÀ-Ú][a-zà-ú]$/.test(wf[0]) || /^[a-zà-ú]{1,3}$/.test(wf[0]) || /^[A-ZÀ-Ú]{1,2}$/.test(wf[0]))) wf.shift();   // "R & R ELETRO" fica inteiro
       r.fornecedor = wf.join(" ").replace(/\s+(?:N[º°o.]?\s*\d|\d{4}\b).*$/i, "").replace(/[\s-]+$/, "").slice(0, 120);
       if (!/[A-Za-zÀ-ú]{3,}/.test(r.fornecedor)) delete r.fornecedor;
     }
@@ -423,11 +423,23 @@
     var umItem = d.itens.some(function (x) { return Math.abs((Number(x.valor) || 0) - d.valor) < 0.05; });
     if (!d.valor || d.valorIncerto || umItem || d.valor < soma * 0.95) { d.valor = soma; d.valorIncerto = true; d.valorSoma = true; }
   }
+  // PDF digital: a tabela lida pela posição vale mais quando acha mais materiais ou quando a leitura do texto não fecha
+  function comTabela(d, t) {
+    if (!t || !t.itens || !t.itens.length) return d;
+    var n = (d.itens || []).length;
+    if (n && fecha(d) && n >= t.itens.length) return d;
+    if (t.itens.length < n) return d;
+    d.itens = t.itens;
+    if (t.total) { d.valor = t.total; delete d.valorIncerto; d.totalFirme = true; }
+    else if (!d.valor || d.valorIncerto) { d.valor = Math.round(somaItens(d) * 100) / 100; d.valorIncerto = true; }
+    return d;
+  }
   function lerUmaNota(f, status) {
     return window.AGE_PAG.lerArquivo(f).then(function (r) {
       var d = r.xml ? lerXml(r.texto) : null;
       if (d) return { dados: d, imagem: null, bruto: "" };
       d = lerNota(r.texto);
+      d = comTabela(d, r.tabela);
       if (!/^image\//.test(f.type) || fecha(d)) { if (!fecha(d)) corrigeTotal(d); return { dados: d, imagem: r.imagem || f, bruto: r.texto }; }
       // a soma dos materiais não fecha com o total: lê a tabela de novo de outros jeitos e fica com a leitura que fecha
       var melhor = d, bruto = r.texto, tentativas = [{ psm: "6", endireitar: true }, { psm: "6", cinza: true }, { psm: "4" }, { psm: "3" }];
