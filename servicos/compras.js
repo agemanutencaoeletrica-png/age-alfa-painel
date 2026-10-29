@@ -35,6 +35,13 @@
   var DIN = /\d{1,3}(?:\.\d{3})*,\d{2}/;
   function lerNota(texto) {
     var t = String(texto || "").replace(/\r/g, ""), ls = t.split("\n").map(function (x) { return x.trim(); }).filter(Boolean), r = { itens: [] };
+    // foto do cupom: o total do item caiu sozinho na linha de baixo ("... 2 UN 289,90" / "579,80"): volta para a linha do item
+    ls = ls.reduce(function (acc, x) {
+      var ant = acc[acc.length - 1];
+      if (ant && /^\d{1,3}(?:\.\d{3})*,\d{2}$/.test(x) && /^\d{1,6}\s+.*[A-Za-zÀ-ú]{3,}.*\s(?:\d+(?:[.,]\d+)?\s+(?:un|und|pc|pç|mt|m|kg|cx|l|lt|rl|gl|jg|par|pct)|(?:un|und|pc|pç|mt|m|kg|cx|l|lt|rl|gl|jg|par|pct)\.?\s+\d+(?:[.,]\d+)?)\.?\s+\d{1,3}(?:\.\d{3})*,\d{2,3}$/i.test(ant)) acc[acc.length - 1] = ant + " " + x;
+      else acc.push(x);
+      return acc;
+    }, []);
     // valores em reais (sem pegar pedaço de CNPJ "17.134,491/0001-66")
     var valores = function (x) { return (x.match(/\d{1,3}(?:\.\d{3})*,\d{2}(?![\d\/])/g) || []).map(A.lerNumero); };
     // total: rótulo forte ("TOTAL DA NOTA", "TOTAL A PAGAR") aceita o número na linha vizinha (DANFE: rótulos numa linha,
