@@ -6,7 +6,8 @@
   "use strict";
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var P = null;
-  var filtro = { cat: "eletrica", grupo: "", busca: "", semPreco: false };
+  var filtro = { cat: "eletrica", grupo: "", busca: "", semPreco: false, tipo: "" };
+  function ehMaterial(x) { return /^Materiais/.test(String(x.grupo || "")); }
   var CATS = { eletrica: "⚡ Elétrica", pintura: "🎨 Pintura" };
 
   function semAcento(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim(); }
@@ -28,16 +29,21 @@
         (P.S.erroPrecos ? '<div class="peq mudo" style="margin-top:6px">Erro do banco: ' + esc(P.S.erroPrecos) + "</div>" : "") + "</div>";
       return;
     }
-    var ls = daCat(filtro.cat), base = (window.AGE_PRECOS_BASE || {})[filtro.cat];
+    var ls = daCat(filtro.cat).filter(function (x) { return !filtro.tipo || (filtro.tipo === "mat") === ehMaterial(x); }),
+      base = (window.AGE_PRECOS_BASE || {})[filtro.cat], baseMat = (window.AGE_MATERIAIS_BASE || {})[filtro.cat];
     var grupos = []; ls.forEach(function (x) { var g = x.grupo || "Outros"; if (grupos.indexOf(g) < 0) grupos.push(g); });
     if (filtro.grupo && grupos.indexOf(filtro.grupo) < 0) filtro.grupo = "";
     var faltam = ls.filter(function (x) { return preco(x) === null; }).length;
     c.innerHTML = '<div class="cab-secao"><h2>💲 Tabela de preços</h2><span><button class="prim" id="pc-novo">➕ Novo serviço</button>' +
       (base ? ' <button id="pc-base">📥 Carregar ' + (filtro.cat === "pintura" ? "tabela ABRAPP 2026" : "lista de serviços elétricos") + "</button>" : "") +
+      (baseMat ? ' <button id="pc-base-mat">📥 Carregar lista de materiais (' + baseMat.itens.length + ")</button>" : "") +
       ' <button id="pc-ch">📊 O que os chamados pedem</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Preço da <b>mão de obra</b> de cada serviço. Acrescente e edite à vontade. No <b>orçamento</b>, ao escrever o item, o serviço aparece como sugestão já com a unidade e o preço.</p>' +
       '<div class="filtros">' + Object.keys(CATS).map(function (k) {
         return '<button class="' + (filtro.cat === k ? "prim" : "") + '" data-pccat="' + k + '">' + CATS[k] + " (" + daCat(k).length + ")</button>";
+      }).join("") + "</div>" +
+      '<div class="filtros">' + [["", "Tudo"], ["serv", "🔧 Serviços (mão de obra)"], ["mat", "🧱 Materiais"]].map(function (f) {
+        return '<button class="' + (filtro.tipo === f[0] ? "prim" : "") + '" data-pctipo="' + f[0] + '">' + f[1] + "</button>";
       }).join("") + "</div>" +
       '<div class="filtros"><select id="pc-grupo" aria-label="Grupo"><option value="">Todos os grupos</option>' + grupos.map(function (g) { return '<option' + (g === filtro.grupo ? " selected" : "") + ">" + esc(g) + "</option>"; }).join("") + "</select>" +
       '<input type="search" id="pc-busca" placeholder="Buscar serviço..." value="' + esc(filtro.busca) + '">' +
@@ -46,12 +52,14 @@
         '<div class="aviso peq">Tabela ABRAPP: o preço é a <b>média</b> do mercado. Cobre perto do <b>mínimo</b> em obra simples, rápida e vazia; perto do <b>máximo</b> em obra difícil, alta, longe, com pressa ou cliente exigente.</div>' : "") +
       '<div id="pc-res"></div>';
     $$("[data-pccat]", c).forEach(function (b) { b.onclick = function () { filtro.cat = b.dataset.pccat; filtro.grupo = ""; ver(c, P); }; });
+    $$("[data-pctipo]", c).forEach(function (b) { b.onclick = function () { filtro.tipo = b.dataset.pctipo; filtro.grupo = ""; ver(c, P); }; });
     $("#pc-grupo").onchange = function () { filtro.grupo = this.value; listar(); };
     $("#pc-busca").oninput = function () { filtro.busca = this.value; listar(); };
     if ($("#pc-sem")) $("#pc-sem").onchange = function () { filtro.semPreco = this.checked; listar(); };
     var mudou = function () { ver(c, P); };
     $("#pc-novo").onclick = function () { editar(null, mudou); };
     if ($("#pc-base")) $("#pc-base").onclick = function () { carregarBase(filtro.cat, this, mudou); };
+    if ($("#pc-base-mat")) $("#pc-base-mat").onclick = function () { carregarBase(filtro.cat, this, mudou, window.AGE_MATERIAIS_BASE); };
     $("#pc-ch").onclick = function () { verChamados(filtro.cat, mudou); };
     listar();
 
@@ -80,13 +88,13 @@
   }
 
   // ---------------- ações ----------------
-  function carregarBase(cat, botao, mudou) {
-    var base = (window.AGE_PRECOS_BASE || {})[cat]; if (!base) return;
+  function carregarBase(cat, botao, mudou, fonte) {
+    var base = (fonte || window.AGE_PRECOS_BASE || {})[cat]; if (!base) return;
     var tem = {}; lista().forEach(function (x) { if (x.categoria === cat) tem[semAcento(x.descricao)] = 1; });
     var novos = base.itens.filter(function (x) { return !tem[semAcento(x.descricao)]; });
-    if (!novos.length) { A.avisar("Todos os serviços da lista já estão na tabela.", "ok"); return; }
+    if (!novos.length) { A.avisar("Todos os itens da lista já estão na tabela.", "ok"); return; }
     var comPreco = novos.filter(function (x) { return x.valor !== null && x.valor !== undefined; }).length;
-    if (!A.confirmar("Carregar " + novos.length + " serviço(s) da " + base.nome + "?\n" + comPreco + " já vêm com preço" +
+    if (!A.confirmar("Carregar " + novos.length + " item(ns) da " + base.nome + "?\n" + comPreco + " já vêm com preço" +
       (novos.length - comPreco ? " e " + (novos.length - comPreco) + " ficam “a definir” para você preencher" : "") +
       ".\nOs que você já tem na tabela não são repetidos nem alterados.")) return;
     var linhas = novos.map(function (x) {
@@ -97,7 +105,7 @@
     var lotes = []; for (var i = 0; i < linhas.length; i += 100) lotes.push(linhas.slice(i, i + 100));
     lotes.reduce(function (pr, lote) {
       return pr.then(function () { return P.q(P.sb.from("precos").insert(lote).select()).then(function (ns) { ns.forEach(function (n) { P.trocar(P.S.precos, n); }); }); });
-    }, Promise.resolve()).then(function () { A.avisar(linhas.length + " serviço(s) carregado(s)", "ok"); mudou(); })
+    }, Promise.resolve()).then(function () { A.avisar(linhas.length + " item(ns) carregado(s)", "ok"); mudou(); })
       .catch(function (e) { A.ocupado(botao, false); P.falhou(e); mudou(); });
   }
 
