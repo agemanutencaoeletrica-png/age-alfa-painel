@@ -614,7 +614,8 @@
       '<div id="cn-mat"><label for="cn-tipo">Tipo de serviço</label><input id="cn-tipo" list="cn-dl-tipos" maxlength="200"><datalist id="cn-dl-tipos"></datalist>' +
       '<label>Materiais</label><datalist id="cn-dl-mat"></datalist><div id="cn-itens"></div><button type="button" id="cn-mais">➕ Adicionar material</button> <button type="button" id="cn-colar">📋 Colar lista</button> <span class="peq mudo" id="cn-soma"></span></div>' +
       '<label for="cn-obs">Observação</label><input id="cn-obs" maxlength="300" placeholder="Ex.: gasolina da semana, troca de óleo, lanche da equipe">' +
-      '<div id="cn-erro"></div><div class="acoes"><button class="prim" id="cn-salvar">Salvar</button>' + (c0 ? '<button class="perigo" id="cn-apagar">Apagar</button>' : "") +
+      '<div id="cn-erro"></div><div class="acoes"><button class="prim" id="cn-salvar">Salvar</button>' + (c0 && !ehDespesa(c0) && (c0.itens || []).length && P.orcMateriais ? '<button id="cn-orc" title="Abre um orçamento de materiais para o cliente com os materiais desta nota">🧱 Orçamento de materiais com estes itens</button>' : "") +
+      (c0 ? '<button class="perigo" id="cn-apagar">Apagar</button>' : "") +
       (op.depois && op.falta ? '<button id="cn-pular">Pular esta</button>' : "") + "</div>",
       { titulo: c0 ? "🧾 Compra / despesa" : "🧾 Nova compra / despesa", larga: true, fixa: true });
     var el = j.el;
@@ -807,6 +808,7 @@
       };
       $("#cn-rasc-x", el).onclick = function () { if (!A.confirmar("Descartar o lançamento não salvo?")) return; apagarRascunho(); $("#cn-rasc", el).remove(); };
     }
+    if ($("#cn-orc", el)) $("#cn-orc", el).onclick = function () { j.fechar(); P.orcMateriais(c0); };
     if ($("#cn-pular", el)) $("#cn-pular", el).onclick = function () { j.fechar(); op.depois(); };
     if ($("#cn-apagar", el)) $("#cn-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar este lançamento?")) return;
@@ -1252,5 +1254,5 @@
     return porLoja[0] || (ns.length === 1 ? ns[0] : null);
   }
 
-  window.AGE_COMPRAS = { ver: ver, receber: receber, lerNota: lerNota, porArea: porArea, naoQuitadas: naoQuitadas, htmlAlerta: htmlAlerta, ligarAlerta: ligarAlerta, quitar: quitar, notaDoComprovante: notaDoComprovante, situacao: situacao };
+  window.AGE_COMPRAS = { ver: ver, receber: receber, lerNota: lerNota, lerUmaNota: lerUmaNota, lerLista: lerLista, areaPelosItens: areaPelosItens, porArea: porArea, naoQuitadas: naoQuitadas, htmlAlerta: htmlAlerta, ligarAlerta: ligarAlerta, quitar: quitar, notaDoComprovante: notaDoComprovante, situacao: situacao };
 })();
