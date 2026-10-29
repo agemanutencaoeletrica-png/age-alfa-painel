@@ -301,6 +301,9 @@
     });
     function desenhar() {
       $("#pg-itens", el).innerHTML = itens.map(function (it, i) {
+        // aberto pela 👷 Equipe: já vem com o funcionário e o tipo (ex.: adiantamento)
+        if (it.tipo === undefined && rc.tipo) it.tipo = rc.tipo;
+        if (it.funcionario_id === undefined && rc.funcionario_id) { it.funcionario_id = rc.funcionario_id; it.achadoPor = ""; }
         if (it.funcionario_id === undefined) { var ac = it.forma === "especie" ? null : acharFunc(it.favorecido, it.chave, it.cpf); it.funcionario_id = ac ? ac.f.id : ""; it.achadoPor = ac ? ac.por : ""; }
         var f = P.porId(P.S.func, it.funcionario_id);
         // pagamento de uma nota de compra (loja/fornecedor): reconhece a nota não quitada e já deixa marcado para quitar
@@ -319,7 +322,7 @@
             '<label class="marca-linha" style="margin-top:4px"><input type="checkbox" data-k="quita"' + (it.quita ? " checked" : "") + "> ✔ Quitar esta nota (marca como paga; não lança como pagamento de funcionário)</label></div>" : "") +
           '<label class="marca-linha"><input type="checkbox" data-k="ok"' + (it.ok === false || (it.ok === undefined && dup) ? "" : " checked") + "> Salvar este</label>" +
           (it.forma !== "especie" && (it.favorecido || it.chave) ? '<div class="peq mudo">Para: <b>' + esc(it.favorecido || "") + "</b>" + (it.chave ? " · chave " + esc(it.chave) : "") +
-            (f && it.achadoPor ? ' · <span class="selo bom">reconhecido pelo ' + esc(it.achadoPor) + "</span>" : f || it.quita ? "" : ' · <span class="selo atencao">não achei na equipe: escolha abaixo e cadastre a chave Pix dele</span>') + "</div>" : "") +
+            (f && rc.funcionario_id && it.funcionario_id === rc.funcionario_id ? "" : f && it.achadoPor ? ' · <span class="selo bom">reconhecido pelo ' + esc(it.achadoPor) + "</span>" : f || it.quita ? "" : ' · <span class="selo atencao">não achei na equipe: escolha abaixo e cadastre a chave Pix dele</span>') + "</div>" : "") +
           '<div class="duas"><div><label>Funcionário</label><select data-k="funcionario_id"><option value="">— escolha —</option>' +
           P.S.func.map(function (x) { return '<option value="' + x.id + '"' + (x.id === it.funcionario_id ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join("") + "</select></div>" +
           '<div><label>Valor (R$)</label><input data-k="valor" inputmode="decimal" value="' + (it.valor ? Number(it.valor).toFixed(2).replace(".", ",") : "") + '"></div></div>' +
@@ -382,6 +385,7 @@
       }, Promise.resolve()).then(function () {
         j.fechar();
         var np = sel.length - quitadas;
+        if (rc.depois) { A.avisar("💰 " + np + " pagamento" + (np > 1 ? "s registrados" : " registrado"), "ok"); rc.depois(); return; }
         A.avisar((np ? "💰 " + np + " pagamento" + (np > 1 ? "s registrados" : " registrado") : "") + (np && quitadas ? " · " : "") +
           (quitadas ? "🧾 " + quitadas + (quitadas > 1 ? " notas quitadas (agora estão como pagas)" : " nota quitada (agora está como paga)") : ""), "ok");
         location.hash = np ? "#pagamentos" : "#compras"; P.rota();
@@ -509,7 +513,7 @@
     });
     $$("[data-pg-ed]", r).forEach(function (b) { b.onclick = function () { editar(P.porId(P.S.pag, b.dataset.pgEd), c); }; });
   }
-  function editar(p, c) {
+  function editar(p, c, depois) {
     var d = new Date(p.pago_em);
     var j = A.janela('<label for="pe-func">Funcionário</label><select id="pe-func">' + P.S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
       '<div class="duas"><div><label for="pe-valor">Valor (R$)</label><input id="pe-valor" inputmode="decimal" value="' + Number(p.valor).toFixed(2).replace(".", ",") + '"></div>' +
@@ -528,11 +532,11 @@
         pago_em: new Date($("#pe-data", el).value + "T" + ($("#pe-hora", el).value || "12:00") + ":00").toISOString() };
       if ($("#pe-obra", el) && ($("#pe-obra", el).value.trim() || p.obra_id || p.destino)) Object.assign(up, window.AGE_FAT.resolver(P, $("#pe-obra", el).value));
       P.q(P.sb.from("pagamentos").update(up).eq("id", p.id).select().single())
-        .then(function (n) { P.trocar(P.S.pag, n); j.fechar(); ver(c, P); }).catch(P.falhou);
+        .then(function (n) { P.trocar(P.S.pag, n); j.fechar(); if (depois) depois(); else ver(c, P); }).catch(P.falhou);
     };
     $("#pe-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar este pagamento?")) return;
-      P.q(P.sb.from("pagamentos").delete().eq("id", p.id)).then(function () { P.tirar(P.S.pag, p.id); j.fechar(); ver(c, P); }).catch(P.falhou);
+      P.q(P.sb.from("pagamentos").delete().eq("id", p.id)).then(function () { P.tirar(P.S.pag, p.id); j.fechar(); if (depois) depois(); else ver(c, P); }).catch(P.falhou);
     };
   }
   function textoRelatorio(ps) {
@@ -558,5 +562,115 @@
     P.baixar(new Blob([csv], { type: "text/csv;charset=utf-8" }), "pagamentos-" + A.isoLocal(new Date()) + ".csv");
   }
 
-  window.AGE_PAG = { ver: ver, receber: receber, lerPix: lerPix, lerArquivo: textoDoArquivo };
+  // ---------------- 👷 extrato de um funcionário (aba Equipe) ----------------
+  // comprovantes em ordem de data e o fechamento da semana, da quinzena e do mês (adiantamentos e vales entram no total;
+  // reembolso de material/combustível fica à parte, porque não é pagamento do serviço)
+  var modoExtrato = "mes";
+  function faixa(modo, ref) {
+    var d = new Date(ref); d.setHours(0, 0, 0, 0);
+    if (modo === "semana") { var s = inicioSemana(d); return { de: s, ate: new Date(s.getFullYear(), s.getMonth(), s.getDate() + 7) }; }
+    if (modo === "quinzena") return d.getDate() <= 15 ? { de: new Date(d.getFullYear(), d.getMonth(), 1), ate: new Date(d.getFullYear(), d.getMonth(), 16) }
+      : { de: new Date(d.getFullYear(), d.getMonth(), 16), ate: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
+    return { de: new Date(d.getFullYear(), d.getMonth(), 1), ate: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
+  }
+  function rotuloFaixa(modo, fx) {
+    var fim = new Date(fx.ate.getTime() - 864e5);
+    if (modo === "mes") { var m = fx.de.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }); return m.charAt(0).toUpperCase() + m.slice(1); }
+    return (modo === "semana" ? "Semana " : (fx.de.getDate() === 1 ? "1ª" : "2ª") + " quinzena · ") + A.data(fx.de).slice(0, 5) + " a " + A.data(fim);
+  }
+  function resumoPags(ps) {
+    var r = { total: 0, adiant: 0, nAdiant: 0, servico: 0, reemb: 0, nReemb: 0 };
+    ps.forEach(function (p) {
+      var v = Number(p.valor) || 0;
+      if (p.tipo === "reembolso") { r.reemb += v; r.nReemb++; return; }
+      r.total += v;
+      if (p.tipo === "adiantamento" || p.tipo === "vale") { r.adiant += v; r.nAdiant++; } else r.servico += v;
+    });
+    return r;
+  }
+  function extrato(f, ctx) {
+    P = ctx;
+    if (P.S.semPag) { A.avisar("Rode de novo o supabase.sql no Supabase para usar os pagamentos.", "erro"); return; }
+    var ref = new Date();
+    var j = A.janela(
+      '<div class="acoes" style="margin-top:0"><button class="prim" id="ex-pix">📎 Comprovante de pagamento</button><button id="ex-adi">📎 Comprovante de adiantamento</button>' +
+      '<button id="ex-din">💵 Pago em dinheiro</button></div>' +
+      '<input type="file" id="ex-arq" accept="image/*,application/pdf,.pdf" multiple class="oculto">' +
+      '<p class="peq mudo" style="margin:4px 0 8px">Escolha a foto/PDF do comprovante, ou copie o print e aperte <b>Ctrl+V</b> aqui. O app lê o valor e a data e guarda o comprovante junto.</p>' +
+      '<div class="filtros" id="ex-modos">' + [["semana", "Semana"], ["quinzena", "Quinzena"], ["mes", "Mês"]].map(function (m) { return '<button class="peq" data-exm="' + m[0] + '">' + m[1] + "</button>"; }).join("") + "</div>" +
+      '<div class="linha" style="justify-content:space-between;margin:6px 0"><button class="peq" id="ex-ant" aria-label="Período anterior">◀</button><b id="ex-rot"></b><button class="peq" id="ex-prox" aria-label="Próximo período">▶</button></div>' +
+      '<div id="ex-res"></div>', { titulo: "💰 Pagamentos · " + f.nome, larga: true,
+        aoFechar: function () { document.removeEventListener("paste", colar); if (location.hash.slice(1) === "equipe") P.rota(); } });
+    var el = j.el, tipoNovo = "diaria";
+    function dele() { return P.S.pag.filter(function (p) { return p.funcionario_id === f.id; }); }
+    function abrir(rc) { rc.funcionario_id = f.id; rc.depois = desenhar; receber(rc, P); }
+    function desenhar() {
+      if (!document.body.contains(el)) return;
+      $$("[data-exm]", el).forEach(function (b) { b.classList.toggle("prim", b.dataset.exm === modoExtrato); });
+      var fx = faixa(modoExtrato, ref), todos = dele();
+      var ps = todos.filter(function (p) { var d = new Date(p.pago_em); return d >= fx.de && d < fx.ate; }).sort(function (a, b) { return String(a.pago_em).localeCompare(String(b.pago_em)); });
+      var r = resumoPags(ps);
+      $("#ex-rot", el).textContent = rotuloFaixa(modoExtrato, fx);
+      // meses com pagamento (o mais novo primeiro), para comparar
+      var meses = {};
+      todos.forEach(function (p) { var k = String(A.isoLocal(new Date(p.pago_em))).slice(0, 7); (meses[k] = meses[k] || []).push(p); });
+      var ks = Object.keys(meses).sort().reverse().slice(0, 12);
+      $("#ex-res", el).innerHTML =
+        '<div class="grade"><div class="ladrilho"><div class="r">Total do fechamento</div><div class="v" style="font-size:1.4em">' + dinheiro(r.total) + '</div><div class="d">' + ps.filter(function (p) { return p.tipo !== "reembolso"; }).length + " pagamento(s)</div></div>" +
+        '<div class="ladrilho"><div class="r">Diárias / salário</div><div class="v" style="font-size:1.2em">' + dinheiro(r.servico) + "</div></div>" +
+        '<div class="ladrilho"><div class="r">Adiantamentos e vales</div><div class="v" style="font-size:1.2em">' + dinheiro(r.adiant) + '</div><div class="d">' + r.nAdiant + " no período (já somados no total)</div></div>" +
+        (r.reemb ? '<div class="ladrilho"><div class="r">Reembolsos (à parte)</div><div class="v" style="font-size:1.2em">' + dinheiro(r.reemb) + '</div><div class="d">material / combustível</div></div>' : "") + "</div>" +
+        (ps.length ? '<div class="tabela-caixa" style="margin-top:10px"><table><thead><tr><th>Data</th><th>Hora</th><th>Tipo</th><th>Forma</th><th class="num">Valor</th><th></th></tr></thead><tbody>' +
+          ps.map(function (p) {
+            var d = new Date(p.pago_em);
+            return "<tr><td>" + esc(A.data(d)) + "</td><td>" + esc(A.hora(d)) + "</td><td>" + esc(TIPOS[p.tipo] || p.tipo || "") + (p.descricao ? '<div class="mudo peq">' + esc(p.descricao) + "</div>" : "") +
+              "</td><td>" + (ehPix(p) ? "Pix" : "💵 Dinheiro") + '</td><td class="num"><b>' + dinheiro(p.valor) + "</b></td><td>" +
+              (p.comprovante ? '<button class="peq" data-exc="' + p.id + '">🧾 Ver</button> ' : '<span class="peq mudo">sem comprovante</span> ') + '<button class="peq" data-exe="' + p.id + '">Editar</button></td></tr>';
+          }).join("") + '</tbody><tfoot><tr><td colspan="4"><b>Total</b></td><td class="num"><b>' + dinheiro(r.total) + "</b></td><td></td></tr></tfoot></table></div>"
+          : '<div class="cartao vazio peq" style="margin-top:10px">Nenhum pagamento neste período.</div>') +
+        '<div class="acoes"><button class="peq" id="ex-comp">📤 Enviar o fechamento</button></div>' +
+        (ks.length ? '<h3 style="margin:14px 0 6px">📅 Fechamento por mês</h3><div class="tabela-caixa"><table><thead><tr><th>Mês</th><th class="num">Pagamentos</th><th class="num">Adiantamentos</th><th class="num">Total</th></tr></thead><tbody>' +
+          ks.map(function (k) {
+            var rm = resumoPags(meses[k]), nm = new Date(k + "-15T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+            return '<tr class="clic" data-exmes="' + k + '" style="cursor:pointer"><td>' + esc(nm.charAt(0).toUpperCase() + nm.slice(1)) + '</td><td class="num">' + meses[k].length + '</td><td class="num">' + dinheiro(rm.adiant) + '</td><td class="num"><b>' + dinheiro(rm.total) + "</b></td></tr>";
+          }).join("") + "</tbody></table></div>" : "");
+      $$("[data-exc]", el).forEach(function (b) {
+        b.onclick = function () {
+          var p = P.porId(P.S.pag, b.dataset.exc);
+          P.infoFoto[p.comprovante] = "Comprovante · " + esc(f.nome) + " · " + dinheiro(p.valor) + " · " + A.dataHora(p.pago_em);
+          var jj = A.janela('<div class="fotos">' + P.htmlFoto(p.comprovante, "comprovante") + "</div>", { titulo: "🧾 Comprovante" });
+          P.hidratarFotos(jj.el);
+        };
+      });
+      $$("[data-exe]", el).forEach(function (b) { b.onclick = function () { editar(P.porId(P.S.pag, b.dataset.exe), null, desenhar); }; });
+      $$("[data-exmes]", el).forEach(function (t) { t.onclick = function () { modoExtrato = "mes"; ref = new Date(t.dataset.exmes + "-15T12:00:00"); desenhar(); }; });
+      $("#ex-comp", el).onclick = function () {
+        var t = "*" + ((A.CFG.EMPRESA || {}).nome || "AGE") + " — Pagamentos de " + f.nome + "*\n" + rotuloFaixa(modoExtrato, fx) + "\n\n" +
+          ps.map(function (p) { var d = new Date(p.pago_em); return A.data(d).slice(0, 5) + " · " + (TIPOS[p.tipo] || "") + " · " + (ehPix(p) ? "Pix" : "Dinheiro") + " · " + dinheiro(p.valor); }).join("\n") +
+          "\n\nDiárias / salário: " + dinheiro(r.servico) + "\nAdiantamentos e vales: " + dinheiro(r.adiant) + "\n*Total: " + dinheiro(r.total) + "*" + (r.reemb ? "\nReembolsos (à parte): " + dinheiro(r.reemb) : "");
+        A.compartilhar({ titulo: "Pagamentos de " + f.nome, texto: t });
+      };
+    }
+    $$("[data-exm]", el).forEach(function (b) { b.onclick = function () { modoExtrato = b.dataset.exm; desenhar(); }; });
+    $("#ex-ant", el).onclick = function () { var fx = faixa(modoExtrato, ref); ref = new Date(fx.de.getTime() - 864e5); desenhar(); };
+    $("#ex-prox", el).onclick = function () { var fx = faixa(modoExtrato, ref); ref = new Date(fx.ate.getTime() + 3600e3); desenhar(); };
+    $("#ex-pix", el).onclick = function () { tipoNovo = "diaria"; $("#ex-arq", el).value = ""; $("#ex-arq", el).click(); };
+    $("#ex-adi", el).onclick = function () { tipoNovo = "adiantamento"; $("#ex-arq", el).value = ""; $("#ex-arq", el).click(); };
+    $("#ex-din", el).onclick = function () { abrir({ especie: true, tipo: "diaria" }); };
+    $("#ex-arq", el).onchange = function () { if (this.files.length) abrir({ arquivos: Array.prototype.slice.call(this.files), tipo: tipoNovo }); };
+    // Ctrl+V com o print do comprovante (ou o texto dele)
+    function colar(ev) {
+      if (!document.body.contains(el)) { document.removeEventListener("paste", colar); return; }
+      if ($$(".fundo-modal").pop() !== el.closest(".fundo-modal")) return;   // outra janela por cima
+      var dt = ev.clipboardData; if (!dt) return;
+      var fs = Array.prototype.slice.call(dt.files || []).filter(function (x) { return /^image\/|pdf/.test(x.type); });
+      var tx = dt.getData("text") || "";
+      if (fs.length) { ev.preventDefault(); abrir({ arquivos: fs, tipo: "diaria" }); }
+      else if (/\d,\d{2}/.test(tx) && /pix|comprovante|transfer|valor/i.test(tx)) { ev.preventDefault(); abrir({ texto: tx, tipo: "diaria" }); }
+    }
+    document.addEventListener("paste", colar);
+    desenhar();
+  }
+
+  window.AGE_PAG = { ver: ver, receber: receber, lerPix: lerPix, lerArquivo: textoDoArquivo, extrato: extrato };
 })();

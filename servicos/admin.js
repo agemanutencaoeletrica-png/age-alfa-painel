@@ -4291,7 +4291,7 @@
           '<span class="dir peq mudo">' + esc(f.telefone || "sem telefone") + "</span></div>" +
           (f.ativo ? '<div class="acoes"><button class="peq" data-copiar="' + f.id + '">🔗 Copiar link</button>' +
             (f.telefone ? '<a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgLink(f))) + '">📲 Enviar link</a>' : "") +
-            '<button class="peq" data-editar="' + f.id + '">Editar</button></div>' : '<div class="acoes"><button class="peq" data-editar="' + f.id + '">Editar / reativar</button></div>') + "</div>";
+            '<button class="peq" data-editar="' + f.id + '">Editar</button>' + botaoPagtos(f) + "</div>" : '<div class="acoes"><button class="peq" data-editar="' + f.id + '">Editar / reativar</button>' + botaoPagtos(f) + "</div>") + "</div>";
       }).join("") : '<div class="cartao vazio">Cadastre o primeiro funcionário.</div>') +
       '<p class="mudo peq">Cada funcionário tem um link próprio e secreto. Se alguém perder o celular ou sair da empresa, use “Editar” → “Gerar novo link” ou desative: o link antigo para de funcionar na hora.</p>' +
       htmlCandidatos();
@@ -4299,6 +4299,14 @@
     ligarCandidatos(c);
     $$("[data-copiar]", c).forEach(function (b) { b.onclick = function () { copiar(linkFunc(porId(S.func, b.dataset.copiar))); }; });
     $$("[data-editar]", c).forEach(function (b) { b.onclick = function () { editarFunc(b.dataset.editar); }; });
+    $$("[data-pagtos]", c).forEach(function (b) { b.onclick = function () { window.AGE_PAG.extrato(porId(S.func, b.dataset.pagtos), P); }; });
+  }
+  // 💰 comprovantes e fechamento do funcionário (semana, quinzena, mês) com o total do mês corrente no botão
+  function botaoPagtos(f) {
+    if (!window.AGE_PAG || S.semPag) return "";
+    var hoje = new Date(), ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1), tot = 0;
+    (S.pag || []).forEach(function (p) { if (p.funcionario_id === f.id && p.tipo !== "reembolso" && new Date(p.pago_em) >= ini) tot += Number(p.valor) || 0; });
+    return '<button class="peq" data-pagtos="' + f.id + '" title="Comprovantes de pagamento e adiantamento, e o fechamento da semana, quinzena e mês">💰 Pagamentos' + (tot ? " · " + A.dinheiro(tot) + " no mês" : "") + "</button>";
   }
 
   // ---------- candidatos que se cadastraram no site ("Trabalhe com a gente") ----------
