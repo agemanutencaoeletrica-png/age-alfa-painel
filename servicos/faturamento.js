@@ -9,7 +9,7 @@
   var filtro = { aba: "notas", periodo: "ano", busca: "", sit: "" };
 
   function dinheiro(v) { return A.dinheiro(Number(v) || 0); }
-  function num2(v) { return v || v === 0 ? Number(v).toFixed(2).replace(".", ",") : ""; }
+  function num2(v) { return v || v === 0 ? Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""; }   // 17.100,00
   function semAcento(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
   function norm(t) { return semAcento(t).replace(/\(.*?\)/g, " ").replace(/[^a-z0-9]+/g, " ").replace(/\b(ltda|me|epp|eireli|sa|s a)\b/g, " ").replace(/\s+/g, " ").trim(); }
   function dig(t) { return String(t || "").replace(/\D/g, ""); }
@@ -39,7 +39,7 @@
     }, { bruto: 0, ret: 0, liq: 0, emp: 0, imp: 0, ficou: 0, areceber: 0, recebido: 0, nAr: 0, nRec: 0 });
   }
   // grava a nota; banco ainda sem as colunas novas (recebimento/avulso): grava sem elas e avisa para rodar o SQL
-  var NOVAS = ["comprovante_receb", "valor_recebido", "chave_nfse", "avulso"];
+  var NOVAS = ["comprovante_receb", "valor_recebido", "chave_nfse", "avulso", "deposito_id", "deposito_hash"];
   function gravarReceita(id, dados) {
     var ir = function (d) { return P.q(id ? P.sb.from("receitas").update(d).eq("id", id).select().single() : P.sb.from("receitas").insert(d).select().single()); };
     return ir(dados).catch(function (e) {
@@ -247,7 +247,11 @@
       '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
       '<div class="filtros"><select id="ft-per" aria-label="Período"><option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="ano">Este ano</option><option value="tudo">Tudo</option></select>' +
       (filtro.aba !== "resultado" ? '<select id="ft-sit" aria-label="Situação"><option value="">Todas</option><option value="areceber">⏳ A receber</option><option value="recebido">✅ Recebidas</option></select>' : "") +
-      '<input type="search" id="ft-busca" placeholder="Buscar cliente, obra, nº da nota..."></div><div id="ft-res"></div>';
+      '<input type="search" id="ft-busca" placeholder="Buscar cliente, obra, nº da nota..."></div>' + htmlRasc() + '<div id="ft-res"></div>';
+    if ($("#ft-rasc-ok")) {
+      $("#ft-rasc-ok").onclick = function () { var r = lerRasc(); if (r) continuarRasc(r, function () { ver(c, P); }); };
+      $("#ft-rasc-x").onclick = function () { if (!A.confirmar("Descartar a nota não salva?")) return; apagarRasc(); ver(c, P); };
+    }
     $("#ft-per").value = filtro.periodo; if ($("#ft-sit")) $("#ft-sit").value = filtro.sit; $("#ft-busca").value = filtro.busca;
     $$("[data-ftaba]", c).forEach(function (b) { b.onclick = function () { filtro.aba = b.dataset.ftaba; ver(c, P); }; });
     $("#ft-per").onchange = function () { filtro.periodo = this.value; desenhar(); };
@@ -258,9 +262,9 @@
       if (!this.files.length) return;
       A.abrirZips(this.files).then(function (fs) {
         if (!fs.length) { A.avisar("O ZIP não tem fotos, PDF nem XML de nota.", "erro"); return; }
-        // várias notas: uma depois da outra
-        var proxima = function () { var f = fs.shift(); if (f) receber(f, function () { if (fs.length) proxima(); else ver(c, P); }); else ver(c, P); };
-        proxima();
+        // várias notas: lê todas e mostra uma tabela para conferir e salvar juntas
+        if (fs.length > 1) lote(fs, function () { ver(c, P); });
+        else receber(fs[0], function () { ver(c, P); });
       }).catch(function (e) { A.avisar(A.msgErro(e), "erro"); });
     };
     $("#ft-mao").onclick = function () { formulario({}, function () { ver(c, P); }); };
@@ -489,18 +493,47 @@
       '<details style="margin-top:8px"><summary>Ou digite o valor e a data</summary><div class="duas"><div><label for="dp-valor">Valor que caiu (R$)</label><input id="dp-valor" inputmode="decimal"></div>' +
       '<div><label for="dp-data">Data</label><input type="date" id="dp-data" value="' + A.isoLocal(new Date()) + '"></div></div><div class="acoes"><button class="peq" id="dp-buscar">Procurar a nota</button></div></details>' +
       '<div id="dp-st" class="peq" style="margin-top:8px"></div><div id="dp-res"></div>', { titulo: "💰 Recebi um depósito", larga: true });
-    var el = j.el, arquivo = null;
+    var el = j.el, arquivo = null, dep = { id: null, hash: null };
+    // "impressão digital" do comprovante: o mesmo arquivo (ou o mesmo texto) mandado de novo é reconhecido mesmo sem o ID do Pix
+    function impressao(dado) {
+      var fazer = function (buf) { return window.crypto && crypto.subtle ? crypto.subtle.digest("SHA-256", buf).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (b) { return ("0" + b.toString(16)).slice(-2); }).join(""); }) : Promise.resolve(null); };
+      if (typeof dado === "string") return fazer(new TextEncoder().encode(dado.replace(/\s+/g, " ").trim().toLowerCase())).catch(function () { return null; });
+      return dado.arrayBuffer().then(fazer).catch(function () { return null; });
+    }
+    // o mesmo comprovante já deu baixa em alguma nota?
+    function jaUsado(d) {
+      var idN = String(d.id || "").replace(/\s/g, "").toUpperCase();
+      // outra foto do mesmo comprovante: o leitor pode trocar 1 ou 2 letras do ID (O/0, I/1)
+      var quase = function (a2, b2) { if (!a2 || !b2 || a2.length !== b2.length || a2.length < 20) return a2 === b2 && !!a2; var dif = 0; for (var k = 0; k < a2.length; k++) if (a2[k] !== b2[k] && ++dif > 2) return false; return true; };
+      return (P.S.receitas || []).filter(function (n) { return (idN && quase(String(n.deposito_id || "").toUpperCase(), idN)) || (d.hash && n.deposito_hash === d.hash); });
+    }
+    function htmlUsado(us) {
+      return '<div class="aviso erro" id="dp-usado"><b>⛔ Este comprovante já foi usado</b> e não pode ser aceito de novo.<br>' + us.map(function (n) {
+        return (ehAvulso(n) ? "Recebimento avulso" : "Nota " + esc(n.numero_nota || "s/ nº")) + " · " + esc(empresaDe(n)) + " · " + dinheiro(Number(n.valor_recebido) || contas(n).liq) + (n.recebido_em ? " · recebido em " + esc(A.dataSimples(n.recebido_em)) : "");
+      }).join("<br>") + "</div>";
+    }
     function st(t, tipo) { $("#dp-st", el).innerHTML = t ? '<span style="color:var(--' + (tipo || "texto") + ')">' + esc(t) + "</span>" : ""; }
     function lerTexto(t, f) {
       var px = window.AGE_PAG.lerPix(t), pg = pagadorDe(t);
       if (!(px.valor > 0)) { st("Não achei o valor no comprovante. Digite o valor e a data abaixo.", "critico"); el.querySelector("details").open = true; return; }
       $("#dp-valor", el).value = num2(px.valor); if (px.data) $("#dp-data", el).value = px.data;
       arquivo = f || null;
-      mostrar(px.valor, px.data || A.isoLocal(new Date()), pg, px);
+      dep.id = px.id ? String(px.id).replace(/\s/g, "").toUpperCase() : null;
+      (f ? Promise.resolve(dep.hash) : impressao(t).then(function (h) { dep.hash = h; })).then(function () {
+        var us = jaUsado(dep);
+        if (us.length) { st(""); $("#dp-res", el).innerHTML = htmlUsado(us); return; }
+        mostrar(px.valor, px.data || A.isoLocal(new Date()), pg, px);
+      });
     }
     function ler(f) {
       st("📖 Lendo o comprovante... (foto pode levar até 1 minuto)");
-      window.AGE_PAG.lerArquivo(f).then(function (r) { lerTexto(r.texto, r.imagem || f); }).catch(function (e) { st("Não consegui ler: " + A.msgErro(e), "critico"); });
+      dep = { id: null, hash: null };
+      impressao(f).then(function (h) {
+        dep.hash = h;
+        var us = jaUsado(dep);   // o mesmo arquivo: nem precisa ler
+        if (us.length) { st(""); $("#dp-res", el).innerHTML = htmlUsado(us); return; }
+        return window.AGE_PAG.lerArquivo(f).then(function (r) { lerTexto(r.texto, r.imagem || f); });
+      }).catch(function (e) { st("Não consegui ler: " + A.msgErro(e), "critico"); });
     }
     function mostrar(valor, data, pg, px) {
       var ops = casar(valor, pg);
@@ -530,7 +563,7 @@
       if ($("#dp-avulso", el)) $("#dp-avulso", el).onclick = function () {
         guardarComp(data).then(function (cam) {
           j.fechar();
-          formulario({ avulso: true, valor: valor, data: data, comprovante: cam, lida: { tomador: pg && pg.nome ? pg.nome : "", cnpj: pg && pg.doc && pg.doc.length >= 11 ? pg.doc : "" } }, depois);
+          formulario({ avulso: true, valor: valor, data: data, comprovante: cam, deposito: { id: dep.id, hash: dep.hash }, lida: { tomador: pg && pg.nome ? pg.nome : "", cnpj: pg && pg.doc && pg.doc.length >= 11 ? pg.doc : "" } }, depois);
         });
       };
     }
@@ -544,6 +577,8 @@
       }).catch(function () { A.avisar("O comprovante não foi guardado, mas o recebimento será marcado.", "erro"); return null; });
     }
     function marcar(notas, valor, data, botao) {
+      var us = jaUsado(dep);
+      if (us.length) { $("#dp-res", el).innerHTML = htmlUsado(us); return; }
       A.ocupado(botao, true, "Salvando...");
       var tot = notas.reduce(function (t, n) { return t + contas(n).liq; }, 0);
       guardarComp(data).then(function (cam) {
@@ -551,7 +586,7 @@
           return pr.then(function () {
             // várias notas num depósito: cada uma recebe a sua parte (o líquido dela; a diferença de centavos fica na última)
             var parte = notas.length === 1 ? valor : n === notas[notas.length - 1] ? Math.round((valor - (tot - contas(n).liq)) * 100) / 100 : contas(n).liq;
-            return gravarReceita(n.id, { recebido: true, recebido_em: data, comprovante_receb: cam, valor_recebido: parte }).then(function (x) { P.trocar(P.S.receitas, x); });
+            return gravarReceita(n.id, { recebido: true, recebido_em: data, comprovante_receb: cam, valor_recebido: parte, deposito_id: dep.id, deposito_hash: dep.hash }).then(function (x) { P.trocar(P.S.receitas, x); });
           });
         }, Promise.resolve());
       }).then(function () {
@@ -567,7 +602,17 @@
     $("#dp-buscar", el).onclick = function () {
       var v = A.lerNumero($("#dp-valor", el).value);
       if (!(v > 0)) { st("Digite o valor que caiu.", "critico"); return; }
-      mostrar(v, $("#dp-data", el).value || A.isoLocal(new Date()), null, null);
+      var dt = $("#dp-data", el).value || A.isoLocal(new Date());
+      dep = { id: null, hash: null };
+      // digitado (sem comprovante): se já há recebimento com o mesmo valor e a mesma data, pergunta antes
+      var parecido = (P.S.receitas || []).filter(function (n) { return n.recebido && n.recebido_em === dt && Math.abs((Number(n.valor_recebido) || contas(n).liq) - v) < 0.01; });
+      if (parecido.length && this.dataset.confirmou !== "1") {
+        $("#dp-res", el).innerHTML = '<div class="aviso">⚠️ Já existe recebimento de ' + dinheiro(v) + " em " + esc(A.dataSimples(dt)) + ": " + parecido.map(function (n) { return (ehAvulso(n) ? "avulso" : "nota " + esc(n.numero_nota || "s/ nº")) + " · " + esc(empresaDe(n)); }).join("; ") +
+          ". Se for <b>outro</b> depósito, toque em “Procurar a nota” de novo.</div>";
+        this.dataset.confirmou = "1"; return;
+      }
+      this.dataset.confirmou = "";
+      mostrar(v, dt, null, null);
     };
     el.addEventListener("paste", function (ev) {
       var fs = Array.prototype.slice.call((ev.clipboardData && ev.clipboardData.files) || []).filter(function (f) { return /^image\/|pdf/.test(f.type); });
@@ -575,7 +620,127 @@
     });
   }
 
+  // ---------------- 📝 rascunho da nota: o que foi preenchido fica guardado neste aparelho até salvar ----------------
+  var CHAVE_RASC = "age_rasc_nota";
+  var CAMPOS_RASC = ["ft-cli", "ft-cnpj", "ft-obra", "ft-num", "ft-data", "ft-valor", "ft-aliq", "ft-emp", "ft-desc", "ft-rec-em"].concat(RET.map(function (x) { return "ft-r-" + x[0]; }));
+  var MARCAS_RASC = ["ft-rec", "ft-avulso"];
+  function lerRasc() { try { var r = JSON.parse(localStorage.getItem(CHAVE_RASC) || "null"); return r && Date.now() - r.em < 30 * 864e5 ? r : null; } catch (e) { return null; } }
+  function apagarRasc() { try { localStorage.removeItem(CHAVE_RASC); } catch (e) { /* sem armazenamento */ } }
+  function guardarRasc(r) {
+    try { localStorage.setItem(CHAVE_RASC, JSON.stringify(r)); return true; }
+    catch (e) { try { var r2 = Object.assign({}, r, { arq: null }); localStorage.setItem(CHAVE_RASC, JSON.stringify(r2)); return true; } catch (e2) { return false; } }   // arquivo grande demais: guarda só os campos
+  }
+  function resumoRasc(r) {
+    var c = r.campos || {};
+    return [c["ft-cli"] || (r.op && r.op.lida && r.op.lida.tomador) || "sem empresa", c["ft-num"] ? "nº " + c["ft-num"] : "", c["ft-valor"] ? "R$ " + c["ft-valor"] : ""].filter(Boolean).join(" · ");
+  }
+  function continuarRasc(r, depois) {
+    var op = Object.assign({}, r.op || {}, { rascunho: r });
+    if (op.notaId) op.nota = P.porId(P.S.receitas, op.notaId);
+    if (!r.arq) { formulario(op, depois); return; }
+    fetch(r.arq.url).then(function (x) { return x.blob(); }).then(function (bl) { op.arquivo = new File([bl], r.arq.nome || "nota", { type: r.arq.tipo || bl.type }); })
+      .catch(function () { /* sem o arquivo: segue com os campos */ }).then(function () { formulario(op, depois); });
+  }
+  function htmlRasc() {
+    var r = lerRasc(); if (!r) return "";
+    return '<div class="aviso" id="ft-rasc" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>📝 Nota não salva: <b>' + esc(resumoRasc(r)) + "</b> <span class=\"peq mudo\">(guardada em " +
+      esc(A.data(new Date(r.em))) + " " + new Date(r.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + ')</span></span><button class="prim peq" id="ft-rasc-ok">Continuar</button><button class="peq" id="ft-rasc-x">Descartar</button></div>';
+  }
+
   // ---------------- receber arquivo e formulário ----------------
+  // ---------------- várias notas de uma vez ----------------
+  function ehNFSe(d, texto) {
+    if (d.nacional) return true;
+    var t = String(texto || "");
+    if (/n[aã]o\s+[eé]\s+documento\s+fiscal|documento\s+auxiliar\s+de\s+venda|or[cç]amento/i.test(t) && !/nfs-?e/i.test(t)) return false;
+    return /nfs-?e|nota\s+fiscal\s+(eletr[oô]nica\s+)?de\s+servi[cç]os?|<\s*(?:\w+:)?(?:CompNfse|Nfse|InfNfse)\b/i.test(t) && (d.bruto || d.valor) > 0;
+  }
+  function lote(fs, depois) {
+    var itens = [], aliq = aliqGuardada();
+    var j = A.janela('<div id="lt-st" class="peq">📖 Lendo as notas...</div><div id="lt-res"></div>', { titulo: "🧾 Lançar várias notas", larga: true, fixa: true });
+    var el = j.el;
+    fs.reduce(function (pr, f, i) {
+      return pr.then(function () {
+        $("#lt-st", el).textContent = "📖 Lendo " + (i + 1) + " de " + fs.length + ": " + (f.name || "arquivo") + "...";
+        return window.AGE_PAG.lerArquivo(f).then(function (r) { var d = lerNFSe(r.texto, r.pecas); itens.push({ f: f, d: d, texto: r.texto, nfse: ehNFSe(d, r.texto) }); },
+          function () { itens.push({ f: f, d: {}, erro: true }); });
+      });
+    }, Promise.resolve()).then(function () {
+      // situação de cada uma: pronta, já lançada, repetida no próprio lote, não é nota de serviço
+      var vistos = {};
+      itens.forEach(function (it) {
+        var d = it.d;
+        if (it.erro) { it.motivo = "Não consegui ler o arquivo"; return; }
+        if (!it.nfse) { it.motivo = "Não é nota fiscal de serviço (ex.: orçamento de loja)"; return; }
+        var rep2 = notaRepetida(d.numero, d.chave, null);
+        if (rep2) { it.motivo = "Já lançada (" + (rep2.recebido ? "✅ recebida" : "⏳ a receber") + ")"; return; }
+        var k = d.chave || "n" + numNota(d.numero);
+        if (k !== "n" && vistos[k]) { it.motivo = "Arquivo repetido neste lote"; return; }
+        vistos[k] = 1;
+        if (!(d.bruto || d.valor)) { it.motivo = "Não achei o valor"; return; }
+        it.ok = true; it.usar = true;
+      });
+      desenhar();
+    });
+    function linha(it, i) {
+      var d = it.nfse ? it.d : {}, bruto = Number(d.bruto) || Number(d.valor) || 0, ret = RET.reduce(function (t, x) { return t + (Number((d.retencoes || {})[x[0]]) || 0); }, 0);
+      var liq = Number(d.valor) || bruto - ret;   // o que não é nota de serviço aparece sem valores
+      return "<tr" + (it.ok ? "" : ' class="mudo"') + "><td>" + (it.ok ? '<input type="checkbox" data-lt="' + i + '"' + (it.usar ? " checked" : "") + ' aria-label="Lançar">' : "") + "</td>" +
+        '<td class="peq">' + esc(it.f.name || "") + "</td><td><b>" + esc(d.numero || "—") + "</b></td><td>" + esc(d.data ? A.dataSimples(d.data) : "—") + "</td><td>" + esc(d.tomador || "—") + "</td>" +
+        '<td class="num">' + (bruto ? dinheiro(bruto) : "—") + '</td><td class="num">' + (ret ? dinheiro(ret) + '<div class="peq mudo">' + pct(ret / bruto * 100) + "</div>" : "—") + '</td><td class="num"><b>' + (liq ? dinheiro(liq) : "—") + "</b></td>" +
+        "<td>" + (it.ok ? (it.salva ? '<span class="selo bom">✅ lançada</span>' : it.falhou ? '<span class="selo critico">' + esc(it.falhou) + "</span>" : '<span class="selo">pronta</span> <button class="peq" data-lt-ed="' + i + '">Conferir</button>') :
+          '<span class="selo ' + (/já lançada|repetido/i.test(it.motivo) ? "atencao" : "critico") + '">' + esc(it.motivo) + "</span>") + "</td></tr>";
+    }
+    function desenhar() {
+      var prontas = itens.filter(function (it) { return it.ok && it.usar && !it.salva; });
+      var tot = prontas.reduce(function (t, it) { var d = it.d; return t + (Number(d.valor) || Number(d.bruto) || 0); }, 0);
+      $("#lt-st", el).innerHTML = itens.length + " arquivo(s) lidos · <b>" + itens.filter(function (it) { return it.ok; }).length + "</b> nota(s) para lançar" +
+        (itens.some(function (it) { return !it.ok; }) ? " · " + itens.filter(function (it) { return !it.ok; }).length + " ficam de fora" : "");
+      $("#lt-res", el).innerHTML = '<div class="tabela-caixa"><table><thead><tr><th></th><th>Arquivo</th><th>Nº</th><th>Emissão</th><th>Empresa</th><th class="num">Bruto</th><th class="num">Retido</th><th class="num">Líquido</th><th></th></tr></thead><tbody>' +
+        itens.map(linha).join("") + "</tbody></table></div>" +
+        '<div class="duas"><div><label for="lt-aliq">Imposto da empresa (DAS / Simples, % do bruto) — para todas</label><input id="lt-aliq" inputmode="decimal" placeholder="Ex.: 6" value="' + esc(aliq) + '"></div>' +
+        '<div><label for="lt-obra">Obra / cliente (vazio = o app sugere pela empresa)</label><input id="lt-obra" list="lt-dl" maxlength="200">' + datalist("lt-dl") + "</div></div>" +
+        '<div class="acoes"><button class="prim" id="lt-salvar"' + (prontas.length ? "" : " disabled") + ">💾 Lançar " + prontas.length + " nota(s) · líquido " + dinheiro(tot) + '</button><button id="lt-fechar">Fechar</button></div>';
+      $$("[data-lt]", el).forEach(function (cb) { cb.onchange = function () { itens[Number(cb.dataset.lt)].usar = cb.checked; desenhar(); }; });
+      $$("[data-lt-ed]", el).forEach(function (b) {
+        b.onclick = function () {   // conferir uma: abre o formulário dela; ao salvar, marca como lançada aqui
+          var it = itens[Number(b.dataset.ltEd)];
+          formulario({ lida: it.d, arquivo: it.f, bruto: it.texto }, function () { if (notaRepetida(it.d.numero, it.d.chave, null)) it.salva = true; desenhar(); });
+        };
+      });
+      $("#lt-aliq", el).oninput = function () { aliq = this.value.trim(); try { localStorage.setItem(CHAVE_ALIQ, aliq); } catch (e) { /* sem armazenamento */ } };
+      $("#lt-fechar", el).onclick = function () { j.fechar(); if (depois) depois(); };
+      $("#lt-salvar", el).onclick = function () {
+        var b = this, lista = itens.filter(function (it) { return it.ok && it.usar && !it.salva; }), al = A.lerNumero($("#lt-aliq", el).value) || 0, obraTxt = $("#lt-obra", el).value.trim();
+        A.ocupado(b, true, "Lançando...");
+        lista.reduce(function (pr, it) {
+          return pr.then(function () {
+            var d = it.d;
+            if (notaRepetida(d.numero, d.chave, null)) { it.falhou = "já lançada"; return; }   // salva por outro caminho enquanto conferia
+            var bruto = Number(d.bruto) || Number(d.valor), ret = {};
+            RET.forEach(function (x) { var v = Number((d.retencoes || {})[x[0]]) || 0; if (v > 0) ret[x[0]] = v; });
+            var tr = Object.keys(ret).reduce(function (t, k) { return t + ret[k]; }, 0), liq = Number(d.valor) || Math.round((bruto - tr) * 100) / 100;
+            if (!tr && bruto - liq > 0.009) ret.outras = Math.round((bruto - liq) * 100) / 100;   // diferença sem imposto identificado
+            var rs = resolver(obraTxt || sugerirObra(d.tomador) || d.tomador || "Sem empresa");
+            var dados = { obra_id: rs.obra_id, destino: rs.destino, cliente: d.tomador || null, numero_nota: d.numero || null, emitida_em: d.data || A.isoLocal(new Date()),
+              valor: liq, valor_bruto: bruto, retencoes: ret, imposto_empresa: al > 0 ? Math.round(bruto * al) / 100 : null, tomador_cnpj: d.cnpj || null,
+              descricao: d.descricao || null, recebido: false, recebido_em: null, chave_nfse: d.chave || null };
+            var f = it.f, ehPdf = /pdf/.test(f.type) || /\.pdf$/i.test(f.name || "");
+            var pArq = (/^image\//.test(f.type) ? A.prepararFoto(f, [], 1800).then(function (bl) { return { bl: bl, ext: "jpg", tipo: "image/jpeg" }; }) : Promise.resolve({ bl: f, ext: ehPdf ? "pdf" : "xml", tipo: ehPdf ? "application/pdf" : "text/xml" }))
+              .then(function (a) { var cam = "admin/receitas/" + dados.emitida_em + "-" + A.uuid() + "." + a.ext; return P.q(P.sb.storage.from("fotos").upload(cam, a.bl, { contentType: a.tipo })).then(function () { return cam; }); })
+              .catch(function () { return null; });
+            return pArq.then(function (cam) { if (cam) dados.arquivo = cam; return gravarReceita(null, dados); })
+              .then(function (n) { P.trocar(P.S.receitas, n); it.salva = true; })
+              .catch(function (e) { it.falhou = /duplicate|receitas_chave_idx/i.test(A.msgErro(e)) ? "já lançada" : "erro: " + A.msgErro(e).slice(0, 60); });
+          });
+        }, Promise.resolve()).then(function () {
+          var ok2 = lista.filter(function (it) { return it.salva; }), tot = ok2.reduce(function (t, it) { return t + (Number(it.d.valor) || Number(it.d.bruto) || 0); }, 0);
+          A.avisar("🧾 " + ok2.length + " nota(s) lançada(s) · líquido a receber " + dinheiro(tot) + (ok2.length < lista.length ? " · " + (lista.length - ok2.length) + " com problema (veja na tabela)" : ""), ok2.length === lista.length ? "ok" : "erro");
+          if (ok2.length === lista.length) { j.fechar(); if (depois) depois(); } else desenhar();
+        });
+      };
+    }
+  }
   function receber(f, depois) {
     var j = A.janela('<div class="peq" id="ft-st">📖 Lendo a nota de serviço...</div>', { titulo: "🧾 Nota de serviço" });
     window.AGE_PAG.lerArquivo(f).then(function (r) {
@@ -614,7 +779,12 @@
       '<label for="ft-desc">Serviço</label><input id="ft-desc" maxlength="300" placeholder="Ex.: pintura das faixas amarelas e demarcações de combate a incêndio">' +
       '<div class="duas"><div><label class="marca-linha" style="margin-top:28px"><input type="checkbox" id="ft-rec"> ✅ Já recebi</label></div><div id="ft-rec-c"><label for="ft-rec-em">Recebido em</label><input type="date" id="ft-rec-em"></div></div>' +
       '<div id="ft-erro"></div><div class="acoes"><button class="prim" id="ft-salvar">Salvar</button>' + (n0 ? '<button class="perigo" id="ft-apagar">Apagar</button>' : "") + "</div>",
-      { titulo: n0 ? "🧾 Nota de serviço" : "🧾 Nova nota de serviço", larga: true });
+      { titulo: n0 ? "🧾 Nota de serviço" : "🧾 Nova nota de serviço", larga: true, fixa: true, aoFechar: function () {   // fixa: clicar fora não fecha (só o ✕ ou Esc)
+        if (salvou || !mexeu) return;
+        A.avisar("📝 Guardei o que você preencheu. Para continuar, toque em “Continuar” em Notas e resultado.", "ok");
+        if (depois) depois();
+      } });
+    var salvou = false, mexeu = !!op.lida || !!op.rascunho || !!op.avulso;
     var el = j.el, c0 = n0 ? contas(n0) : null, ret0 = n0 ? n0.retencoes || {} : retLida;
     $("#ft-cli", el).value = n0 ? n0.cliente || "" : d.tomador || "";
     $("#ft-cnpj", el).value = fmtCnpj(n0 ? n0.tomador_cnpj : d.cnpj);
@@ -677,6 +847,33 @@
     $$(".ft-r", el).forEach(function (i) { i.oninput = conta; });
     if (!n0 && $("#ft-aliq", el).value.trim()) pelaAliq();
     verAvulso();
+    // rascunho: volta o que estava preenchido
+    if (op.rascunho) {
+      var rc = op.rascunho.campos || {};
+      CAMPOS_RASC.forEach(function (id) { var x = $("#" + id, el); if (x && rc[id] !== undefined) x.value = rc[id]; });
+      MARCAS_RASC.forEach(function (id) { var x = $("#" + id, el); if (x && rc[id] !== undefined) x.checked = !!rc[id]; });
+      if (RET.some(function (x) { return rc["ft-r-" + x[0]]; })) $("#ft-ret-box", el).open = true;
+      verRec(); verAvulso(); conta();
+      A.avisar("📝 Continuando a nota que não foi salva.", "ok");
+    }
+    // guarda sozinho a cada mudança (e já ao abrir uma nota lida do arquivo)
+    var arqRasc = op.rascunho ? op.rascunho.arq : null, tRasc = null;
+    function salvarRasc() {
+      if (salvou) return;
+      var campos = {};
+      CAMPOS_RASC.forEach(function (id) { var x = $("#" + id, el); if (x) campos[id] = x.value; });
+      MARCAS_RASC.forEach(function (id) { var x = $("#" + id, el); if (x) campos[id] = x.checked; });
+      guardarRasc({ em: Date.now(), campos: campos, arq: arqRasc,
+        op: { notaId: n0 ? n0.id : null, lida: op.lida || null, comprovante: op.comprovante || null, deposito: op.deposito || null, avulso: !!op.avulso, valor: op.valor || null, data: op.data || null, bruto: op.bruto ? String(op.bruto).slice(0, 5000) : null } });
+    }
+    var mudou = function () { mexeu = true; clearTimeout(tRasc); tRasc = setTimeout(salvarRasc, 300); };
+    el.addEventListener("input", mudou); el.addEventListener("change", mudou);
+    if (op.arquivo && !arqRasc && op.arquivo.size < 3500000) {
+      var fr = new FileReader();
+      fr.onload = function () { arqRasc = { url: fr.result, nome: op.arquivo.name || "nota", tipo: op.arquivo.type || "" }; if (mexeu) salvarRasc(); };
+      fr.readAsDataURL(op.arquivo);
+    }
+    if (mexeu) salvarRasc();
     $("#ft-salvar", el).onclick = function () {
       var b = this, v = ler(), cli = $("#ft-cli", el).value.trim(), txt = $("#ft-obra", el).value.trim() || cli;
       var erro = !txt ? "Informe a empresa (tomador)." : !(v.bruto > 0) ? "Informe o valor bruto da nota." : !(v.liq > 0) ? "Os impostos retidos passam do valor bruto: confira." : !$("#ft-data", el).value ? "Informe a data de emissão." : "";
@@ -688,6 +885,7 @@
       if (av) { dados.numero_nota = null; dados.retencoes = {}; dados.valor = v.bruto; }
       if (!n0 && d.chave) dados.chave_nfse = d.chave;
       if (!n0 && op.comprovante) { dados.comprovante_receb = op.comprovante; dados.valor_recebido = op.valor || null; }
+      if (!n0 && op.deposito) { dados.deposito_id = op.deposito.id || null; dados.deposito_hash = op.deposito.hash || null; if (!dados.valor_recebido) dados.valor_recebido = op.valor || null; }
       // a mesma nota não entra duas vezes (mesma chave da NFS-e ou mesmo número): bloqueia, sem "salvar mesmo assim"
       var rep = !av && notaRepetida(dados.numero_nota, dados.chave_nfse || (n0 && n0.chave_nfse), n0 && n0.id);
       if (rep) { $("#ft-erro", el).innerHTML = '<div class="aviso erro">' + textoRepetida(rep) + "</div>"; return; }
@@ -702,6 +900,7 @@
         if (cam) dados.arquivo = cam;
         return gravarReceita(n0 && n0.id, dados);
       }).then(function (n) {
+        salvou = true; clearTimeout(tRasc); apagarRasc();
         P.trocar(P.S.receitas, n); j.fechar();
         if (n.emitida_em < periodo().de) filtro.periodo = "tudo";
         A.avisar("🧾 Nota salva: " + empresaDe(n) + " · bruto " + dinheiro(contas(n).bruto) + " · ficou " + dinheiro(contas(n).ficou), "ok");
@@ -716,7 +915,7 @@
     };
     if ($("#ft-apagar", el)) $("#ft-apagar", el).onclick = function () {
       if (!A.confirmar("Apagar esta nota de serviço?")) return;
-      P.q(P.sb.from("receitas").delete().eq("id", n0.id)).then(function () { P.tirar(P.S.receitas, n0.id); j.fechar(); if (depois) depois(); }).catch(P.falhou);
+      P.q(P.sb.from("receitas").delete().eq("id", n0.id)).then(function () { salvou = true; apagarRasc(); P.tirar(P.S.receitas, n0.id); j.fechar(); if (depois) depois(); }).catch(P.falhou);
     };
   }
 
