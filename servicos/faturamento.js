@@ -761,12 +761,22 @@
 
   // ---------------- receber arquivo e formulário ----------------
   // ---------------- várias notas de uma vez ----------------
-  function ehNFSe(d, texto) {
-    if (d.nacional) return true;
-    var t = String(texto || "");
-    if (/n[aã]o\s+[eé]\s+documento\s+fiscal|documento\s+auxiliar\s+de\s+venda|or[cç]amento/i.test(t) && !/nfs-?e/i.test(t)) return false;
-    return /nfs-?e|nota\s+fiscal\s+(eletr[oô]nica\s+)?de\s+servi[cç]os?|<\s*(?:\w+:)?(?:CompNfse|Nfse|InfNfse)\b/i.test(t) && (d.bruto || d.valor) > 0;
+  // esta área é só para NOTA FISCAL DE SERVIÇO emitida pela AGE: o resto é recusado, dizendo onde lançar
+  function motivoRecusa(d, texto) {
+    var t = String(texto || ""), nfse = d.nacional || /nfs-?e|nota\s+fiscal\s+(eletr[oô]nica\s+)?de\s+servi[cç]os?|<\s*(?:\w+:)?(?:CompNfse|Nfse|InfNfse)\b/i.test(t);
+    if (/<\s*(?:\w+:)?infNFe\b/i.test(t) && !nfse) return "É nota fiscal de compra (NF-e de produtos). Lance em 🧾 Compras.";
+    if (/n[aã]o\s+[eé]\s+documento\s+fiscal|documento\s+auxiliar\s+de\s+venda|\bDAV\b|or[cç]amento|proposta\s+comercial|pedido\s+de\s+venda/i.test(t) && !nfse) return "Não é nota fiscal: é um orçamento ou documento de venda.";
+    if (/nfc-?e|cupom\s+fiscal|danfe|documento\s+auxiliar\s+da\s+nota\s+fiscal\s+(de\s+consumidor\s+)?eletr[oô]nica/i.test(t) && !nfse) return "É nota ou cupom de compra de material. Lance em 🧾 Compras.";
+    var pagto = /E\d{20}[0-9A-Za-z]{11}/.test(t.replace(/\s/g, "")) ||   // ID de Pix (E + banco + data/hora + código)
+      (/comprovante|pix|transfer[eê]ncia|\bTED\b|dep[oó]sito|recebido\s+de|pago\s+para|enviado\s+para/i.test(t) && /ag[eê]ncia|institui[cç][aã]o|id\s+da\s+transa|autentica/i.test(t));
+    if (pagto && !nfse) return "É um comprovante de pagamento. Use 💰 Recebi um depósito.";
+    if (!nfse) return "Não reconheci uma nota fiscal de serviço neste arquivo. Se for uma nota e o app não leu, use ➕ Lançar à mão.";
+    var meu = dig((A.CFG.EMPRESA || {}).documento);
+    if (d.prestadorCnpj && meu.length >= 11 && dig(d.prestadorCnpj) !== meu) return "Esta nota não foi emitida pela AGE (prestador " + fmtCnpj(d.prestadorCnpj) + "). Aqui entram só as notas que a AGE emitiu.";
+    if (!((d.bruto || d.valor) > 0)) return "Não achei o valor da nota.";
+    return "";
   }
+  function ehNFSe(d, texto) { return !motivoRecusa(d, texto); }
   function lote(fs, depois) {
     var itens = [], aliq = aliqGuardada();
     var j = A.janela('<div id="lt-st" class="peq">📖 Lendo as notas...</div><div id="lt-res"></div>', { titulo: "🧾 Lançar várias notas", larga: true, fixa: true });
@@ -783,7 +793,7 @@
       itens.forEach(function (it) {
         var d = it.d;
         if (it.erro) { it.motivo = "Não consegui ler o arquivo"; return; }
-        if (!it.nfse) { it.motivo = "Não é nota fiscal de serviço (ex.: orçamento de loja)"; return; }
+        if (!it.nfse) { it.motivo = motivoRecusa(d, it.texto) || "Não é nota fiscal de serviço"; return; }
         var rep2 = notaRepetida(d.numero, d.chave, null);
         if (rep2) { it.motivo = "Já lançada (" + (rep2.recebido ? "✅ recebida" : "⏳ a receber") + ")"; return; }
         var k = d.chave || "n" + numNota(d.numero);
@@ -857,9 +867,16 @@
     var j = A.janela('<div class="peq" id="ft-st">📖 Lendo a nota de serviço...</div>', { titulo: "🧾 Nota de serviço" });
     window.AGE_PAG.lerArquivo(f).then(function (r) {
       j.fechar();
-      var d = lerNFSe(r.texto, r.pecas);
+      var d = lerNFSe(r.texto, r.pecas), mot = motivoRecusa(d, r.texto);
+      if (mot) {   // não é nota fiscal de serviço da AGE: não entra
+        var jr = A.janela('<div class="aviso erro"><b>⛔ Arquivo recusado:</b> ' + esc(f.name || "") + "<br>" + esc(mot) + "</div>" +
+          '<details class="peq"><summary>🔍 ver o texto que o app leu</summary><pre style="white-space:pre-wrap;max-height:200px;overflow:auto;font-size:11px">' + esc(String(r.texto || "").slice(0, 3000)) + "</pre></details>" +
+          '<div class="acoes"><button class="prim" id="rc-ok">Entendi</button></div>', { titulo: "🧾 Notas de serviço" });
+        $("#rc-ok", jr.el).onclick = function () { jr.fechar(); };
+        return;
+      }
       formulario({ lida: d, arquivo: f, bruto: r.texto }, depois);
-    }).catch(function () { j.fechar(); formulario({ arquivo: f, erro: true }, depois); });
+    }).catch(function () { j.fechar(); A.avisar("Não consegui ler " + (f.name || "o arquivo") + ". Se for uma nota de serviço, use ➕ Lançar à mão.", "erro"); });
   }
   function formulario(op, depois) {
     var n0 = op.nota || null, d = op.lida || {};
@@ -1116,6 +1133,6 @@
     P.baixar(new Blob([csv], { type: "text/csv;charset=utf-8" }), "resultado-obras-" + A.isoLocal(new Date()) + ".csv");
   }
 
-  window.AGE_FAT = { ver: ver, lerNFSe: lerNFSe, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
+  window.AGE_FAT = { ver: ver, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
     datalist: function (ctx, id) { P = ctx; return datalist(id); }, aReceber: function (S) { return (S.receitas || []).filter(function (n) { return !n.recebido; }); } };
 })();

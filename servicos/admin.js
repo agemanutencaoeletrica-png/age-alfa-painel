@@ -532,6 +532,7 @@
       carregarBase().then(function () { rota(); A.avisar("Atualizado"); }).catch(falhou);
     };
     iniciarAtualizacaoAutomatica();
+    setTimeout(geoSemanal, 15000);   // lojas no mapa: atualização automática uma vez por semana
     if (/[?&]recebido=1/.test(location.search)) { history.replaceState(null, "", location.pathname + location.hash); abrirRecebido(); }
     window.removeEventListener("hashchange", rota);
     window.addEventListener("hashchange", rota);
@@ -3824,8 +3825,62 @@
     }).catch(falhou);
   }
 
+  // ---------- 🗺️ lojas no mapa: atualização automática semanal ----------
+  // Uma vez por semana, ao abrir o painel, procura em segundo plano as lojas sem local (e tenta melhorar as aproximadas).
+  // Loja nova ou com endereço mudado: toda semana. Não achada e sem mudança: só a cada 4 semanas (não repete à toa).
+  var GEO_SEMANA = 7 * 864e5, GEO_REPETIR = 28 * 864e5, geoRodando = false;
+  function geoLer(k, padrao) { try { var v = JSON.parse(localStorage.getItem(k) || "null"); return v === null ? padrao : v; } catch (e) { return padrao; } }
+  function geoGravar(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sem armazenamento */ } }
+  function geoChave(l) { return [l.endereco, l.numero, l.cep, l.bairro, l.cidade, l.uf].map(function (x) { return String(x || "").trim().toLowerCase(); }).join("|"); }
+  function geoMarcar(l) { var t = geoLer("age_geo_tent", {}); t[l.id] = { em: Date.now(), k: geoChave(l) }; geoGravar("age_geo_tent", t); }
+  function geoPendentes() {
+    var t = geoLer("age_geo_tent", {}), agora = Date.now();
+    var precisa = function (l) { var x = t[l.id]; return !x || x.k !== geoChave(l) || agora - x.em > GEO_REPETIR; };
+    return S.lojas.filter(function (l) { return l.ativo && (!G.temLocal(l) || NIVEL[l.geo_precisao] <= 2) && precisa(l); });
+  }
+  function geoSemanal() {
+    if (geoRodando || !S.lojas || !S.lojas.length) return;
+    if (Date.now() - geoLer("age_geo_ultima", 0) < GEO_SEMANA) return;
+    if (Date.now() - geoLer("age_geo_lock", 0) < 30000) return;   // outra aba já está fazendo
+    var lista = geoPendentes();
+    if (!lista.length) { geoGravar("age_geo_ultima", Date.now()); return; }
+    geoRodando = true;
+    var parar = false, feitas = 0, achadas = 0, chip = document.createElement("div");
+    chip.id = "geo-chip";
+    chip.style.cssText = "position:fixed;left:12px;bottom:12px;z-index:40;background:var(--sup);border:1px solid var(--borda);border-radius:12px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.15);font-size:13px;display:flex;gap:8px;align-items:center;max-width:92vw";
+    chip.innerHTML = '<span id="geo-chip-t"></span><button class="peq" id="geo-chip-p">Pausar</button>';
+    document.body.appendChild(chip);
+    $("#geo-chip-p").onclick = function () { parar = true; };
+    (function proxima(i) {
+      geoGravar("age_geo_lock", Date.now());
+      var tt = $("#geo-chip-t"); if (tt) tt.textContent = "🗺️ Atualizando lojas no mapa (semanal): " + feitas + " de " + lista.length + " · achadas " + achadas;
+      if (parar || i >= lista.length) {
+        geoRodando = false; geoGravar("age_geo_lock", 0);
+        if (i >= lista.length) {
+          geoGravar("age_geo_ultima", Date.now());
+          A.avisar("🗺️ Lojas no mapa atualizadas: " + achadas + " de " + lista.length + " localizadas ou melhoradas.", "ok");
+          if (location.hash.slice(1) === "lojas" || location.hash.slice(1) === "rotas") rota();
+        } else A.avisar("🗺️ Atualização das lojas pausada. Ela continua da próxima vez que você abrir o painel.", "ok");
+        setTimeout(function () { chip.remove(); }, 4000);
+        return;
+      }
+      var l = lista[i];
+      if (!porId(S.lojas, l.id)) { proxima(i + 1); return; }
+      G.localizar(l).then(function (r) {
+        feitas++; geoMarcar(l);
+        if (!r || (G.temLocal(l) && NIVEL[r.geo_precisao] <= NIVEL[l.geo_precisao])) return;
+        achadas++;
+        return q(sb.from("lojas").update({ lat: r.lat, lng: r.lng, geo_precisao: r.geo_precisao }).eq("id", l.id).select().single()).then(function (n) { trocar(S.lojas, n); });
+      }).then(function () { proxima(i + 1); }, function () {
+        // serviço de mapas pediu para esperar (ou sem internet): para e tenta de novo na próxima abertura
+        parar = true; proxima(i);
+      });
+    })(0);
+  }
+
   // Localiza no mapa as lojas sem coordenadas (1 consulta por segundo, regra do serviço gratuito)
   function localizarLojas() {
+    if (geoRodando) { A.avisar("A atualização semanal das lojas já está rodando (veja no canto da tela). Espere terminar ou toque em Pausar.", "erro"); return; }
     var semLocal = S.lojas.filter(function (l) { return l.ativo && !G.temLocal(l); });
     var aproximadas = S.lojas.filter(function (l) { return l.ativo && G.temLocal(l) && NIVEL[l.geo_precisao] <= 2; });
     var parar = false, rodando = false;
@@ -3833,6 +3888,8 @@
       '<label class="marca-linha"><input type="checkbox" id="lg-aprox"> Tentar melhorar também as aproximadas</label>' +
       '<p class="peq mudo">Usa o mapa gratuito OpenStreetMap: procura pelo endereço; se não achar, pelo CEP, bairro e por último a cidade. ' +
       "É devagar de propósito (regra do serviço gratuito). Pode deixar a tela aberta. O que for achado já fica salvo.</p>" +
+      '<p class="peq">🔁 <b>Automático toda semana:</b> ao abrir o painel, o app atualiza sozinho em segundo plano' +
+      (geoLer("age_geo_ultima", 0) ? " (última vez em " + A.data(new Date(geoLer("age_geo_ultima", 0))) + "; próxima a partir de " + A.data(new Date(geoLer("age_geo_ultima", 0) + GEO_SEMANA)) + ")" : "") + ".</p>" +
       '<div class="cartao" id="lg-prog" style="display:none"><div class="linha"><b id="lg-txt"></b></div>' +
       '<div style="height:8px;background:var(--sup2);border-radius:4px;margin-top:8px;overflow:hidden"><div id="lg-barra" style="height:100%;width:0;background:var(--prim)"></div></div>' +
       '<div class="peq mudo" id="lg-ult" style="margin-top:6px"></div></div>' +
@@ -3851,7 +3908,7 @@
         $("#lg-barra", el).style.width = (feitas / lista.length * 100) + "%";
         if (parar || i >= lista.length) {
           rodando = false; b.textContent = i >= lista.length ? "Concluído" : "▶ Continuar";
-          if (i >= lista.length) { b.disabled = true; A.avisar("Localização concluída: " + achadas + " lojas no mapa", "ok"); }
+          if (i >= lista.length) { b.disabled = true; geoGravar("age_geo_ultima", Date.now()); A.avisar("Localização concluída: " + achadas + " lojas no mapa", "ok"); }
           semLocal = lista.slice(i); aproximadas = [];
           if (location.hash.slice(1) === "lojas" || location.hash.slice(1) === "rotas") rota();
           return;
@@ -3859,7 +3916,7 @@
         var l = lista[i];
         $("#lg-ult", el).textContent = "Procurando " + nomeLoja(l) + " (" + (l.cidade || "?") + ")...";
         G.localizar(l).then(function (r) {
-          feitas++;
+          feitas++; geoMarcar(l);
           if (!r || (G.temLocal(l) && NIVEL[r.geo_precisao] <= NIVEL[l.geo_precisao])) { if (!r) falhas++; return; }
           achadas++;
           return q(sb.from("lojas").update({ lat: r.lat, lng: r.lng, geo_precisao: r.geo_precisao }).eq("id", l.id).select().single()).then(function (n) { trocar(S.lojas, n); });
