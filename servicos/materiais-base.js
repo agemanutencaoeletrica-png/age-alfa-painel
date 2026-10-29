@@ -31,6 +31,8 @@
       serie("Bucha e arruela para eletroduto", "", ["3/4\"", "1\"", "1 1/4\"", "2\""], "par"),
       serie("Abraçadeira tipo D com cunha", "", ["3/4\"", "1\"", "1 1/4\"", "2\""], "un"),
       serie("Abraçadeira tipo U (copo)", "", ["3/4\"", "1\"", "1 1/4\"", "2\""], "un"),
+      serie("Abraçadeira PVC para eletroduto", "", ["3/4\"", "1\""], "un"),
+      serie("Eletroduto PVC rígido (por metro)", "", ["3/4\"", "1\""], "m"),
       serie("Unidut reto", "", ["3/4\"", "1\""], "un"), serie("Unidut cônico", "", ["3/4\"", "1\""], "un"),
       [["Sealtubo (conduíte metálico flexível) 3/4\"", "m"], ["Sealtubo (conduíte metálico flexível) 1\"", "m"], ["Box reto para sealtubo 3/4\"", "un"], ["Box curvo para sealtubo 3/4\"", "un"]]
     )),
@@ -58,13 +60,15 @@
       ["Tomada USB", "un"], ["Tomada de rede RJ45 (keystone)", "un"], ["Tomada de TV / coaxial", "un"], ["Tomada de telefone RJ11", "un"],
       ["Placa 4x2 cega", "un"], ["Placa 4x4 cega", "un"], ["Suporte 4x2", "un"], ["Suporte 4x4", "un"],
       ["Tomada industrial 2P+T 16 A (sobrepor)", "un"], ["Tomada industrial 3P+T 32 A (sobrepor)", "un"], ["Plugue industrial 3P+T 32 A", "un"], ["Plugue 2P+T 10 A", "un"],
-      ["Tomada de sobrepor (sistema X)", "un"], ["Extensão / filtro de linha", "un"]
+      ["Tomada de sobrepor (sistema X)", "un"], ["Extensão / filtro de linha", "un"],
+      ["Tomada simples 20 A (sem placa)", "un"], ["Interruptor duplo (2 teclas simples)", "un"], ["Interruptor paralelo + interruptor simples (conjugado)", "un"],
+      ["Interruptor 2 paralelos (conjugado)", "un"], ["Rabicho (plugue) macho 10 A tipo extensão", "un"], ["Rabicho (tomada) fêmea 10 A tipo extensão", "un"]
     ]),
     grupo("Quadros e proteção", cat(
-      [["Quadro de distribuição PVC embutir 12 disjuntores", "un"], ["Quadro de distribuição PVC embutir 24 disjuntores", "un"], ["Quadro de distribuição metálico sobrepor 12/18 disjuntores", "un"],
+      [["Quadro de distribuição PVC embutir 12 disjuntores", "un"], ["Quadro de distribuição PVC sobrepor 10/12 disjuntores DIN", "un"], ["Quadro de distribuição PVC embutir 24 disjuntores", "un"], ["Quadro de distribuição metálico sobrepor 12/18 disjuntores", "un"],
        ["Quadro de distribuição metálico 24/32 disjuntores (com barramento)", "un"], ["Quadro de comando metálico 40x40x20 cm", "un"], ["Quadro de comando metálico 60x50x20 cm", "un"],
        ["Caixa para medidor (padrão concessionária)", "un"]],
-      serie("Disjuntor monopolar DIN", " A", ["10", "16", "20", "25", "32", "40", "50", "63"], "un"),
+      serie("Disjuntor monopolar DIN", " A", ["2", "4", "6", "10", "16", "20", "25", "32", "40", "50", "63"], "un"),
       serie("Disjuntor bipolar DIN", " A", ["16", "20", "25", "32", "40", "50", "63"], "un"),
       serie("Disjuntor tripolar DIN", " A", ["16", "20", "25", "32", "40", "50", "63"], "un"),
       serie("Disjuntor tripolar caixa moldada", " A", ["100", "125", "160", "200", "250"], "un"),
@@ -83,7 +87,9 @@
       ["Luminária LED industrial high bay 100 W (UFO)", "un"], ["Luminária LED industrial high bay 150/200 W", "un"], ["Luminária pública LED 100 W (poste)", "un"],
       ["Luminária de emergência LED (30/60 LEDs)", "un"], ["Bloco autônomo de emergência 2 faróis", "un"], ["Placa de saída de emergência LED", "un"],
       ["Arandela / luminária de parede", "un"], ["Luminária tartaruga / blindada", "un"], ["Sensor de presença de teto", "un"], ["Sensor de presença de parede", "un"],
-      ["Soquete E27", "un"], ["Reator / driver para LED", "un"], ["Braço para luminária pública", "un"]
+      ["Soquete E27", "un"], ["Reator / driver para LED", "un"], ["Braço para luminária pública", "un"],
+      ["Plafon com receptáculo de cerâmica (porcelana) E27", "un"], ["Receptáculo (bocal) de porcelana E27", "un"],
+      ["Luminária LED 1,20 m (calha com tubular) para depósito / galpão", "un"], ["Lâmpada LED bulbo (comum)", "un"]
     ]),
     grupo("Aterramento e SPDA", [
       ["Haste de aterramento cobreada 5/8\" x 2,40 m", "un"], ["Haste de aterramento cobreada 5/8\" x 3,00 m", "un"], ["Conector para haste (grampo)", "un"],
@@ -103,13 +109,28 @@
       ["Fita isolante 19 mm x 20 m", "un"], ["Fita de autofusão", "un"], ["Fita isolante colorida (identificação)", "un"], ["Espaguete termorretrátil", "m"],
       ["Abraçadeira de nylon 200 mm", "cento"], ["Abraçadeira de nylon 300/400 mm", "cento"], ["Base adesiva para abraçadeira", "cento"], ["Anilha / identificador de cabos", "cento"],
       ["Bucha de nylon 6 com parafuso", "cento"], ["Bucha de nylon 8 com parafuso", "cento"], ["Chumbador / parabolt 3/8\"", "un"], ["Fita perfurada galvanizada", "m"],
-      ["Prensa-cabo", "un"], ["Massa de calafetar / vedação", "un"], ["Espuma expansiva", "un"]
+      ["Prensa-cabo", "un"], ["Massa de calafetar / vedação", "un"], ["Espuma expansiva", "un"],
+      ["Prensa-cabo 1/2\"", "un"], ["Prensa-cabo 3/4\"", "un"], ["Prensa-cabo 1\"", "un"], ["Parafuso com bucha S6", "un"], ["Parafuso com bucha S8", "un"],
+      ["Conector sindal (barra de conectores) 6 mm²", "un"], ["Conector sindal (barra de conectores) 10 mm²", "un"], ["Conector sindal (barra de conectores) 16 mm²", "un"],
+      ["Fita veda-rosca (teflon)", "un"], ["Fita isolante grande 19 mm x 20 m", "un"], ["Kit de terminais elétricos (sortidos)", "kit"]
     ]),
     grupo("Equipamentos e pontos", [
-      ["Chuveiro elétrico 220 V", "un"], ["Resistência para chuveiro", "un"], ["Ventilador de teto", "un"], ["Exaustor", "un"], ["Campainha", "un"],
+      ["Chuveiro elétrico 220 V", "un"], ["Chuveiro elétrico 127 V", "un"], ["Cano alongador (extensor) de PVC para chuveiro", "un"], ["Resistência para chuveiro", "un"], ["Ventilador de teto", "un"], ["Exaustor", "un"], ["Campainha", "un"],
       ["Interfone / porteiro eletrônico", "un"], ["Fechadura elétrica", "un"], ["Rack / patch panel", "un"], ["Switch de rede", "un"],
       ["Motor de portão", "un"], ["Bomba d'água (ligação elétrica)", "un"], ["Automático de boia", "un"]
     ]),
+    grupo("Comando de motores e bombas", cat(
+      [["Caixa de comando IP65 em policarbonato (botoeira)", "un"], ["Botão pulsador LIGA verde 22 mm", "un"], ["Botão pulsador DESLIGA vermelho 22 mm", "un"],
+       ["Botão de emergência (cogumelo) 22 mm", "un"], ["Chave seletora 3 posições MANUAL / 0 / AUTOMÁTICO 22 mm", "un"], ["Chave seletora 2 posições 22 mm", "un"],
+       ["Sinaleiro LED vermelho 220 V 22 mm", "un"], ["Sinaleiro LED verde 220 V 22 mm", "un"], ["Sinaleiro LED amarelo 220 V 22 mm", "un"],
+       ["Painel de comando completo (montado)", "un"], ["Quadro de comando metálico 40x30x20 cm", "un"], ["Placa de montagem para quadro de comando", "un"],
+       ["Canaleta plástica recortada para painel 30x50 mm", "barra"], ["Borne de passagem para trilho DIN (SAK) 2,5/4 mm²", "un"], ["Borne terra para trilho DIN", "un"],
+       ["Poste final / tampa para borne", "un"], ["Kit de identificação de componentes (plaquetas)", "kit"], ["Anilhas numeradas para fios de comando", "cento"]],
+      serie("Disjuntor-motor regulável", " A", ["1,6–2,5", "2,5–4", "4–6,3", "6–10", "9–14", "13–18", "17–23", "20–25", "24–32"], "un"),
+      serie("Contator tripolar", " A", ["12", "18", "32", "40", "50", "65"], "un"),
+      [["Contato auxiliar para contator", "un"], ["Relé de falta de fase", "un"], ["Relé de nível (controle de bomba)", "un"], ["Chave boia elétrica", "un"],
+       ["Soft-starter", "un"], ["Inversor de frequência", "un"], ["Fusível de comando com base", "un"]]
+    )),
     grupo("Câmeras e CFTV", [
       ["Câmera bullet HD 1080p (analógica HDCVI/AHD)", "un"], ["Câmera dome HD 1080p (analógica HDCVI/AHD)", "un"], ["Câmera bullet IP 2 MP PoE", "un"],
       ["Câmera dome IP 2 MP PoE", "un"], ["Câmera IP 4 MP PoE", "un"], ["Câmera IP 8 MP (4K) PoE", "un"], ["Câmera full color / visão noturna colorida", "un"],

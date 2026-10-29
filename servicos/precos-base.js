@@ -24,7 +24,8 @@
     ]),
     grupo("Circuitos e cabos", [
       ["Circuito elétrico (passagem de cabos)", "m", 3], ["Passagem de cabo PP", "m", null], ["Lançamento de cabo de alimentação (quadro)", "m", null],
-      ["Cabo de rede / lógica", "m", null], ["Identificação de circuitos", "un", null]
+      ["Cabo de rede / lógica", "m", null], ["Identificação de circuitos", "un", null],
+      ["Troca da rede principal (do padrão até o quadro)", "m", null], ["Troca de circuito do chuveiro", "un", null], ["Lançamento de cabos de comando", "m", null]
     ]),
     grupo("Quadros e proteção", [
       ["Montagem de quadro de distribuição", "un", null], ["Troca de quadro de distribuição", "un", null], ["Instalação / troca de disjuntor", "un", null],
@@ -40,6 +41,11 @@
       ["Instalação de exaustor", "un", null], ["Ponto elétrico para ar-condicionado", "un", null], ["Instalação de campainha / interfone", "un", null],
       ["Ligação de motor / portão automático", "un", null]
     ]),
+    grupo("Comando de motores e bombas", [
+      ["Instalação de caixa de acionamento local (botoeira liga/desliga)", "un", null], ["Instalação de painel de comando (fornecido pelo cliente)", "un", null],
+      ["Montagem de painel de comando de motor", "un", null], ["Interligação elétrica entre painel, caixa de comando e motor", "serv", null],
+      ["Ligação de motor trifásico / bomba", "un", null], ["Testes elétricos e de funcionamento", "serv", null]
+    ]),
     grupo("Câmeras e CFTV", [
       ["Instalação de câmera (CFTV)", "un", null], ["Instalação de câmera IP / Wi-Fi", "un", null], ["Instalação de DVR / NVR", "un", null],
       ["Configuração de acesso pelo celular (app)", "serv", null], ["Passagem de cabo para câmera", "m", null], ["Instalação de fonte / nobreak do CFTV", "un", null],
@@ -47,11 +53,11 @@
     ]),
     grupo("Entrada e aterramento", [
       ["Padrão de entrada monofásico", "un", null], ["Padrão de entrada bifásico", "un", null], ["Padrão de entrada trifásico", "un", null],
-      ["Aterramento com haste", "un", null]
+      ["Aterramento com haste", "un", null], ["Instalação do sistema de aterramento", "serv", null]
     ]),
     grupo("Serviços gerais", [
       ["Visita técnica / orçamento", "un", null], ["Diária de eletricista", "dia", null], ["Diária de ajudante", "dia", null],
-      ["Hora técnica", "h", null], ["Localização de curto / pane", "un", null], ["Medição e teste de isolamento / laudo", "un", null]
+      ["Hora técnica", "h", null], ["Localização de curto / pane", "un", null], ["Medição e teste de isolamento / laudo", "un", null], ["Vistoria técnica com laudo", "serv", null]
     ])
   );
 
