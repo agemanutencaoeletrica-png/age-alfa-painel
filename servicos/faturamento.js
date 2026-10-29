@@ -417,9 +417,20 @@
   // quem pagou (parte "Origem" / "Pagador" / "De" do comprovante) e o CNPJ/CPF dele
   function pagadorDe(texto) {
     var ls = String(texto || "").split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean), r = {};
+    var ROT = /^(origem|pagador|quem pagou|dados do pagador|de|remetente|enviado por|pago por|recebido de|transferido por|depositante|nome do pagador)\b[:\s-]*/i;
+    var DOC = /\d{2}\.?\d{3}\.?\d{3}\s?\/\s?\d{4}\s?-?\s?\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2}/;
+    // CPF/CNPJ de quem pagou: o primeiro nas linhas depois do rótulo (pode estar na linha de baixo de "CPF ou CNPJ")
+    var docDepois = function (i0) {
+      for (var k2 = i0; k2 < Math.min(ls.length, i0 + 8); k2++) {
+        if (k2 > i0 && /^(destino|para|recebedor|favorecido|destinat)/i.test(ls[k2])) break;
+        var m = ls[k2].match(DOC); if (m) return dig(m[0]);
+      }
+      return "";
+    };
     for (var i = 0; i < ls.length && !r.nome; i++) {
-      if (!/^(origem|pagador|quem pagou|dados do pagador|de|remetente|enviado por|pago por)\b/i.test(ls[i])) continue;
-      var resto = ls[i].replace(/^(origem|pagador|quem pagou|dados do pagador|de|remetente|enviado por|pago por)\b[:\s-]*/i, "").replace(/^nome\b[:\s]*/i, "");
+      if (!ROT.test(ls[i])) continue;
+      if (!r.doc) r.doc = docDepois(i);
+      var resto = ls[i].replace(ROT, "").replace(/^nome\b[:\s]*/i, "");
       if (/[A-Za-zÀ-ú]{3,}\s+[A-Za-zÀ-ú]{2,}/.test(resto)) { r.nome = resto; break; }
       for (var k = i + 1; k < Math.min(ls.length, i + 6); k++) {
         if (/^(destino|para|recebedor|favorecido|destinat)/i.test(ls[k])) break;
