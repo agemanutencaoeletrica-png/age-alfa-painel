@@ -56,6 +56,22 @@
       "• Substituir o circuito do chuveiro (127 V) por cabo de 6 mm² de boa qualidade, certificado pelo Inmetro.\n" +
       "• Conferir os disjuntores e as conexões dos circuitos trocados e testar o funcionamento ao final."
   }];
+  // primeira letra maiúscula (do campo, ou de cada linha nos textos longos) enquanto você digita
+  function maiusculaInicial(t, linhas) {
+    var up = function (c) { return c.toLocaleUpperCase("pt-BR"); };
+    return linhas ? String(t || "").replace(/(^|\n)([ \t]*[•\-–✓✔*]?[ \t]*)([a-zà-ÿ])/g, function (m, a, b, c) { return a + b + up(c); })
+      : String(t || "").replace(/^(\s*)([a-zà-ÿ])/, function (m, a, c) { return a + up(c); });
+  }
+  function ligarMaiuscula(inp, linhas) {
+    if (!inp) return;
+    inp.setAttribute("autocapitalize", "sentences");
+    inp.addEventListener("input", function () {
+      var v = this.value, n = maiusculaInicial(v, linhas);
+      if (n === v) return;
+      var a = this.selectionStart, b = this.selectionEnd; this.value = n;
+      try { this.setSelectionRange(a, b); } catch (e) { /* campo sem cursor */ }
+    });
+  }
   function temLaudo(o) { return !!(o && o.laudo && (String(o.laudo.vistoria || "").trim() || String(o.laudo.solucao || "").trim())); }
   // texto do laudo em parágrafos e tópicos (linhas que começam com •, -, ✓ ou *)
   function linhasLaudo(t) {
@@ -2398,6 +2414,8 @@
       if ($("#eo2-vist", el)) { $("#eo2-vist", el).value = M.laudo.vistoria || ""; $("#eo2-sol", el).value = M.laudo.solucao || ""; }
     }
     preencher();
+    ["#eo2-cli", "#eo2-end", "#eo2-pag", "#eo2-prazo"].forEach(function (k) { ligarMaiuscula($(k, el)); });
+    ["#eo2-obs", "#eo2-vist", "#eo2-sol"].forEach(function (k) { ligarMaiuscula($(k, el), true); });
 
     // rascunho no aparelho: o que foi digitado e ainda não foi salvo volta se a página recarregar, fechar ou cair a internet
     var chaveRasc = "age_rascunho_orc_" + (M.id || "novo"), tRasc = null, rascPronto = false;
@@ -2504,6 +2522,7 @@
           var x = $(k, tr); if (!x) return;
           x.addEventListener("blur", function () { if (/[A-Za-zÀ-ÿ]/.test(x.value) || !String(x.value).trim()) return; var v = A.lerNumero(x.value); x.value = v ? reais2(v) : ""; });
         });
+        ligarMaiuscula($(".i-desc", tr));
         tr.oninput = tr.onchange = function (ev) {
           // linha já redesenhada (o "change" do campo antigo chega depois): ignora
           if (desenhando || !tr.isConnected) return;
@@ -2684,7 +2703,7 @@
         if (corr.length) A.avisar("✍ Corrigido: " + corr.join(", "), "ok");
       }
       var itens = M.itens.filter(function (i) { return i.descricao.trim(); }).map(function (i) {
-        var x = { tipo: i.tipo, descricao: i.descricao.trim(), qtd: Number(i.qtd) || 0, un: i.un, valor: Math.round((Number(i.valor) || 0) * 100) / 100 };
+        var x = { tipo: i.tipo, descricao: maiusculaInicial(i.descricao.trim()), qtd: Number(i.qtd) || 0, un: i.un, valor: Math.round((Number(i.valor) || 0) * 100) / 100 };
         if (i.tipo === "ambos") x.valor_mat = Math.round((Number(i.valor_mat) || 0) * 100) / 100;
         return x;
       });
