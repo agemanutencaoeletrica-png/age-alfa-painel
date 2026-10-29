@@ -72,6 +72,27 @@
       try { this.setSelectionRange(a, b); } catch (e) { /* campo sem cursor */ }
     });
   }
+  // 🔀 organizar itens: parecidos juntos (mesma "família", ex.: Cabo PP) e em ordem de medida (2x1,5 → 2x2,5 → 3x1,5...)
+  var PALAVRAS_SOLTAS = /^(de|da|do|das|dos|para|p|com|e|em|mm|mm2|a|v|w|kw|cv|m|cm|x|pol|kg|l|un|ou)$/;
+  function familiaItem(d) {
+    return semAcento(d).replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9 ]+/g, " ").split(/\s+/)
+      .filter(function (w) { return w && !/\d/.test(w) && !PALAVRAS_SOLTAS.test(w); }).join(" ");
+  }
+  function medidasItem(d) { return (String(d || "").replace(/(\d)\s*,\s*(\d)/g, "$1.$2").match(/\d+(?:\.\d+)?/g) || []).map(Number); }
+  function compararMedidas(a, b) {
+    for (var k = 0; k < Math.max(a.length, b.length); k++) {
+      if (a[k] === undefined) return -1; if (b[k] === undefined) return 1;
+      if (a[k] !== b[k]) return a[k] - b[k];
+    }
+    return 0;
+  }
+  var ORDEM_TIPO = { material: 0, ambos: 1, servico: 2 };
+  function organizarLista(itens) {
+    return itens.map(function (i, n) { return { i: i, n: n, f: familiaItem(i.descricao), m: medidasItem(i.descricao) }; }).sort(function (a, b) {
+      return ((ORDEM_TIPO[a.i.tipo] || 0) - (ORDEM_TIPO[b.i.tipo] || 0)) || ((!a.f) - (!b.f)) || a.f.localeCompare(b.f, "pt") || compararMedidas(a.m, b.m) ||
+        semAcento(a.i.descricao).localeCompare(semAcento(b.i.descricao), "pt") || a.n - b.n;
+    }).map(function (x) { return x.i; });
+  }
   function temLaudo(o) { return !!(o && o.laudo && (String(o.laudo.vistoria || "").trim() || String(o.laudo.solucao || "").trim())); }
   // texto do laudo em parágrafos e tópicos (linhas que começam com •, -, ✓ ou *)
   function linhasLaudo(t) {
@@ -2382,7 +2403,8 @@
         '<label for="eo2-sol">Solução (o que será feito)</label><textarea id="eo2-sol" rows="4" spellcheck="true" lang="pt-BR" maxlength="4000"></textarea>' +
         '<p class="mudo peq" style="margin:4px 0 0">Comece a linha com • ou - para virar tópico no PDF. Escolha um modelo e edite à vontade: o modelo não muda.</p></details>') +
       '<h3 style="margin-top:14px">Itens</h3><div id="eo2-itens"></div><datalist id="eo2-dl-precos"></datalist>' +
-      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button>' + (soMateriais(M) ? "" : '<button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-mais-ambos">+ Material + mão de obra</button>') + '<button class="peq" id="eo2-lista-mat" title="Escolher vários materiais da lista de uma vez">📋 Escolher da lista</button><button class="peq" id="eo2-ler-nota" title="Materiais da nota fiscal ou do orçamento da loja (foto, PDF, XML, lista colada ou nota já lançada em Compras)">📷 Ler nota / orçamento da loja</button><button class="peq" id="eo2-colar" title="Cole a lista de materiais, o escopo dos serviços ou a vistoria: o app separa cada coisa no seu campo">📝 Colar texto</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button></div>' +
+      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button>' + (soMateriais(M) ? "" : '<button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-mais-ambos">+ Material + mão de obra</button>') + '<button class="peq" id="eo2-lista-mat" title="Escolher vários materiais da lista de uma vez">📋 Escolher da lista</button><button class="peq" id="eo2-ler-nota" title="Materiais da nota fiscal ou do orçamento da loja (foto, PDF, XML, lista colada ou nota já lançada em Compras)">📷 Ler nota / orçamento da loja</button><button class="peq" id="eo2-colar" title="Cole a lista de materiais, o escopo dos serviços ou a vistoria: o app separa cada coisa no seu campo">📝 Colar texto</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button>' +
+        '<button class="peq" id="eo2-organizar" title="Põe os itens parecidos um embaixo do outro, em ordem de medida (ex.: Cabo PP 2x1,5, 2x2,5, 3x1,5). Para mudar um item de lugar, segure o ⠿ e arraste.">🔀 Organizar itens</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
       '<div class="cartao' + (soMateriais(M) ? " oculto" : "") + '" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-vitens"> Mostrar o valor de cada serviço de mão de obra</label>' +
@@ -2518,7 +2540,7 @@
     }
     function htmlItens() {
       return M.itens.map(function (i, n) {
-        return '<div class="item-orc" data-i="' + n + '"><div class="l1"><select class="i-tipo" aria-label="Tipo">' +
+        return '<div class="item-orc" data-i="' + n + '"><div class="l1"><button type="button" class="peq i-arrastar" title="Segure e arraste para mudar a posição (ou use as setas ↑ ↓ do teclado)" aria-label="Mover o item ' + (n + 1) + '">⠿</button><select class="i-tipo" aria-label="Tipo">' +
           Object.keys(TIPOS_ITEM).filter(function (k) { return !soMateriais(M) || k === "material"; }).map(function (k) { return '<option value="' + k + '">' + TIPOS_ITEM[k] + "</option>"; }).join("") + "</select>" +
           '<input class="i-desc" list="eo2-dl-precos" maxlength="300" spellcheck="true" lang="pt-BR" autocorrect="on" placeholder="' + (soMateriais(M) ? "Nome do material: digite e escolha na lista (elétrica e pintura)" : "Descrição: digite e escolha na lista de serviços e materiais (elétrica e pintura)") + '" aria-label="Descrição"></div>' +
           '<div class="l2' + (i.tipo === "ambos" ? " ambos" : "") + '"><label>Qtd<input class="i-qtd" inputmode="decimal"></label>' +
@@ -2542,6 +2564,7 @@
           x.addEventListener("blur", function () { if (/[A-Za-zÀ-ÿ]/.test(x.value) || !String(x.value).trim()) return; var v = A.lerNumero(x.value); x.value = v ? reais2(v) : ""; });
         });
         ligarMaiuscula($(".i-desc", tr));
+        ligarArrastar(tr);
         tr.oninput = tr.onchange = function (ev) {
           // linha já redesenhada (o "change" do campo antigo chega depois): ignora
           if (desenhando || !tr.isConnected) return;
@@ -2577,13 +2600,66 @@
     }
     // 🔠 descrição dos itens em maiúscula; tocar de novo volta ao texto de antes
     var antesMaiusc = null;
+    // ⠿ segurar e arrastar (mouse ou dedo) para mudar o item de lugar; ↑ ↓ no teclado também
+    function moverItem(de, para) {
+      if (de === para || para < 0 || para >= M.itens.length) return;
+      var x = M.itens.splice(de, 1)[0]; M.itens.splice(para, 0, x);
+      antesOrganizar = null; botaoOrganizar(); desenharItens(); guardarRasc();
+    }
+    function ligarArrastar(tr) {
+      var h = $(".i-arrastar", tr); if (!h) return;
+      h.addEventListener("keydown", function (ev) {
+        var n = Number(tr.dataset.i), d = ev.key === "ArrowUp" ? -1 : ev.key === "ArrowDown" ? 1 : 0;
+        if (!d || n + d < 0 || n + d >= M.itens.length) return;
+        ev.preventDefault(); moverItem(n, n + d);
+        var b = $$("#eo2-itens .i-arrastar", el)[n + d]; if (b) b.focus();
+      });
+      h.addEventListener("pointerdown", function (ev) {
+        if (ev.button !== 0) return;
+        ev.preventDefault();
+        var de = Number(tr.dataset.i), pos = de, linhas = $$("#eo2-itens .item-orc", el), rolagem = el.closest(".fundo-modal"), moveu = false;
+        try { h.setPointerCapture(ev.pointerId); } catch (e) { /* sem captura */ }
+        tr.classList.add("arrastando");
+        function limpar() { linhas.forEach(function (l) { l.classList.remove("alvo-cima", "alvo-baixo"); }); }
+        function mover(e) {
+          moveu = true; limpar(); pos = linhas.length;
+          for (var k = 0; k < linhas.length; k++) { var r = linhas[k].getBoundingClientRect(); if (e.clientY < r.top + r.height / 2) { pos = k; break; } }
+          if (pos < linhas.length) linhas[pos].classList.add("alvo-cima"); else linhas[linhas.length - 1].classList.add("alvo-baixo");
+          // perto da borda da tela, rola a janela
+          if (rolagem) { if (e.clientY < 70) rolagem.scrollTop -= 14; else if (e.clientY > window.innerHeight - 70) rolagem.scrollTop += 14; }
+        }
+        function soltar() {
+          h.removeEventListener("pointermove", mover); h.removeEventListener("pointerup", soltar); h.removeEventListener("pointercancel", soltar);
+          limpar(); tr.classList.remove("arrastando");
+          if (moveu) moverItem(de, pos > de ? pos - 1 : pos);
+        }
+        h.addEventListener("pointermove", mover); h.addEventListener("pointerup", soltar); h.addEventListener("pointercancel", soltar);
+      });
+    }
+    // 🔀 organizar: parecidos juntos, em ordem de medida; tocar de novo desfaz
+    var antesOrganizar = null;
+    function botaoOrganizar() { var b = $("#eo2-organizar", el); if (b) b.textContent = antesOrganizar ? "↩ Desfazer organização" : "🔀 Organizar itens"; }
+    function organizarItens(avisar) {
+      var novo = organizarLista(M.itens);
+      if (novo.every(function (x, k) { return x === M.itens[k]; })) { if (avisar) A.avisar("Os itens já estão organizados.", "ok"); return false; }
+      antesOrganizar = M.itens.slice(); M.itens = novo; botaoOrganizar(); desenharItens(); guardarRasc();
+      if (avisar) A.avisar("🔀 Itens organizados: parecidos juntos e em ordem de medida. Para mudar um de lugar, segure o ⠿ e arraste.", "ok");
+      return true;
+    }
+    $("#eo2-organizar", el).onclick = function () {
+      if (!antesOrganizar) { organizarItens(true); return; }
+      var a = antesOrganizar; antesOrganizar = null;
+      M.itens = a.filter(function (x) { return M.itens.indexOf(x) >= 0; }).concat(M.itens.filter(function (x) { return a.indexOf(x) < 0; }));
+      botaoOrganizar(); desenharItens(); guardarRasc();
+    };
     function botaoMaiusc() { $("#eo2-maiusc", el).textContent = antesMaiusc ? "↩ Desfazer maiúsculas" : "🔠 MAIÚSCULAS"; }
     $("#eo2-maiusc", el).onclick = function () {
       if (antesMaiusc) {
-        M.itens.forEach(function (i, n) { if (antesMaiusc[n] !== undefined && i.descricao === String(antesMaiusc[n]).toLocaleUpperCase("pt-BR")) i.descricao = antesMaiusc[n]; });
+        // guardado por item (não pela posição): continua certo depois de arrastar ou organizar
+        antesMaiusc.forEach(function (par) { if (M.itens.indexOf(par[0]) >= 0 && par[0].descricao === String(par[1]).toLocaleUpperCase("pt-BR")) par[0].descricao = par[1]; });
         antesMaiusc = null;
       } else {
-        antesMaiusc = M.itens.map(function (i) { return i.descricao || ""; });
+        antesMaiusc = M.itens.map(function (i) { return [i, i.descricao || ""]; });
         M.itens.forEach(function (i) { i.descricao = String(i.descricao || "").toLocaleUpperCase("pt-BR"); });
       }
       botaoMaiusc(); desenharItens();
@@ -2964,7 +3040,7 @@
           feito.push("observações");
         }
         if (!feito.length) { A.avisar("Marque pelo menos um item.", "erro"); return; }
-        jt.fechar(); preencher(); desenharItens(); guardarRasc();
+        jt.fechar(); preencher(); desenharItens(); guardarRasc(); if (usar.length > 1) organizarItens();
         A.avisar("📝 Colocado no orçamento: " + feito.join(", ") + ". Confira os valores.", "ok");
       }
       $("#ct-ler", jt.el).onclick = separar;
@@ -3031,7 +3107,7 @@
           M.itens = M.itens.filter(function (i) { return String(i.descricao || "").trim() || Number(i.valor); });
           usar.forEach(function (x) { M.itens.push({ tipo: "material", descricao: x.descricao, qtd: Number(x.qtd) || 1, un: x.un, valor: Math.round((Number(x.unit) || 0) * (1 + mg / 100) * 100) / 100 }); });
           if (!M.categoria && cat2) { M.categoria = cat2; $("#eo2-cat", el).value = cat2; }
-          jn.fechar(); desenharItens(); guardarRasc();
+          jn.fechar(); desenharItens(); guardarRasc(); if (usar.length > 1) organizarItens();
           A.avisar(usar.length + " material(is) adicionado(s) ao orçamento" + (mg ? " com " + A.numero(mg) + "% de acréscimo" : "") + ".", "ok");
           guardarPrecosLoja(usar, cat2, info);
         };
@@ -3117,7 +3193,7 @@
         M.itens = M.itens.filter(function (i) { return String(i.descricao || "").trim() || Number(i.valor); });
         var sug = sugestoesOrc();
         ids.forEach(function (id) { var x = porId(sug, id); if (x) M.itens.push({ tipo: "material", descricao: x.descricao, qtd: 1, un: x.un || "un", valor: x.valor === null || x.valor === undefined ? 0 : Number(x.valor) }); });
-        jl.fechar(); desenharItens(); guardarRasc(); A.avisar(ids.length + " material(is) adicionado(s). Ajuste as quantidades.", "ok");
+        jl.fechar(); desenharItens(); guardarRasc(); if (ids.length > 1) organizarItens(); A.avisar(ids.length + " material(is) adicionado(s). Ajuste as quantidades.", "ok");
       };
     }
     if ($("#eo2-gmat", el)) $("#eo2-gmat", el).onclick = function () {

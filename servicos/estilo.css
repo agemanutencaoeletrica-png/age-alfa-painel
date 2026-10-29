@@ -103,7 +103,11 @@ button:focus-visible, .botao:focus-visible, a:focus-visible { outline: 2px solid
 
 /* ---------- itens do orçamento ---------- */
 .item-orc { border: 1px solid var(--borda); border-radius: 10px; padding: 8px; margin-bottom: 8px; background: var(--sup2); }
-.item-orc .l1 { display: grid; grid-template-columns: 140px 1fr; gap: 6px; }
+.item-orc .l1 { display: grid; grid-template-columns: 34px 140px 1fr; gap: 6px; }
+.item-orc .i-arrastar { cursor: grab; touch-action: none; padding: 0; min-height: 0; font-size: 20px; line-height: 1; color: var(--texto2); user-select: none; }
+.item-orc.arrastando { opacity: .55; outline: 2px dashed var(--link); }
+.item-orc.alvo-cima { box-shadow: 0 -4px 0 var(--link); }
+.item-orc.alvo-baixo { box-shadow: 0 4px 0 var(--link); }
 .item-orc .l2 { display: grid; grid-template-columns: 80px 90px 1fr 1fr 42px; gap: 6px; align-items: end; margin-top: 6px; }
 .item-orc .l2.ambos { grid-template-columns: 80px 90px 1fr 1fr 1fr 42px; }
 .item-orc .l2 label { margin: 0; font-size: 11px; }
@@ -111,7 +115,8 @@ button:focus-visible, .botao:focus-visible, a:focus-visible { outline: 2px solid
 .item-orc .i-sub { text-align: right; padding-bottom: 10px; white-space: nowrap; }
 .item-orc .i-tirar { padding: 0; }
 @media (max-width: 560px) {
-  .item-orc .l1 { grid-template-columns: 1fr; }
+  .item-orc .l1 { grid-template-columns: 34px 1fr; }
+  .item-orc .l1 .i-desc { grid-column: 1 / -1; }
   .item-orc .l2 { grid-template-columns: 1fr 1fr 1.4fr 42px; }
   .item-orc .l2.ambos { grid-template-columns: 1fr 1fr 1fr 1fr; }
   .item-orc .i-sub { grid-column: 1 / -1; grid-row: 2; padding: 0; }
