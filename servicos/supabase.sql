@@ -442,6 +442,25 @@ create table if not exists public.precos (
 );
 create index if not exists precos_cat_idx on public.precos (categoria, grupo);
 
+-- 📈 Histórico de preços dos materiais: cada preço de loja lido (orçamento da loja ou nota) fica guardado com a loja e a data,
+-- para comparar e saber quanto custou da última vez. Lançar o mesmo orçamento de novo não repete (índice único).
+create table if not exists public.precos_historico (
+  id         uuid primary key default gen_random_uuid(),
+  categoria  text not null default 'eletrica',
+  descricao  text not null,
+  chave      text not null,                    -- nome sem acento/maiúsculas (para achar o mesmo material)
+  un         text,
+  valor      numeric(12, 2) not null check (valor > 0),   -- preço unitário da loja
+  loja       text not null default '',
+  cnpj       text,
+  data       date not null default current_date,
+  origem     text not null default 'orcamento_loja',     -- orcamento_loja, nota
+  documento  text,                             -- nº do orçamento da loja
+  criado_em  timestamptz not null default now()
+);
+create unique index if not exists precos_hist_unico on public.precos_historico (chave, loja, data, valor);
+create index if not exists precos_hist_chave_idx on public.precos_historico (chave, data desc);
+
 -- 👷 Candidatos a vaga (formulário "Trabalhe com a gente" do site): o site só envia pela função enviar_candidatura; só você lê
 create table if not exists public.candidatos (
   id              uuid primary key default gen_random_uuid(),
@@ -524,7 +543,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'candidatos', 'modelos_laudo'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'candidatos', 'modelos_laudo'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

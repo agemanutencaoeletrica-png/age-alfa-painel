@@ -290,6 +290,18 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
   pedágio, ferramentas; com o veículo) **· 💳 A pagar** (boleto/a prazo, com vencimento e botão ✔ Pago).
   Resumo **por loja**: tudo somado, com o que falta pagar em cada uma.
 
+## 📥 Orçamento da loja → acervo de materiais e 📈 histórico de preços
+
+- **💲 Preços → 📥 Lançar orçamento da loja**: escolha o PDF (ou vários), a foto ou o XML da nota. O PDF e o XML **salvam sozinhos**;
+  a foto passa antes pela conferência (a leitura de foto pode errar).
+- Material que ainda não está no acervo **entra** com a unidade e o preço; o que já está fica com o **preço mais novo**
+  (um orçamento mais antigo lançado depois vai só para o histórico, sem baixar o preço atual).
+- Todo preço fica no **📈 histórico** com a loja, o nº do orçamento e a data. Lançar o mesmo orçamento de novo não repete nada.
+- Ao abrir um material em 💲 Preços aparecem todos os preços das lojas (orçamentos e notas de 🧾 Compras) e o **menor**.
+- No **orçamento do cliente**: 📷 Ler nota ou orçamento da loja mostra o último preço guardado de cada material (e a variação);
+  ao escrever um item, a sugestão mostra o último preço e o menor já pago. O orçamento salva sozinho com o cliente preenchido.
+- Precisa rodar uma vez o **supabase.sql** atualizado (tabela `precos_historico`). Sem ela, o acervo salva do mesmo jeito e o app avisa.
+
 ## 📊 Fechamento mensal dos chamados (Supermercados BH)
 Aba **✅ Executados → 📊 Fechamento mensal**: cada chamado concluído no mês com data, chamado, loja, serviço realizado, OS,
 situação no portal e **valor**; total do mês, o que falta finalizar e o que está sem valor. **📋 Colar do portal**: cole as
