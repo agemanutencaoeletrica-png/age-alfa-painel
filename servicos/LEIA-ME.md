@@ -290,6 +290,20 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
   pedágio, ferramentas; com o veículo) **· 💳 A pagar** (boleto/a prazo, com vencimento e botão ✔ Pago).
   Resumo **por loja**: tudo somado, com o que falta pagar em cada uma.
 
+## 🏪 Orçamentos das lojas (acervo de materiais e 📈 histórico de preços)
+
+- Aba **🏪 Orçamentos das lojas** → **📥 Lançar orçamento**: escolha o PDF (ou vários), a foto ou o XML da nota. O PDF e o XML
+  **salvam sozinhos**; a foto passa antes pela conferência (a leitura de foto pode errar).
+- **Cada orçamento fica separado** (loja pelo CNPJ, nº, data, validade, total, itens e o arquivo da loja). Lançar o mesmo de novo não repete.
+- Os materiais que **ainda não estão no app** entram sozinhos no acervo da 💲 tabela e aparecem na lista **🆕 Materiais que ainda não
+  tinham no app** (com 📋 Copiar). O que já está fica com o **preço mais novo** (orçamento mais antigo vai só para o histórico).
+- Ao abrir um orçamento: cada item com o **menor preço visto em outra loja** (vermelho = aqui está mais caro), ver o arquivo da loja,
+  **🧾 Usar num orçamento de cliente** (abre o orçamento de materiais com os itens para pôr o acréscimo), copiar a lista e apagar.
+- Todo preço fica no **📈 histórico** (loja, nº e data); em 💲 Preços, ao abrir um material, aparecem todos e o **menor**.
+- No **orçamento do cliente**, o 📷 Ler nota ou orçamento da loja também guarda o orçamento da loja aqui e mostra o último preço de cada material.
+- A comparação entre lojas é pelo **nome igual** do material (cada loja escreve de um jeito).
+- Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `orcamentos_loja` e `precos_historico`). Sem elas, o acervo salva do mesmo jeito e o app avisa.
+
 ## 📊 Fechamento mensal dos chamados (Supermercados BH)
 Aba **✅ Executados → 📊 Fechamento mensal**: cada chamado concluído no mês com data, chamado, loja, serviço realizado, OS,
 situação no portal e **valor**; total do mês, o que falta finalizar e o que está sem valor. **📋 Colar do portal**: cole as

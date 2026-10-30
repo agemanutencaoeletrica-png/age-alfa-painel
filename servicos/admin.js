@@ -11,7 +11,7 @@
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
   // corretor dos itens do orçamento: palavras do dia a dia de elétrica e pintura escritas sem acento ou com erro comum
   var CORRECOES = {
     eletrica: "elétrica", eletricas: "elétricas", eletrico: "elétrico", eletricos: "elétricos", eletricista: "eletricista",
@@ -500,7 +500,9 @@
       q(sb.from("servicos").select("etapa").limit(1)).then(function () { return true; }).catch(function () { return false; }),
       q(sb.from("precos").select("*").order("descricao")).catch(function (e) { S.erroPrecos = A.msgErro(e); return null; }),
       q(sb.from("candidatos").select("*").order("criado_em", { ascending: false }).limit(500)).catch(function () { return null; }),
-      q(sb.from("modelos_laudo").select("*").order("titulo")).catch(function () { return null; })
+      q(sb.from("modelos_laudo").select("*").order("titulo")).catch(function () { return null; }),
+      q(sb.from("precos_historico").select("*").order("data", { ascending: false }).limit(10000)).catch(function () { return null; }),
+      q(sb.from("orcamentos_loja").select("*").order("data", { ascending: false }).limit(2000)).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -516,6 +518,8 @@
       // modelos de laudo: sem a tabela (SQL não rodado), ficam neste aparelho
       S.semModLaudo = !r[17]; S.modelosLaudo = r[17] || lerModelosLocal().map(function (m) { m.local = true; return m; });
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
+      S.semHist = !r[18]; S.precosHist = r[18] || [];   // 📈 histórico de preços das lojas
+      S.semOrcLoja = !r[19]; S.orcLoja = r[19] || [];   // 🏪 orçamentos das lojas (cada um separado)
     });
   }
 
@@ -563,7 +567,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, orclojas: function (c2) { window.AGE_ORCLOJA.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -2704,7 +2708,9 @@
     }
     function listaPrecos() {
       $("#eo2-dl-precos", el).innerHTML = sugestoesOrc().map(function (x) {
-        return '<option value="' + esc(x.descricao) + '">' + esc((x.un || "") + (x.valor !== null && x.valor !== undefined ? " · " + A.dinheiro(Number(x.valor)) : " · a definir")) + "</option>";
+        var rh = window.AGE_PRECOS && ehMaterialPreco(x) && window.AGE_PRECOS.resumoHist(S, x.descricao);
+        return '<option value="' + esc(x.descricao) + '">' + esc((x.un || "") + (x.valor !== null && x.valor !== undefined ? " · " + A.dinheiro(Number(x.valor)) : " · a definir") +
+          (rh ? " · último " + window.AGE_PRECOS.textoPreco(rh.ultimo) + (rh.n > 1 && rh.menor.valor < rh.ultimo.valor ? " · menor " + window.AGE_PRECOS.textoPreco(rh.menor) : "") : "")) + "</option>";
       }).join("");
     }
     function lerCampos() {
@@ -3076,7 +3082,7 @@
           '<input id="ln-busca" type="search" placeholder="🔍 Buscar loja ou material" style="margin-top:6px"><div id="ln-notas" style="max-height:30vh;overflow:auto;margin-top:6px"></div></details>' : "") +
         '<div id="ln-status" class="peq" style="margin-top:8px"></div><div id="ln-prev"></div>',
         { titulo: "📷 Ler nota ou orçamento da loja", larga: true });
-      var lidos = [], info = {};
+      var lidos = [], info = {}, arquivo = null;   // arquivo lido (orçamento da loja): fica guardado em 🏪 Orçamentos das lojas
       function status(t, tipo) { $("#ln-status", jn.el).innerHTML = t ? '<span style="color:var(--' + (tipo || "texto") + ')">' + esc(t) + "</span>" : ""; }
       var UN_NOTA = { und: "un", unid: "un", u: "un", pc: "pç", pca: "pç", peca: "pç", "peça": "pç", mt: "m", mts: "m", metro: "m", m2: "m²", rl: "rolo", rolos: "rolo", gl: "galão", galao: "galão", br: "barra", brs: "barra" };
       function mostrar(itens, inf) {
@@ -3090,14 +3096,17 @@
         var cat = M.categoria === "eletrica" || M.categoria === "pintura" ? M.categoria : info.area === "eletrica" || info.area === "pintura" ? info.area : CP.areaPelosItens(lidos.map(function (x) { return { item: x.descricao }; })) || "eletrica";
         $("#ln-prev", jn.el).innerHTML = '<div class="cartao" style="margin-top:8px"><b>' + lidos.length + " material(is)" + (info.loja ? " · " + esc(info.loja) : "") + (info.data ? " · " + esc(A.dataSimples(info.data)) : "") + "</b>" +
           '<p class="peq mudo" style="margin:2px 0 6px">Confira o nome, a quantidade e o preço (a leitura de foto pode errar) e desmarque o que não vai.</p>' +
-          '<div class="tabela-caixa"><table><thead><tr><th></th><th>Material</th><th class="num">Qtd</th><th>Un</th><th class="num">Preço da loja (un.)</th></tr></thead><tbody>' +
+          '<div class="tabela-caixa"><table><thead><tr><th></th><th>Material</th><th class="num">Qtd</th><th>Un</th><th class="num">Preço da loja (un.)</th><th class="num">Último preço guardado</th></tr></thead><tbody>' +
           lidos.map(function (x, n) {
+            var rh = window.AGE_PRECOS && window.AGE_PRECOS.resumoHist(S, x.descricao), u = rh && rh.ultimo, dif = u && x.unit ? Math.round((x.unit - u.valor) / u.valor * 100) : 0;
             return '<tr data-ln="' + n + '"><td><input type="checkbox" class="ln-ok" checked aria-label="Usar"></td><td><input class="ln-desc" maxlength="300" style="min-width:180px"></td>' +
-              '<td><input class="ln-qtd" inputmode="decimal" style="width:70px"></td><td>' + esc(x.un) + '</td><td><input class="ln-unit" inputmode="decimal" style="width:100px" placeholder="0,00"></td></tr>';
+              '<td><input class="ln-qtd" inputmode="decimal" style="width:70px"></td><td>' + esc(x.un) + '</td><td><input class="ln-unit" inputmode="decimal" style="width:100px" placeholder="0,00"></td>' +
+              '<td class="num peq">' + (u ? esc(window.AGE_PRECOS.textoPreco(u)) + (dif ? ' <span class="selo ' + (dif > 0 ? "critico" : "bom") + '">' + (dif > 0 ? "+" : "") + dif + "%</span>" : "") +
+                (rh.n > 1 && rh.menor.valor < u.valor ? '<div class="mudo">menor: ' + esc(window.AGE_PRECOS.textoPreco(rh.menor)) + "</div>" : "") : '<span class="mudo">novo</span>') + "</td></tr>";
           }).join("") + "</tbody></table></div>" +
           '<div class="duas"><div><label for="ln-margem">Acréscimo sobre o preço da loja (%)</label><input id="ln-margem" inputmode="decimal" placeholder="0"></div>' +
           '<div><label for="ln-cat">Guardar os preços na 💲 tabela de</label><select id="ln-cat"' + (S.semPrecos ? " disabled" : "") + '><option value="eletrica">⚡ Elétrica</option><option value="pintura">🖌️ Pintura</option><option value="">Não guardar</option></select></div></div>' +
-          '<p class="peq mudo" style="margin:4px 0 0">Na 💲 tabela fica o <b>preço da loja</b> (sem o acréscimo): ele aparece nos próximos orçamentos e no 📋 Escolher da lista.</p>' +
+          '<p class="peq mudo" style="margin:4px 0 0">No acervo da 💲 tabela fica o <b>preço da loja</b> (sem o acréscimo): material novo entra, o que já tem fica com o preço mais novo e todo preço vai para o 📈 histórico (loja e data). O orçamento salva sozinho.</p>' +
           '<div class="acoes"><button class="prim" id="ln-ok">Adicionar ao orçamento</button></div></div>';
         $("#ln-cat", jn.el).value = S.semPrecos ? "" : cat;
         $$("#ln-prev tr[data-ln]", jn.el).forEach(function (tr) {
@@ -3116,17 +3125,24 @@
           if (!M.categoria && cat2) { M.categoria = cat2; $("#eo2-cat", el).value = cat2; }
           jn.fechar(); desenharItens(); guardarRasc(); if (usar.length > 1) organizarItens();
           A.avisar(usar.length + " material(is) adicionado(s) ao orçamento" + (mg ? " com " + A.numero(mg) + "% de acréscimo" : "") + ".", "ok");
-          guardarPrecosLoja(usar, cat2, info);
+          // lido de um arquivo: o orçamento da loja (com os itens marcados) fica guardado separado e o acervo é atualizado
+          if (arquivo && window.AGE_ORCLOJA && (cat2 === "eletrica" || cat2 === "pintura")) guardarOrcLoja(usar, cat2);
+          else guardarPrecosLoja(usar, cat2, info);
         };
       }
       $("#ln-foto", jn.el).onclick = function () { $("#ln-arq", jn.el).value = ""; $("#ln-arq", jn.el).click(); };
       $("#ln-arq", jn.el).onchange = function () {
         var f = this.files[0]; if (!f) return;
+        arquivo = null;
         $("#ln-prev", jn.el).innerHTML = "";
         status("🔎 Lendo " + f.name + "... (foto pode levar até 1 minuto)");
         CP.lerUmaNota(f, function (t) { status(t); }).then(function (r) {
-          var d = (r && r.dados) || {};
-          mostrar(d.itens, { loja: d.fornecedor, data: d.data });
+          var d = (r && r.dados) || {}, PR = window.AGE_PRECOS;
+          return (PR ? PR.nomeLoja(S, d) : Promise.resolve(d.fornecedor)).then(function (loja) {
+            arquivo = f;
+            mostrar(d.itens, { loja: loja, cnpj: d.cnpj, data: d.data, numero: PR ? PR.numeroOrc(r.bruto) || d.numero : d.numero, total: d.valor,
+              validade: window.AGE_ORCLOJA ? window.AGE_ORCLOJA.validadeDoTexto(r.bruto) : null, origem: r.bruto && /<infNFe/i.test(r.bruto) ? "nota" : "orcamento_loja" });
+          });
         }).catch(function (e) { status("Não consegui ler o arquivo: " + A.msgErro(e), "critico"); });
       };
       $("#ln-colar", jn.el).onclick = function () { $("#ln-cx-colar", jn.el).classList.remove("oculto"); $("#ln-txt", jn.el).focus(); };
@@ -3147,29 +3163,27 @@
         }).join("") || '<div class="vazio">Nada com essa busca.</div>';
         $$("[data-lnota]", jn.el).forEach(function (bt) { bt.onclick = function () { usarNota(porId(S.compras, bt.dataset.lnota)); }; });
       }
-      function usarNota(c) { if (c) mostrar(c.itens, { loja: c.fornecedor, data: c.comprado_em, area: c.area }); }
+      function guardarOrcLoja(usar, cat2) {
+        var OL = window.AGE_ORCLOJA, o = Object.assign({}, info, { area: cat2, data: String(info.data || A.isoLocal(new Date())).slice(0, 10) });
+        var ja = OL.jaLancado(P, o);
+        OL.guardar(P, o, usar.map(function (x) { return { descricao: x.descricao, qtd: Number(x.qtd) || 1, un: x.un, unit: Number(x.unit) || 0, valor: Math.round((Number(x.qtd) || 1) * (Number(x.unit) || 0) * 100) / 100 }; }), arquivo)
+          .then(function (r) {
+            listaPrecos();
+            A.avisar("💲 Acervo: " + (r.novos || r.atualizados ? r.novos + " material(is) novo(s), " + r.atualizados + " com preço atualizado" : "os materiais já estavam com este preço") +
+              (ja ? " · este orçamento da loja já estava em 🏪 Orçamentos das lojas" : r.reg ? " · orçamento da loja guardado em 🏪 Orçamentos das lojas" : "") + ".", "ok");
+          }).catch(function (e) { A.avisar("Os materiais entraram no orçamento, mas o acervo não salvou: " + A.msgErro(e), "erro"); });
+      }
+      function usarNota(c) { if (c) mostrar(c.itens, { loja: c.fornecedor, cnpj: c.cnpj || null, data: c.comprado_em, area: c.area, origem: "nota" }); }
       if (notas.length) { $("#ln-busca", jn.el).oninput = desenharNotas; desenharNotas(); }
       if (pre) usarNota(pre);
     }
     // preço da loja na 💲 tabela: material novo entra; o que estava sem preço (ou veio de outra nota) fica com o preço desta nota
     function guardarPrecosLoja(lista, cat, info) {
-      if ((cat !== "eletrica" && cat !== "pintura") || S.semPrecos || !window.AGE_PRECOS) return;
-      var novos = [], mudar = [], vistos = {}, obs = "Preço da loja" + (info.loja ? " " + info.loja : "") + (info.data ? " em " + A.dataSimples(String(info.data).slice(0, 10)) : "");
-      lista.forEach(function (x) {
-        var v = Math.round((Number(x.unit) || 0) * 100) / 100, d = String(x.descricao || "").trim(), k = semAcento(d).trim();
-        if (!v || d.length < 3 || vistos[k]) return;
-        vistos[k] = 1;
-        var ja = window.AGE_PRECOS.acharServico(S, cat, d);
-        if (!ja) novos.push({ categoria: cat, grupo: GRUPO_MAT_NOTA, descricao: d.slice(0, 300), un: x.un || "un", valor: v, obs: obs.slice(0, 300), fonte: "Nota" });
-        else if (ehMaterialPreco(ja) && (ja.valor === null || ja.valor === undefined || ja.fonte === "Nota")) mudar.push({ id: ja.id, valor: v });
-      });
-      if (!novos.length && !mudar.length) return;
-      var ps = [];
-      if (novos.length) ps.push(q(sb.from("precos").insert(novos).select()).then(function (ns) { ns.forEach(function (n) { trocar(S.precos, n); }); }));
-      mudar.forEach(function (m) { ps.push(q(sb.from("precos").update({ valor: m.valor, obs: obs.slice(0, 300), atualizado_em: new Date().toISOString() }).eq("id", m.id).select().single()).then(function (n) { trocar(S.precos, n); })); });
-      Promise.all(ps).then(function () {
+      if (!window.AGE_PRECOS) return;
+      window.AGE_PRECOS.guardarDaLoja(P, lista, cat, info).then(function (r) {
+        if (!r.linhas.length) return;
         listaPrecos();
-        A.avisar((novos.length + mudar.length) + " preço(s) da loja guardado(s) na 💲 tabela de preços", "ok");
+        A.avisar("💲 Acervo: " + (r.novos || r.atualizados ? r.novos + " material(is) novo(s), " + r.atualizados + " com preço atualizado" : "os materiais já estavam com este preço") + (r.semHist ? " (📈 histórico: rode o supabase.sql)" : "; preços no 📈 histórico") + ".", "ok");
       }).catch(function (e) { A.avisar("Os materiais entraram no orçamento, mas a 💲 tabela não salvou: " + A.msgErro(e), "erro"); });
     }
     // escolher vários materiais da 💲 tabela de uma vez (com busca e grupos)

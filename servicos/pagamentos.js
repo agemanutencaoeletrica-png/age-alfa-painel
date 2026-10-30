@@ -249,9 +249,10 @@
     var acha = function (re) { return P.filter(function (p) { return re.test(p.s.trim()); }); };
     var cab = null;
     acha(/^descri[cç][aã]o|^produto|^material|^mercadoria/i).some(function (d) {
-      var mesma = function (re) { return P.filter(function (p) { return Math.abs(p.y - d.y) < 4 && re.test(p.s.trim()); })[0] || null; };
+      // cabeçalho em até 3 linhas (ex.: "R$ / UNIT." e "R$ / TOTAL" embaixo de "QTD."): o título mais perto da linha da Descrição
+      var mesma = function (re) { return P.filter(function (p) { return Math.abs(p.y - d.y) < 14 && re.test(p.s.trim()); }).sort(function (a, b) { return Math.abs(a.y - d.y) - Math.abs(b.y - d.y); })[0] || null; };
       var q = mesma(/^(quant|qtd|qtde|qde)/i), t = mesma(/^(valor\s*)?total|^vl\.?\s*total|^subtotal/i);
-      if (q && t) { cab = { y: d.y, desc: d, qtd: q, tot: t, un: mesma(/^(un|und|unid|unidade|u\.?m\.?)\.?$/i), unit: mesma(/unit|^valor\s*un|^vl\.?\s*un|^pre[cç]o|^v\.?\s*un/i),
+      if (q && t) { cab = { y: Math.min(d.y, q.y, t.y), desc: d, qtd: q, tot: t, cod: mesma(/^(c[oó]d(igo|\.)?|refer[eê]ncia|ref\.?)$/i), un: mesma(/^(un|und|unid|unidade|u\.?m\.?)\.?$/i), unit: mesma(/unit|^valor\s*un|^vl\.?\s*un|^pre[cç]o|^v\.?\s*un/i),
         extra: mesma(/^desc\.\s*\/|acr[eé]sc|^desconto$|^ipi$|^icms$/i) };   // "extra": coluna que não interessa, mas recebe números
         return true;
       }
@@ -261,8 +262,10 @@
     var num = /^-?\d{1,3}(?:\.\d{3})*(?:,\d{1,4})?$|^-?\d+(?:,\d{1,4})?$/;
     var colunas = ["qtd", "un", "unit", "extra", "tot"].filter(function (k) { return cab[k]; }).map(function (k) { return { k: k, c: cab[k].x + cab[k].w / 2 }; });
     var fimY = -1e9;   // a tabela acaba no primeiro "Total ..." abaixo do cabeçalho que não é a coluna Total
-    P.forEach(function (p) { if (p.y < cab.y - 4 && /^(total|valor total|sub-?total|desconto|forma de pag|observa)/i.test(p.s.trim()) && p.y > fimY && p !== cab.tot) fimY = p.y; });
+    P.forEach(function (p) { if (p.y < cab.y - 4 && /^(total|valor total|sub[\s-]?total|desconto|forma de pag|observa)/i.test(p.s.trim()) && p.y > fimY && p !== cab.tot) fimY = p.y; });
     var corpo = P.filter(function (p) { return p.y < cab.y - 4 && p.y > fimY + 2; });
+    // onde começa a descrição: depois da coluna do código (a loja pode alinhar o nome bem à esquerda do título "Descrição")
+    var iniDesc = cab.cod && cab.cod.x < cab.desc.x ? cab.cod.x + cab.cod.w : cab.desc.x - 25;
     // linhas: onde há quantidade na coluna "Quantidade"
     var colDe = function (p) { var cx = p.x + p.w / 2, m = null, dm = 1e9; colunas.forEach(function (c) { var d = Math.abs(c.c - cx); if (d < dm) { dm = d; m = c.k; } }); return m; };
     var linhas = [];
@@ -278,13 +281,13 @@
     var maisPerto = function (y) { var m = null, dm = 1e9; linhas.forEach(function (l) { var d = Math.abs(l.y - y); if (d < dm) { dm = d; m = l; } }); return dm <= passo * 0.75 ? m : null; };
     corpo.forEach(function (p) {
       var s = p.s.trim(), l = maisPerto(p.y); if (!l) return;
-      var limiteDesc = cab.qtd.x - 2;
-      if (/[A-Za-zÀ-ú]/.test(s) && p.x >= cab.desc.x - 25 && p.x < limiteDesc) { l.desc.push(p); return; }
+      var limiteDesc = Math.min(cab.qtd.x, cab.un && cab.un.x > cab.desc.x ? cab.un.x - 6 : 1e9) - 2;   // a unidade pode vir antes da quantidade
+      if (/[A-Za-zÀ-ú]/.test(s) && p.x >= iniDesc && p.x < limiteDesc) { l.desc.push(p); return; }
       if (cab.un && colDe(p) === "un" && /^[A-Za-z²³]{1,5}\.?$/.test(s)) { l.un = s.toLowerCase().replace(/\.$/, ""); return; }
       if (num.test(s)) { var k = colDe(p); if (k === "unit" && l.unit == null) l.unit = A.lerNumero(s); else if (k === "tot") l.valor = A.lerNumero(s); }
     });
     var itens = linhas.map(function (l) {
-      var item = l.desc.sort(function (a, b) { return b.y - a.y || a.x - b.x; }).map(function (p) { return p.s.trim(); }).join(" ").replace(/\s+/g, " ").trim();
+      var item = l.desc.sort(function (a, b) { return b.y - a.y || a.x - b.x; }).map(function (p) { return p.s.trim(); }).join(" ").replace(/\s+/g, " ").replace(/=+$/, "").trim();
       var r = { item: item.slice(0, 160), qtd: l.qtd, un: l.un || "un", unit: l.unit != null ? Math.round(l.unit * 100) / 100 : null, valor: l.valor != null ? l.valor : null };
       if (r.valor == null && r.unit) r.valor = Math.round(r.qtd * r.unit * 100) / 100;
       if (r.unit == null && r.valor && r.qtd) r.unit = Math.round(r.valor / r.qtd * 100) / 100;
@@ -295,9 +298,10 @@
     var total = null;
     acha(/total\s*l[ií]quido|total\s*a\s*pagar|valor\s*total\s*(da\s*nota|a\s*pagar)?$|^total\s*geral|^total\s*da\s*(nota|venda|proposta)/i).some(function (h) {
       if (h.y >= cab.y - 4) return false;
-      var cand = P.filter(function (p) { return num.test(p.s.trim()) && /,\d{2}$/.test(p.s.trim()) && ((p.y < h.y && h.y - p.y < 25 && Math.abs((p.x + p.w) - (h.x + h.w)) < 60) || (Math.abs(p.y - h.y) < 4 && p.x > h.x + h.w - 2)); })
+      var rs = function (p) { return p.s.trim().replace(/^R\$\s*/, ""); };   // "R$ 7.903,92" num pedaço só
+      var cand = P.filter(function (p) { return num.test(rs(p)) && /,\d{2}$/.test(rs(p)) && ((p.y < h.y && h.y - p.y < 25 && Math.abs((p.x + p.w) - (h.x + h.w)) < 60) || (Math.abs(p.y - h.y) < 4 && p.x > h.x + h.w - 2)); })
         .sort(function (a, b) { return Math.abs(a.y - h.y) - Math.abs(b.y - h.y) || a.x - b.x; });
-      if (cand.length) { total = A.lerNumero(cand[0].s.trim()); return true; }
+      if (cand.length) { total = A.lerNumero(rs(cand[0])); return true; }
       return false;
     });
     return { itens: itens, total: total };
