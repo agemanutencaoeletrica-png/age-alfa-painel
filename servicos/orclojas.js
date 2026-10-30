@@ -43,6 +43,8 @@
   }
   function validadeDoTexto(t) { var m = /validade\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i.exec(String(t || "")); return m ? m[3] + "-" + m[2] + "-" + m[1] : null; }
   function vencido(o) { return o.validade && o.validade < hoje(); }
+  // validade do orçamento da loja (vem escrita no orçamento): até essa data a loja garante os preços
+  function selValidade(o) { return (vencido(o) ? "⚠ preços da loja venceram em " : "preços da loja válidos até ") + esc(A.dataSimples(o.validade)); }
   function copiar(t, msg) {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { A.avisar(msg, "ok"); }, function () { window.prompt("Copie:", t); });
     else window.prompt("Copie:", t);
@@ -78,10 +80,15 @@
         '<span class="dir"><b>' + (o.total ? A.dinheiro(Number(o.total)) : "") + "</b></span></div>" +
         '<div class="peq">' + (o.numero ? "nº " + esc(o.numero) + " · " : "") + esc(A.dataSimples(o.data)) + " · " + (o.itens || []).length + " material(is)" +
         (o.area && AREAS[o.area] ? " · " + AREAS[o.area] : "") +
-        (o.validade ? ' · <span class="selo ' + (vencido(o) ? "critico" : "bom") + '">' + (vencido(o) ? "venceu " : "válido até ") + esc(A.dataSimples(o.validade)) + "</span>" : "") +
-        (nv ? ' · <span class="selo atencao">🆕 ' + nv + " material(is) novo(s) no app</span>" : "") + "</div></div>";
+        (o.validade ? ' · <span class="selo ' + (vencido(o) ? "critico" : "bom") + '" title="Validade do orçamento da loja: até essa data a loja garante estes preços">' + selValidade(o) + "</span>" : "") +
+        (nv ? ' · <span class="selo atencao">🆕 ' + nv + " material(is) novo(s) no app</span>" : "") + "</div>" +
+        '<div class="acoes" style="margin-top:6px"><button class="peq" data-ol-abrir>Abrir</button><button class="peq perigo" data-ol-excluir>🗑 Excluir</button></div></div>';
     }).join("") || '<div class="cartao vazio">Nada com essa busca.</div>';
-    $$("[data-ol]", r).forEach(function (cx) { cx.onclick = function () { abrir(P.porId(lista(), cx.dataset.ol)); }; });
+    $$("[data-ol]", r).forEach(function (cx) {
+      var o = P.porId(lista(), cx.dataset.ol);
+      cx.onclick = function () { abrir(o); };
+      $("[data-ol-excluir]", cx).onclick = function (ev) { ev.stopPropagation(); excluir(o); };
+    });
   }
 
   // ---------------- lançar ----------------
@@ -240,10 +247,11 @@
     var itens = o.itens || [], nv = novos(o), PR = window.AGE_PRECOS;
     var maisCaro = 0, j = A.janela(
       '<div class="peq">' + (o.numero ? "Orçamento nº <b>" + esc(o.numero) + "</b> · " : "") + "data " + esc(A.dataSimples(o.data)) +
-        (o.validade ? " · " + (vencido(o) ? '<span class="selo critico">venceu em ' : '<span class="selo bom">válido até ') + esc(A.dataSimples(o.validade)) + "</span>" : "") +
+        (o.validade ? ' · <span class="selo ' + (vencido(o) ? "critico" : "bom") + '">' + selValidade(o) + "</span>" : "") +
         (o.cnpj ? " · CNPJ " + esc(o.cnpj) : "") + (o.area && AREAS[o.area] ? " · " + AREAS[o.area] : "") + "</div>" +
       '<div class="acoes">' + (o.arquivo ? '<button class="peq" id="ol-arquivo">📄 Ver o arquivo da loja</button>' : "") +
-        '<button class="peq" id="ol-orc">🧾 Usar num orçamento de cliente</button><button class="peq" id="ol-copiar">📋 Copiar a lista</button><button class="peq perigo" id="ol-apagar">Apagar</button></div>' +
+        '<button class="peq" id="ol-orc">🧾 Usar num orçamento de cliente</button><button class="peq" id="ol-copiar">📋 Copiar a lista</button><button class="peq perigo" id="ol-apagar">🗑 Excluir</button></div>' +
+      (o.validade ? '<p class="peq mudo" style="margin:0">A validade é a que a loja escreveu no orçamento: até essa data ela garante estes preços. Depois, peça um orçamento novo.</p>' : "") +
       (nv.length ? '<div class="cartao" style="margin-top:8px"><div class="linha"><h3 style="margin:0">🆕 Materiais que ainda não tinham no app (' + nv.length + ')</h3><button class="peq dir" id="ol-copiar-novos">📋 Copiar</button></div>' +
         '<p class="peq mudo" style="margin:2px 0 6px">Já foram guardados no acervo da 💲 tabela, com o preço desta loja.</p><ul style="margin:0;padding-left:18px">' +
         nv.map(function (x) { return "<li>" + esc(x.descricao) + ' <span class="peq mudo">· ' + esc(x.un) + " · " + A.dinheiro(x.unit) + "</span></li>"; }).join("") + "</ul></div>" : "") +
@@ -271,13 +279,42 @@
       j.fechar();
       P.orcMateriais({ area: o.area, fornecedor: o.loja, comprado_em: o.data, cnpj: o.cnpj, itens: itens.map(function (x) { return { item: x.descricao, qtd: x.qtd, un: x.un, unit: x.unit, valor: x.valor }; }) });
     };
-    $("#ol-apagar", j.el).onclick = function () {
-      if (!A.confirmar("Apagar o orçamento de " + (o.loja || "loja") + (o.numero ? " nº " + o.numero : "") + "?\nOs materiais e os preços que já foram para o acervo e o 📈 histórico continuam.")) return;
+    $("#ol-apagar", j.el).onclick = function () { excluir(o, function () { j.fechar(); }); };
+  }
+
+  // 🗑 excluir o orçamento da loja; se foi lançado por engano, pode tirar também do acervo o que entrou por ele
+  function excluir(o, depois) {
+    if (!o) return;
+    var S = P.S, data = String(o.data).slice(0, 10);
+    // materiais que entraram por este orçamento e continuam com o preço dele (não foram usados com outro preço depois)
+    var doAcervo = novos(o).map(function (i) {
+      return (S.precos || []).filter(function (x) { return x.fonte === "Nota" && chaveMat(x.descricao) === chaveMat(i.descricao) && Math.abs(Number(x.valor) - Number(i.unit)) < 0.005; })[0];
+    }).filter(Boolean);
+    var hist = (S.precosHist || []).filter(function (h) { return semAcento(h.loja) === semAcento(o.loja) && String(h.data).slice(0, 10) === data && (!o.numero || !h.documento || h.documento === o.numero); });
+    var j = A.janela('<p style="margin-top:0">Excluir o orçamento de <b>' + esc(o.loja || "loja") + "</b>" + (o.numero ? " nº " + esc(o.numero) : "") + " de " + esc(A.dataSimples(data)) + "?</p>" +
+      '<p class="peq mudo">Sai da lista e o arquivo da loja é apagado.</p>' +
+      (doAcervo.length || hist.length ? '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="ex-acervo"> Foi lançado por engano: tirar também ' +
+        (doAcervo.length ? "do 💲 acervo os <b>" + doAcervo.length + "</b> material(is) que entraram por ele" : "") + (doAcervo.length && hist.length ? " e " : "") +
+        (hist.length ? "do 📈 histórico os <b>" + hist.length + "</b> preço(s) dele" : "") + "</label>" +
+        '<p class="peq mudo" style="margin:2px 0 0">Sem marcar, os materiais e os preços continuam no app.</p>' : "") +
+      '<div class="acoes"><button class="perigo" id="ex-ok">🗑 Excluir</button><button id="ex-nao">Cancelar</button></div>', { titulo: "🗑 Excluir orçamento da loja" });
+    $("#ex-nao", j.el).onclick = function () { j.fechar(); };
+    $("#ex-ok", j.el).onclick = function () {
+      var b = this, tudo = $("#ex-acervo", j.el) && $("#ex-acervo", j.el).checked;
+      A.ocupado(b, true, "Excluindo...");
       P.q(P.sb.from("orcamentos_loja").delete().eq("id", o.id)).then(function () {
-        P.tirar(P.S.orcLoja, o.id);
+        P.tirar(S.orcLoja, o.id);
         if (o.arquivo) P.q(P.sb.storage.from("fotos").remove([o.arquivo])).catch(function () { /* o arquivo fica órfão: sem problema */ });
-        j.fechar(); listar(); A.avisar("Apagado", "ok");
-      }).catch(P.falhou);
+        if (!tudo) return;
+        var ids = doAcervo.map(function (x) { return x.id; }), hids = hist.map(function (h) { return h.id; }).filter(Boolean);
+        return Promise.all([
+          ids.length ? P.q(P.sb.from("precos").delete().in("id", ids)).then(function () { ids.forEach(function (id) { P.tirar(S.precos, id); }); }) : null,
+          hids.length ? P.q(P.sb.from("precos_historico").delete().in("id", hids)).then(function () { S.precosHist = S.precosHist.filter(function (h) { return hids.indexOf(h.id) < 0; }); }) : null
+        ]);
+      }).then(function () {
+        j.fechar(); if (depois) depois(); listar();
+        A.avisar("🗑 Orçamento excluído" + (tudo ? " (e o que entrou por ele no acervo)" : ""), "ok");
+      }).catch(function (e) { A.ocupado(b, false); P.falhou(e); });
     };
   }
 

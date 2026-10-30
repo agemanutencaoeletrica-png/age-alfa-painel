@@ -295,6 +295,9 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
 - Aba **🏪 Orçamentos das lojas** → **📥 Lançar orçamento**: escolha o PDF (ou vários), a foto ou o XML da nota. O PDF e o XML
   **salvam sozinhos**; a foto passa antes pela conferência (a leitura de foto pode errar).
 - **Cada orçamento fica separado** (loja pelo CNPJ, nº, data, validade, total, itens e o arquivo da loja).
+- **Validade**: é a que a loja escreveu no orçamento (até essa data ela garante os preços). Vencida fica em vermelho.
+- **🗑 Excluir** em cada cartão (e dentro do orçamento). Se foi lançado por engano, marque para tirar também do acervo os materiais
+  que entraram por ele (só os que ainda estão com o preço dele) e os preços dele no 📈 histórico.
 - **⛔ Não aceita repetido**: o mesmo arquivo, a mesma chave da NF-e, a mesma loja + nº ou (sem nº) a mesma loja, data, total e itens.
   O banco também trava (dois aparelhos ao mesmo tempo). No orçamento do cliente os itens entram, mas o orçamento da loja não é guardado de novo.
 - Os materiais que **ainda não estão no app** entram sozinhos no acervo da 💲 tabela e aparecem na lista **🆕 Materiais que ainda não
