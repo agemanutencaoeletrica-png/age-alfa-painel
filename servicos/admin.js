@@ -3141,7 +3141,7 @@
           return (PR ? PR.nomeLoja(S, d) : Promise.resolve(d.fornecedor)).then(function (loja) {
             arquivo = f;
             mostrar(d.itens, { loja: loja, cnpj: d.cnpj, data: d.data, numero: PR ? PR.numeroOrc(r.bruto) || d.numero : d.numero, total: d.valor,
-              validade: window.AGE_ORCLOJA ? window.AGE_ORCLOJA.validadeDoTexto(r.bruto) : null, origem: r.bruto && /<infNFe/i.test(r.bruto) ? "nota" : "orcamento_loja" });
+              validade: window.AGE_ORCLOJA ? window.AGE_ORCLOJA.validadeDoTexto(r.bruto) : null, chave: d.chave || null, origem: r.bruto && /<infNFe/i.test(r.bruto) ? "nota" : "orcamento_loja" });
           });
         }).catch(function (e) { status("Não consegui ler o arquivo: " + A.msgErro(e), "critico"); });
       };
@@ -3165,12 +3165,13 @@
       }
       function guardarOrcLoja(usar, cat2) {
         var OL = window.AGE_ORCLOJA, o = Object.assign({}, info, { area: cat2, data: String(info.data || A.isoLocal(new Date())).slice(0, 10) });
-        var ja = OL.jaLancado(P, o);
         OL.guardar(P, o, usar.map(function (x) { return { descricao: x.descricao, qtd: Number(x.qtd) || 1, un: x.un, unit: Number(x.unit) || 0, valor: Math.round((Number(x.qtd) || 1) * (Number(x.unit) || 0) * 100) / 100 }; }), arquivo)
           .then(function (r) {
             listaPrecos();
+            // repetido: os itens entram no orçamento do cliente, mas o orçamento da loja não é guardado de novo (nem mexe no acervo)
+            if (r.repetido) { A.avisar("⛔ Orçamento da loja repetido: já estava em 🏪 Orçamentos das lojas (lançado em " + A.dataSimples(String(r.repetido.criado_em || r.repetido.data).slice(0, 10)) + "). Não foi guardado de novo.", "ok"); return; }
             A.avisar("💲 Acervo: " + (r.novos || r.atualizados ? r.novos + " material(is) novo(s), " + r.atualizados + " com preço atualizado" : "os materiais já estavam com este preço") +
-              (ja ? " · este orçamento da loja já estava em 🏪 Orçamentos das lojas" : r.reg ? " · orçamento da loja guardado em 🏪 Orçamentos das lojas" : "") + ".", "ok");
+              (r.reg ? " · orçamento da loja guardado em 🏪 Orçamentos das lojas" : "") + ".", "ok");
           }).catch(function (e) { A.avisar("Os materiais entraram no orçamento, mas o acervo não salvou: " + A.msgErro(e), "erro"); });
       }
       function usarNota(c) { if (c) mostrar(c.itens, { loja: c.fornecedor, cnpj: c.cnpj || null, data: c.comprado_em, area: c.area, origem: "nota" }); }

@@ -294,7 +294,9 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
 
 - Aba **🏪 Orçamentos das lojas** → **📥 Lançar orçamento**: escolha o PDF (ou vários), a foto ou o XML da nota. O PDF e o XML
   **salvam sozinhos**; a foto passa antes pela conferência (a leitura de foto pode errar).
-- **Cada orçamento fica separado** (loja pelo CNPJ, nº, data, validade, total, itens e o arquivo da loja). Lançar o mesmo de novo não repete.
+- **Cada orçamento fica separado** (loja pelo CNPJ, nº, data, validade, total, itens e o arquivo da loja).
+- **⛔ Não aceita repetido**: o mesmo arquivo, a mesma chave da NF-e, a mesma loja + nº ou (sem nº) a mesma loja, data, total e itens.
+  O banco também trava (dois aparelhos ao mesmo tempo). No orçamento do cliente os itens entram, mas o orçamento da loja não é guardado de novo.
 - Os materiais que **ainda não estão no app** entram sozinhos no acervo da 💲 tabela e aparecem na lista **🆕 Materiais que ainda não
   tinham no app** (com 📋 Copiar). O que já está fica com o **preço mais novo** (orçamento mais antigo vai só para o histórico).
 - Ao abrir um orçamento: cada item com o **menor preço visto em outra loja** (vermelho = aqui está mais caro), ver o arquivo da loja,
