@@ -543,11 +543,15 @@ create trigger medicoes_atualizado_em before update on public.medicoes
 
 -- ---------- Quem é administrador ----------
 
+-- Admin = o USUÁRIO logado (auth.uid()) cujo e-mail, confirmado, está em public.admins.
+-- Antes valia só o e-mail do login: um login apagado (ou outra conta com o mesmo e-mail) continuava admin.
+-- Antes de rodar, confira que o seu login aparece com e-mail confirmado (senão o painel fecha para você):
+--   select a.email, u.id, u.email_confirmed_at from public.admins a left join auth.users u on lower(u.email) = lower(a.email);
 create or replace function public.eh_admin() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
-    select 1 from public.admins a
-    where lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    select 1 from public.admins a join auth.users u on lower(u.email) = lower(a.email)
+    where u.id = auth.uid() and u.email_confirmed_at is not null
   );
 $$;
 
@@ -960,7 +964,9 @@ begin
   return jsonb_build_object('id', v_id, 'criado_em', v_quando);
 end $$;
 
--- formulário do site: valida, limita (o mesmo WhatsApp atualiza o cadastro; no máximo 60 por dia) e grava
+-- formulário do site: valida, limita (no máximo 60 envios por dia) e grava SEMPRE um envio novo.
+-- Quem não fez login não pode alterar um cadastro que já existe (bastava saber o WhatsApp de alguém);
+-- a resposta é sempre 'ok', para não revelar se o número já se candidatou. O painel junta os envios do mesmo número.
 create or replace function public.enviar_candidatura(
   p_nome text, p_whatsapp text, p_cidade text, p_funcoes text[], p_experiencia text, p_nrs text[], p_disponibilidade text, p_obs text, p_aceite boolean
 ) returns text
@@ -969,23 +975,14 @@ declare
   v_zap text := regexp_replace(coalesce(p_whatsapp, ''), '\D', '', 'g');
   v_fun text[] := array(select x from unnest(coalesce(p_funcoes, '{}')) x where x in ('pintor', 'ajudante_pintura', 'eletricista', 'ajudante_eletrica', 'cordeiro', 'limpeza_vidros'));
   v_nrs text[] := array(select x from unnest(coalesce(p_nrs, '{}')) x where x in ('nr35', 'nr10', 'nr18'));
-  v_id  uuid;
 begin
   if not coalesce(p_aceite, false) then raise exception 'Marque que autoriza o uso dos seus dados para a vaga.'; end if;
   if length(trim(coalesce(p_nome, ''))) < 3 then raise exception 'Escreva seu nome.'; end if;
   if v_zap ~ '^55\d{10,11}$' then v_zap := substr(v_zap, 3); end if;
   if v_zap !~ '^\d{10,11}$' then raise exception 'WhatsApp inválido: coloque o DDD e o número.'; end if;
   if cardinality(v_fun) = 0 then raise exception 'Escolha pelo menos uma função.'; end if;
-  select id into v_id from public.candidatos where whatsapp = v_zap;
-  if v_id is null and (select count(*) from public.candidatos where criado_em > now() - interval '1 day') >= 60 then
+  if (select count(*) from public.candidatos where criado_em > now() - interval '1 day') >= 60 then
     raise exception 'Recebemos muitos cadastros hoje. Tente amanhã ou chame no WhatsApp.';
-  end if;
-  if v_id is not null then
-    update public.candidatos set nome = left(trim(p_nome), 120), cidade = left(nullif(trim(p_cidade), ''), 120), funcoes = v_fun, experiencia = left(nullif(trim(p_experiencia), ''), 60),
-      nrs = v_nrs, disponibilidade = left(nullif(trim(p_disponibilidade), ''), 60), obs = left(nullif(trim(p_obs), ''), 1000),
-      situacao = case when situacao = 'descartado' then 'novo' else situacao end, atualizado_em = now()
-    where id = v_id;
-    return 'atualizado';
   end if;
   insert into public.candidatos (nome, whatsapp, cidade, funcoes, experiencia, nrs, disponibilidade, obs)
   values (left(trim(p_nome), 120), v_zap, left(nullif(trim(p_cidade), ''), 120), v_fun, left(nullif(trim(p_experiencia), ''), 60), v_nrs,

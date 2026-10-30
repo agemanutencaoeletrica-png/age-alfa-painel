@@ -2214,7 +2214,8 @@
       return rc && rc.arquivos && rc.arquivos.some(A.ehZip) ? A.abrirZips(rc.arquivos).then(function (fs) { rc.arquivos = fs; return rc; }).catch(function (e) { A.avisar(A.msgErro(e), "erro"); return rc; }) : rc;
     }).then(function (rc) {
       if (!rc || (!rc.texto && !rc.arquivos.length)) return;
-      var j = A.janela((rc.texto ? '<div class="cartao peq" style="white-space:pre-wrap;max-height:220px;overflow:auto">' + esc(rc.texto.slice(0, 3000)) + "</div>" : "") +
+      var j = A.janela('<div class="aviso peq" style="margin-top:0">⚠ Só continue se foi <b>você</b> que acabou de compartilhar isto com o app. Se esta janela abriu sozinha (depois de abrir algum site), feche sem escolher nada.</div>' +
+        (rc.texto ? '<div class="cartao peq" style="white-space:pre-wrap;max-height:220px;overflow:auto">' + esc(rc.texto.slice(0, 3000)) + "</div>" : "") +
         (rc.arquivos.length ? '<p class="peq">📎 ' + rc.arquivos.length + " arquivo" + (rc.arquivos.length > 1 ? "s" : "") + " recebido" + (rc.arquivos.length > 1 ? "s" : "") +
           ". Escolha o que é. Foto de serviço: compartilhe pelo app do funcionário (<b>AGE Ponto</b>).</p>" : "") +
         '<div class="acoes">' +
@@ -4223,7 +4224,7 @@
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(m);
       var todos = [];
       if (origem) {
-        L.circleMarker([origem.lat, origem.lng], { radius: 8, color: "#111", fillColor: "#fff", fillOpacity: 1, weight: 3 }).addTo(m).bindTooltip("Saída: " + origem.nome);
+        L.circleMarker([origem.lat, origem.lng], { radius: 8, color: "#111", fillColor: "#fff", fillOpacity: 1, weight: 3 }).addTo(m).bindTooltip("Saída: " + esc(origem.nome));
         todos.push([origem.lat, origem.lng]);
       }
       dias.forEach(function (d, i) {
@@ -4401,7 +4402,11 @@
       '<div class="filtros">' + [["abertos", "Em aberto"], ["novo", "🆕 Novos"], ["entrevista", "📅 Entrevista"], ["contratado", "✅ Contratados"], ["descartado", "🚫 Não serve"], ["todos", "Todos"]].map(function (f) {
         return '<button class="peq ' + (filtroCand === f[0] ? "prim" : "") + '" data-cdf="' + f[0] + '">' + f[1] + "</button>"; }).join("") + "</div>" +
       (ls.length ? ls.map(function (x) {
-        return '<div class="cartao"><div class="linha"><h3 style="margin:0">' + esc(x.nome) + "</h3>" + (x.funcoes || []).map(function (f) { return '<span class="selo">' + esc(FUNCOES_CAND[f] || f) + "</span>"; }).join("") +
+        // o site grava sempre um envio novo (quem não fez login não altera cadastro): junta os do mesmo número
+        var mesmos = S.cand.filter(function (y) { return y.whatsapp === x.whatsapp; }).sort(function (a, b) { return String(a.criado_em).localeCompare(String(b.criado_em)); });
+        var outro = mesmos.length > 1 ? (mesmos[0].id === x.id ? '<span class="selo atencao">📨 ' + mesmos.length + " envios deste número</span>" :
+          '<span class="selo atencao">📨 reenvio · 1º envio em ' + esc(A.dataSimples(String(mesmos[0].criado_em).slice(0, 10))) + " (" + esc(SIT_CAND[mesmos[0].situacao] || mesmos[0].situacao) + ")</span>") : "";
+        return '<div class="cartao"><div class="linha"><h3 style="margin:0">' + esc(x.nome) + "</h3>" + outro + (x.funcoes || []).map(function (f) { return '<span class="selo">' + esc(FUNCOES_CAND[f] || f) + "</span>"; }).join("") +
           (x.nrs || []).map(function (n) { return '<span class="selo bom">' + esc(n.toUpperCase().replace("NR", "NR-")) + "</span>"; }).join("") + '<span class="dir peq mudo">' + esc(A.dataSimples(String(x.criado_em).slice(0, 10))) + "</span></div>" +
           '<div class="peq mudo">' + esc([x.cidade, x.experiencia && "experiência: " + x.experiencia, x.disponibilidade].filter(Boolean).join(" · ")) + "</div>" +
           (x.obs ? '<div class="peq">' + esc(x.obs) + "</div>" : "") + (x.notas ? '<div class="peq">📝 ' + esc(x.notas) + "</div>" : "") +

@@ -123,7 +123,9 @@ O painel funciona no celular igual ao notebook. No **Chrome do celular** abra
 menu ⋮ → **Instalar app** (ou *Adicionar à tela inicial*). Para **outra pessoa** também mandar serviços, crie um login
 para ela: Supabase → **Authentication → Users → Add user → Create new user** (e-mail dela, senha, *Auto Confirm User*) e,
 no **SQL Editor**, rode `insert into public.admins (email) values ('email-dela@...') on conflict do nothing;`.
-Ela passa a ver tudo o que você vê (inclusive orçamentos). Para tirar o acesso: apague o usuário em Authentication → Users.
+Ela passa a ver tudo o que você vê (inclusive orçamentos). Para tirar o acesso: no **SQL Editor** rode
+`delete from public.admins where lower(email) = lower('email-dela@...');` (corta na hora) e apague o usuário em Authentication → Users.
+Só vale como admin o login com e-mail **confirmado** (por isso o *Auto Confirm User*).
 
 ### Lojas e rotas (lojas próximas no mesmo dia)
 1. **Rode de novo o `supabase.sql`** (SQL Editor → colar tudo → Run). Ele cria as tabelas de lojas e rotas sem apagar nada.
