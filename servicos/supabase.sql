@@ -461,6 +461,23 @@ create table if not exists public.precos_historico (
 create unique index if not exists precos_hist_unico on public.precos_historico (chave, loja, data, valor);
 create index if not exists precos_hist_chave_idx on public.precos_historico (chave, data desc);
 
+-- 🏪 Orçamentos das lojas: cada orçamento lançado fica separado (loja, nº, data, validade, itens e o arquivo) para conferir os preços
+create table if not exists public.orcamentos_loja (
+  id         uuid primary key default gen_random_uuid(),
+  loja       text not null default '',
+  cnpj       text,
+  numero     text,
+  data       date not null default current_date,
+  validade   date,
+  area       text,
+  total      numeric(12, 2),
+  itens      jsonb not null default '[]'::jsonb,   -- [{descricao, qtd, un, unit, valor, novo}] (novo = não tinha no acervo)
+  arquivo    text,                                 -- PDF ou foto no Storage (bucket fotos)
+  obs        text,
+  criado_em  timestamptz not null default now()
+);
+create index if not exists orcamentos_loja_data_idx on public.orcamentos_loja (data desc);
+
 -- 👷 Candidatos a vaga (formulário "Trabalhe com a gente" do site): o site só envia pela função enviar_candidatura; só você lê
 create table if not exists public.candidatos (
   id              uuid primary key default gen_random_uuid(),
@@ -543,7 +560,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'candidatos', 'modelos_laudo'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

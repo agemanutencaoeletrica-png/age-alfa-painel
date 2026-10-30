@@ -34,7 +34,7 @@
     var grupos = []; ls.forEach(function (x) { var g = x.grupo || "Outros"; if (grupos.indexOf(g) < 0) grupos.push(g); });
     if (filtro.grupo && grupos.indexOf(filtro.grupo) < 0) filtro.grupo = "";
     var faltam = ls.filter(function (x) { return preco(x) === null; }).length;
-    c.innerHTML = '<div class="cab-secao"><h2>💲 Tabela de preços</h2><span><button class="prim" id="pc-loja">📥 Lançar orçamento da loja</button> <button id="pc-novo">➕ Novo serviço</button>' +
+    c.innerHTML = '<div class="cab-secao"><h2>💲 Tabela de preços</h2><span><button class="prim" id="pc-loja">🏪 Lançar orçamento da loja</button> <button id="pc-novo">➕ Novo serviço</button>' +
       (base ? ' <button id="pc-base">📥 Carregar ' + (filtro.cat === "pintura" ? "tabela ABRAPP 2026" : "lista de serviços elétricos") + "</button>" : "") +
       (baseMat ? ' <button id="pc-base-mat">📥 Carregar lista de materiais (' + baseMat.itens.length + ")</button>" : "") +
       ' <button id="pc-ch">📊 O que os chamados pedem</button></span></div>' +
@@ -58,7 +58,7 @@
     if ($("#pc-sem")) $("#pc-sem").onchange = function () { filtro.semPreco = this.checked; listar(); };
     var mudou = function () { ver(c, P); };
     $("#pc-novo").onclick = function () { editar(null, mudou); };
-    $("#pc-loja").onclick = function () { lancarLoja(mudou); };
+    $("#pc-loja").onclick = function () { location.hash = "orclojas"; };   // área própria: 🏪 Orçamentos das lojas
     if ($("#pc-base")) $("#pc-base").onclick = function () { carregarBase(filtro.cat, this, mudou); };
     if ($("#pc-base-mat")) $("#pc-base-mat").onclick = function () { carregarBase(filtro.cat, this, mudou, window.AGE_MATERIAIS_BASE); };
     $("#pc-ch").onclick = function () { verChamados(filtro.cat, mudou); };
@@ -363,67 +363,6 @@
     return (F ? F.consultar(d.cnpj) : Promise.resolve(null)).then(function (c) { return (c && c.nome) || "CNPJ " + d.cnpj; }, function () { return "CNPJ " + d.cnpj; });
   }
 
-  // 📥 lançar orçamento (ou nota) da loja direto no acervo: PDF e XML salvam sozinhos; foto passa antes pela conferência
-  function lancarLoja(mudou) {
-    var CP = window.AGE_COMPRAS;
-    if (!CP) { A.avisar("O leitor de notas não carregou. Recarregue a página.", "erro"); return; }
-    var fechou = false;
-    var j = A.janela('<p class="peq mudo" style="margin-top:0">Escolha o <b>orçamento da loja</b> (PDF, foto ou o XML da nota). Pode escolher vários de uma vez. ' +
-      "Os materiais que ainda não estão no acervo entram, os que já estão ficam com o <b>preço mais novo</b> e todo preço fica no <b>📈 histórico</b> (loja e data).</p>" +
-      '<div class="acoes" style="margin-top:0"><button class="prim" id="ll-arq-b">📄 Escolher arquivo(s)</button></div>' +
-      '<input type="file" id="ll-arq" multiple accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml" class="oculto"><div id="ll-res"></div>',
-      { titulo: "📥 Lançar orçamento da loja", larga: true, aoFechar: function () { fechou = true; mudou(); } });
-    $("#ll-arq-b", j.el).onclick = function () { $("#ll-arq", j.el).value = ""; $("#ll-arq", j.el).click(); };
-    $("#ll-arq", j.el).onchange = function () { var fs = Array.prototype.slice.call(this.files || []); if (fs.length) lancarArquivos(fs, j.el); };
-    function lancarArquivos(fs, el) {
-      var res = $("#ll-res", el);
-      fs.reduce(function (pr, f) {
-        return pr.then(function () {
-          var cx = document.createElement("div"); cx.className = "cartao"; cx.style.marginTop = "8px"; res.insertBefore(cx, res.firstChild);
-          cx.innerHTML = '<span class="carregando"></span> Lendo ' + esc(f.name) + "...";
-          return CP.lerUmaNota(f, function (t) { cx.textContent = t; }).then(function (rl) {
-            var d = rl.dados || {}, itens = (d.itens || []).map(function (x) {
-              var qtd = Number(x.qtd) || 1;
-              return { descricao: String(x.item || "").replace(/\s+/g, " ").trim(), un: String(x.un || "un").toLowerCase().replace(/\.$/, ""), qtd: qtd, unit: Number(x.unit) || (Number(x.valor) > 0 ? Math.round(x.valor / qtd * 100) / 100 : 0), ok: true };
-            }).filter(function (x) { return x.descricao; });
-            if (!itens.length) { cx.innerHTML = "<b>" + esc(f.name) + '</b>: <span class="selo critico">não achei materiais com preço</span> <span class="peq mudo">Tente o PDF original ou o XML da nota.</span>'; return; }
-            var foto = /^image\//.test(f.type);
-            return nomeLoja(P.S, d).then(function (loja) {
-              var info = { loja: loja, cnpj: d.cnpj || null, data: d.data, numero: numeroOrc(rl.bruto) || d.numero || null, origem: rl.bruto && /<infNFe/i.test(rl.bruto) ? "nota" : "orcamento_loja" };
-              var cat = CP.areaPelosItens(itens.map(function (x) { return { item: x.descricao }; })) || filtro.cat;
-              var ja = info.numero && (P.S.precosHist || []).filter(function (x) { return x.documento === info.numero && x.loja === loja; })[0];
-              var cab = "<b>" + esc(loja || "Loja não identificada") + "</b>" + (info.numero ? " · orçamento nº " + esc(info.numero) : "") + (info.data ? " · " + esc(A.dataSimples(info.data)) : "") +
-                " · " + itens.length + " material(is)" + (d.valor ? " · total " + A.dinheiro(d.valor) : "") +
-                (ja ? '<div class="aviso peq" style="margin-top:6px">Este orçamento já tinha sido lançado em ' + esc(A.dataSimples(String(ja.criado_em || ja.data).slice(0, 10))) + ": nada se repete no histórico.</div>" : "");
-              function salvarAgora(lista, c2) {
-                cx.innerHTML = cab + '<div class="peq" style="margin-top:6px"><span class="carregando"></span> Salvando no acervo...</div>';
-                return guardarDaLoja(P, lista, c2, info).then(function (r) {
-                  var ig = r.linhas.length - r.novos - r.atualizados;
-                  cx.innerHTML = cab + '<div class="aviso ok" style="margin-top:6px">✅ Salvo em ' + CATS[c2] + ": <b>" + r.novos + "</b> novo(s) no acervo, <b>" + r.atualizados + "</b> com preço atualizado" + (ig ? ", " + ig + " sem mudança" : "") + "." +
-                    (r.semHist ? "<br>⚠ O 📈 histórico não foi gravado: rode o <b>supabase.sql</b> no Supabase (tabela precos_historico)." : " Preços guardados no 📈 histórico.") + "</div>" + htmlResultado(r);
-                  A.avisar("📥 " + (loja || "Orçamento") + ": " + r.novos + " novo(s), " + r.atualizados + " atualizado(s)", "ok");
-                }).catch(function (e) { cx.innerHTML = cab + '<div class="aviso erro">Não salvou: ' + esc(A.msgErro(e)) + "</div>"; });
-              }
-              if (!foto) return salvarAgora(itens, cat);
-              // foto: a leitura pode errar — confere antes de salvar
-              cx.innerHTML = cab + '<p class="peq mudo" style="margin:4px 0">Foto: confira o nome e o preço (a leitura pode errar) e desmarque o que não vai.</p>' +
-                '<div class="tabela-caixa"><table><thead><tr><th></th><th>Material</th><th>Un</th><th class="num">Preço (un.)</th></tr></thead><tbody>' + itens.map(function (x, n) {
-                  return '<tr data-ll="' + n + '"><td><input type="checkbox" class="ll-ok" checked aria-label="Usar"></td><td><input class="ll-desc" maxlength="300" style="min-width:180px"></td><td>' + esc(x.un) +
-                    '</td><td><input class="ll-unit" inputmode="decimal" style="width:100px"></td></tr>';
-                }).join("") + "</tbody></table></div>" +
-                '<div class="linha"><select class="ll-cat">' + Object.keys(CATS).map(function (k) { return '<option value="' + k + '"' + (k === cat ? " selected" : "") + ">" + CATS[k] + "</option>"; }).join("") + '</select><button class="prim ll-salvar">Salvar no acervo</button></div>';
-              $$("tr[data-ll]", cx).forEach(function (tr) {
-                var x = itens[Number(tr.dataset.ll)];
-                $(".ll-desc", tr).value = x.descricao; $(".ll-unit", tr).value = x.unit ? A.numero(x.unit, 2) : "";
-                tr.oninput = tr.onchange = function () { x.ok = $(".ll-ok", tr).checked; x.descricao = $(".ll-desc", tr).value.trim(); x.unit = A.lerNumero($(".ll-unit", tr).value); };
-              });
-              $(".ll-salvar", cx).onclick = function () { salvarAgora(itens.filter(function (x) { return x.ok && x.descricao; }), $(".ll-cat", cx).value); };
-            });
-          }).catch(function (e) { cx.innerHTML = "<b>" + esc(f.name) + '</b>: <span class="selo critico">não consegui ler</span> ' + esc(A.msgErro(e)); });
-        });
-      }, Promise.resolve()).then(function () { if (!fechou) $("#ll-arq-b", el).textContent = "📄 Lançar outro"; });
-    }
-  }
   function htmlHistorico(S, desc) {
     var h = historico(S, desc);
     if (!h.length) return "";

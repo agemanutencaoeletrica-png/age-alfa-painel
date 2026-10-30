@@ -11,7 +11,7 @@
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
   // corretor dos itens do orçamento: palavras do dia a dia de elétrica e pintura escritas sem acento ou com erro comum
   var CORRECOES = {
     eletrica: "elétrica", eletricas: "elétricas", eletrico: "elétrico", eletricos: "elétricos", eletricista: "eletricista",
@@ -501,7 +501,8 @@
       q(sb.from("precos").select("*").order("descricao")).catch(function (e) { S.erroPrecos = A.msgErro(e); return null; }),
       q(sb.from("candidatos").select("*").order("criado_em", { ascending: false }).limit(500)).catch(function () { return null; }),
       q(sb.from("modelos_laudo").select("*").order("titulo")).catch(function () { return null; }),
-      q(sb.from("precos_historico").select("*").order("data", { ascending: false }).limit(10000)).catch(function () { return null; })
+      q(sb.from("precos_historico").select("*").order("data", { ascending: false }).limit(10000)).catch(function () { return null; }),
+      q(sb.from("orcamentos_loja").select("*").order("data", { ascending: false }).limit(2000)).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -518,6 +519,7 @@
       S.semModLaudo = !r[17]; S.modelosLaudo = r[17] || lerModelosLocal().map(function (m) { m.local = true; return m; });
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
       S.semHist = !r[18]; S.precosHist = r[18] || [];   // 📈 histórico de preços das lojas
+      S.semOrcLoja = !r[19]; S.orcLoja = r[19] || [];   // 🏪 orçamentos das lojas (cada um separado)
     });
   }
 
@@ -565,7 +567,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, orclojas: function (c2) { window.AGE_ORCLOJA.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -3080,7 +3082,7 @@
           '<input id="ln-busca" type="search" placeholder="🔍 Buscar loja ou material" style="margin-top:6px"><div id="ln-notas" style="max-height:30vh;overflow:auto;margin-top:6px"></div></details>' : "") +
         '<div id="ln-status" class="peq" style="margin-top:8px"></div><div id="ln-prev"></div>',
         { titulo: "📷 Ler nota ou orçamento da loja", larga: true });
-      var lidos = [], info = {};
+      var lidos = [], info = {}, arquivo = null;   // arquivo lido (orçamento da loja): fica guardado em 🏪 Orçamentos das lojas
       function status(t, tipo) { $("#ln-status", jn.el).innerHTML = t ? '<span style="color:var(--' + (tipo || "texto") + ')">' + esc(t) + "</span>" : ""; }
       var UN_NOTA = { und: "un", unid: "un", u: "un", pc: "pç", pca: "pç", peca: "pç", "peça": "pç", mt: "m", mts: "m", metro: "m", m2: "m²", rl: "rolo", rolos: "rolo", gl: "galão", galao: "galão", br: "barra", brs: "barra" };
       function mostrar(itens, inf) {
@@ -3123,18 +3125,23 @@
           if (!M.categoria && cat2) { M.categoria = cat2; $("#eo2-cat", el).value = cat2; }
           jn.fechar(); desenharItens(); guardarRasc(); if (usar.length > 1) organizarItens();
           A.avisar(usar.length + " material(is) adicionado(s) ao orçamento" + (mg ? " com " + A.numero(mg) + "% de acréscimo" : "") + ".", "ok");
-          guardarPrecosLoja(usar, cat2, info);
+          // lido de um arquivo: o orçamento da loja (com os itens marcados) fica guardado separado e o acervo é atualizado
+          if (arquivo && window.AGE_ORCLOJA && (cat2 === "eletrica" || cat2 === "pintura")) guardarOrcLoja(usar, cat2);
+          else guardarPrecosLoja(usar, cat2, info);
         };
       }
       $("#ln-foto", jn.el).onclick = function () { $("#ln-arq", jn.el).value = ""; $("#ln-arq", jn.el).click(); };
       $("#ln-arq", jn.el).onchange = function () {
         var f = this.files[0]; if (!f) return;
+        arquivo = null;
         $("#ln-prev", jn.el).innerHTML = "";
         status("🔎 Lendo " + f.name + "... (foto pode levar até 1 minuto)");
         CP.lerUmaNota(f, function (t) { status(t); }).then(function (r) {
           var d = (r && r.dados) || {}, PR = window.AGE_PRECOS;
           return (PR ? PR.nomeLoja(S, d) : Promise.resolve(d.fornecedor)).then(function (loja) {
-            mostrar(d.itens, { loja: loja, cnpj: d.cnpj, data: d.data, numero: PR ? PR.numeroOrc(r.bruto) || d.numero : d.numero });
+            arquivo = f;
+            mostrar(d.itens, { loja: loja, cnpj: d.cnpj, data: d.data, numero: PR ? PR.numeroOrc(r.bruto) || d.numero : d.numero, total: d.valor,
+              validade: window.AGE_ORCLOJA ? window.AGE_ORCLOJA.validadeDoTexto(r.bruto) : null, origem: r.bruto && /<infNFe/i.test(r.bruto) ? "nota" : "orcamento_loja" });
           });
         }).catch(function (e) { status("Não consegui ler o arquivo: " + A.msgErro(e), "critico"); });
       };
@@ -3155,6 +3162,16 @@
             c.itens.length + " material(is) · " + A.dinheiro(Number(c.valor) || 0) + "</button>";
         }).join("") || '<div class="vazio">Nada com essa busca.</div>';
         $$("[data-lnota]", jn.el).forEach(function (bt) { bt.onclick = function () { usarNota(porId(S.compras, bt.dataset.lnota)); }; });
+      }
+      function guardarOrcLoja(usar, cat2) {
+        var OL = window.AGE_ORCLOJA, o = Object.assign({}, info, { area: cat2, data: String(info.data || A.isoLocal(new Date())).slice(0, 10) });
+        var ja = OL.jaLancado(P, o);
+        OL.guardar(P, o, usar.map(function (x) { return { descricao: x.descricao, qtd: Number(x.qtd) || 1, un: x.un, unit: Number(x.unit) || 0, valor: Math.round((Number(x.qtd) || 1) * (Number(x.unit) || 0) * 100) / 100 }; }), arquivo)
+          .then(function (r) {
+            listaPrecos();
+            A.avisar("💲 Acervo: " + (r.novos || r.atualizados ? r.novos + " material(is) novo(s), " + r.atualizados + " com preço atualizado" : "os materiais já estavam com este preço") +
+              (ja ? " · este orçamento da loja já estava em 🏪 Orçamentos das lojas" : r.reg ? " · orçamento da loja guardado em 🏪 Orçamentos das lojas" : "") + ".", "ok");
+          }).catch(function (e) { A.avisar("Os materiais entraram no orçamento, mas o acervo não salvou: " + A.msgErro(e), "erro"); });
       }
       function usarNota(c) { if (c) mostrar(c.itens, { loja: c.fornecedor, cnpj: c.cnpj || null, data: c.comprado_em, area: c.area, origem: "nota" }); }
       if (notas.length) { $("#ln-busca", jn.el).oninput = desenharNotas; desenharNotas(); }
