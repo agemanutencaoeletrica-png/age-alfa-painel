@@ -16,8 +16,31 @@
   function lista() { return (P && P.S.orcLoja) || []; }
   function hoje() { return A.isoLocal(new Date()); }
   function mesmaLoja(a, b) { return (dig(a.cnpj) && dig(a.cnpj) === dig(b.cnpj)) || (!!a.loja && semAcento(a.loja) === semAcento(b.loja)); }
-  // o mesmo orçamento já lançado (mesma loja e nº)
-  function jaLancado(d) { return d.numero ? lista().filter(function (o) { return o.numero === d.numero && mesmaLoja(o, d); })[0] || null : null; }
+  // o mesmo orçamento (ou nota) já lançado: mesmo arquivo, mesma chave da NF-e, mesma loja + nº ou, sem nº, mesma loja, data, total e itens
+  function mesmosItens(a, b) {
+    var k = function (o) { return (o.itens || []).map(function (i) { return chaveMat(i.descricao) + "|" + Math.round((Number(i.unit) || 0) * 100); }).sort().join(";"); };
+    return (a.itens || []).length === (b.itens || []).length && k(a) === k(b);
+  }
+  function jaLancado(d) {
+    return lista().filter(function (o) {
+      if (d.arquivo_hash && o.arquivo_hash === d.arquivo_hash) return true;
+      if (d.chave && o.chave === d.chave) return true;
+      if (!mesmaLoja(o, d)) return false;
+      if (d.numero && o.numero) return o.numero === d.numero;
+      return String(o.data).slice(0, 10) === String(d.data).slice(0, 10) && Math.abs((Number(o.total) || 0) - (Number(d.total) || 0)) < 0.01 && mesmosItens(o, d);
+    })[0] || null;
+  }
+  // impressão digital do arquivo (SHA-256): o mesmo arquivo mandado de novo é reconhecido antes de ler
+  function impressao(f) {
+    if (!f || !window.crypto || !crypto.subtle || !f.arrayBuffer) return Promise.resolve(null);
+    return f.arrayBuffer().then(function (b) { return crypto.subtle.digest("SHA-256", b); })
+      .then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return ("0" + x.toString(16)).slice(-2); }).join(""); })
+      .catch(function () { return null; });
+  }
+  function htmlJa(o, ja) {
+    return "<b>" + esc(o.loja || ja.loja || "Orçamento") + "</b>" + (ja.numero ? " · nº " + esc(ja.numero) : "") + ': <span class="selo critico">⛔ repetido: já lançado em ' +
+      esc(A.dataSimples(String(ja.criado_em || ja.data).slice(0, 10))) + "</span> " + '<span class="peq mudo">Não foi guardado de novo.</span> <button class="peq" data-abrir>Abrir o que já está</button>';
+  }
   function validadeDoTexto(t) { var m = /validade\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i.exec(String(t || "")); return m ? m[3] + "-" + m[2] + "-" + m[1] : null; }
   function vencido(o) { return o.validade && o.validade < hoje(); }
   function copiar(t, msg) {
@@ -69,7 +92,14 @@
       return pr.then(function () {
         var cx = document.createElement("div"); cx.className = "cartao"; res.insertBefore(cx, res.firstChild);
         cx.innerHTML = '<span class="carregando"></span> Lendo ' + esc(f.name) + "...";
-        return CP.lerUmaNota(f, function (t) { cx.textContent = t; }).then(function (rl) {
+        var hash = null;
+        return impressao(f).then(function (h) {
+          hash = h;
+          var jaArq = h && jaLancado({ arquivo_hash: h });
+          if (jaArq) { cx.innerHTML = htmlJa({}, jaArq); $("[data-abrir]", cx).onclick = function () { abrir(jaArq); }; return null; }
+          return CP.lerUmaNota(f, function (t) { cx.textContent = t; });
+        }).then(function (rl) {
+          if (!rl) return;
           var d = rl.dados || {};
           var itens = (d.itens || []).map(function (x) {
             var qtd = Number(x.qtd) || 1, unit = Number(x.unit) || (Number(x.valor) > 0 ? Math.round(x.valor / qtd * 100) / 100 : 0);
@@ -79,15 +109,11 @@
           if (!itens.length) { cx.innerHTML = "<b>" + esc(f.name) + '</b>: <span class="selo critico">não achei materiais com preço</span> <span class="peq mudo">Tente o PDF original ou o XML da nota.</span>'; return; }
           return PR.nomeLoja(P.S, d).then(function (loja) {
             var o = { loja: loja, cnpj: d.cnpj || null, numero: PR.numeroOrc(rl.bruto) || d.numero || null, data: String(d.data || hoje()).slice(0, 10), validade: validadeDoTexto(rl.bruto),
+              arquivo_hash: hash, chave: d.chave || null, itens: itens,
               total: d.valor || null, origem: rl.bruto && /<infNFe/i.test(rl.bruto) ? "nota" : "orcamento_loja",
               area: CP.areaPelosItens(itens.map(function (x) { return { item: x.descricao }; })) || "eletrica" };
             var ja = jaLancado(o);
-            if (ja) {
-              cx.innerHTML = "<b>" + esc(o.loja) + "</b> · nº " + esc(o.numero) + ': <span class="selo atencao">já lançado em ' + esc(A.dataSimples(String(ja.criado_em || ja.data).slice(0, 10))) + "</span> " +
-                '<button class="peq" data-abrir>Abrir</button>';
-              $("[data-abrir]", cx).onclick = function () { abrir(ja); };
-              return;
-            }
+            if (ja) { cx.innerHTML = htmlJa(o, ja); $("[data-abrir]", cx).onclick = function () { abrir(ja); }; return; }
             if (!/^image\//.test(f.type)) return salvar(o, itens, f, cx);
             // foto: a leitura pode errar — confere antes de salvar
             conferir(o, itens, f, cx);
@@ -138,6 +164,7 @@
     var PR = window.AGE_PRECOS;
     cx.innerHTML = cabecalho(o, itens.length) + '<div class="peq" style="margin-top:6px"><span class="carregando"></span> Salvando...</div>';
     return guardar(o, itens, f).then(function (r) {
+      if (r.repetido) { cx.innerHTML = htmlJa(o, r.repetido); $("[data-abrir]", cx).onclick = function () { abrir(r.repetido); }; return; }
       var nv = r.reg ? novos(r.reg) : r.linhas.filter(function (l) { return l.situacao === "novo"; });
       cx.innerHTML = cabecalho(o, itens.length) +
         '<div class="aviso ok" style="margin-top:6px">✅ ' + (r.reg ? "Orçamento guardado. " : "") + "Acervo: <b>" + r.novos + "</b> material(is) novo(s), <b>" + r.atualizados + "</b> com preço atualizado." +
@@ -155,22 +182,43 @@
   // devolve o resultado do acervo (guardarDaLoja) + reg (o orçamento gravado; null sem a tabela ou se já estava lançado)
   function guardar(o, itens, f) {
     var PR = window.AGE_PRECOS, S = P.S;
-    var area = o.area === "pintura" ? "pintura" : "eletrica", ja = jaLancado(o);
-    return PR.guardarDaLoja(P, itens, area, { loja: o.loja, cnpj: o.cnpj, data: o.data, numero: o.numero, origem: o.origem }).then(function (r) {
-      if (ja || S.semOrcLoja) { r.reg = ja || null; return r; }
-      var sit = {}; r.linhas.forEach(function (l) { sit[chaveMat(l.descricao)] = l.situacao; });
-      var reg = { loja: String(o.loja || "").slice(0, 120), cnpj: o.cnpj || null, numero: o.numero || null, data: o.data || hoje(), validade: o.validade || null, area: area,
-        total: o.total ? Math.round(Number(o.total) * 100) / 100 : null,
-        itens: itens.map(function (x) {
-          return { descricao: x.descricao, qtd: Number(x.qtd) || 1, un: x.un || "un", unit: Math.round((Number(x.unit) || 0) * 100) / 100,
-            valor: Math.round((Number(x.valor) || (Number(x.qtd) || 1) * (Number(x.unit) || 0)) * 100) / 100, novo: sit[chaveMat(x.descricao)] === "novo" };
-        }) };
-      return (f ? subir(f, reg.data) : Promise.resolve(null)).then(function (cam) {
-        reg.arquivo = cam;
-        return P.q(P.sb.from("orcamentos_loja").insert(reg).select().single()).then(function (n) {
-          S.orcLoja = [n].concat(lista()).sort(function (a, b) { return String(b.data).localeCompare(String(a.data)) || String(b.criado_em).localeCompare(String(a.criado_em)); });
-          r.reg = n; return r;
-        }, function () { S.semOrcLoja = true; r.reg = null; return r; });
+    var area = o.area === "pintura" ? "pintura" : "eletrica";
+    return (o.arquivo_hash || !f ? Promise.resolve(o.arquivo_hash || null) : impressao(f)).then(function (h) {
+      o.arquivo_hash = h;
+      // repetido: não grava de novo (nem mexe no acervo)
+      var ja = jaLancado(Object.assign({}, o, { itens: itens }));
+      if (ja) return { linhas: [], novos: 0, atualizados: 0, repetido: ja, reg: ja };
+      return PR.guardarDaLoja(P, itens, area, { loja: o.loja, cnpj: o.cnpj, data: o.data, numero: o.numero, origem: o.origem }).then(function (r) {
+        if (S.semOrcLoja) { r.reg = null; return r; }
+        var sit = {}; r.linhas.forEach(function (l) { sit[chaveMat(l.descricao)] = l.situacao; });
+        var reg = { loja: String(o.loja || "").slice(0, 120), cnpj: o.cnpj || null, numero: o.numero || null, data: o.data || hoje(), validade: o.validade || null, area: area,
+          total: o.total ? Math.round(Number(o.total) * 100) / 100 : null, arquivo_hash: o.arquivo_hash || null, chave: o.chave || null,
+          itens: itens.map(function (x) {
+            return { descricao: x.descricao, qtd: Number(x.qtd) || 1, un: x.un || "un", unit: Math.round((Number(x.unit) || 0) * 100) / 100,
+              valor: Math.round((Number(x.valor) || (Number(x.qtd) || 1) * (Number(x.unit) || 0)) * 100) / 100, novo: sit[chaveMat(x.descricao)] === "novo" };
+          }) };
+        function gravar(d) { return P.q(P.sb.from("orcamentos_loja").insert(d).select().single()); }
+        return (f ? subir(f, reg.data) : Promise.resolve(null)).then(function (cam) {
+          reg.arquivo = cam;
+          return gravar(reg).catch(function (e) {
+            var m = A.msgErro(e) + " " + (e && e.message) + " " + (e && e.code);
+            // o banco recusou por ser repetido (outro aparelho lançou antes): busca o que já está
+            if (/23505|duplicate|duplicad/i.test(m)) {
+              if (cam) P.q(P.sb.storage.from("fotos").remove([cam])).catch(function () { /* fica órfão */ });
+              return P.q(P.sb.from("orcamentos_loja").select("*").order("data", { ascending: false }).limit(2000)).then(function (ls) {
+                S.orcLoja = ls; var ja2 = jaLancado(reg) || { loja: reg.loja, numero: reg.numero, data: reg.data };
+                r.repetido = ja2; r.reg = ja2; return null;
+              });
+            }
+            // banco ainda sem as colunas novas (rode o supabase.sql): grava sem elas
+            if (/arquivo_hash|chave/.test(m)) { delete reg.arquivo_hash; delete reg.chave; A.avisar("Rode de novo o supabase.sql no Supabase: falta a trava de orçamento repetido no banco.", "erro"); return gravar(reg); }
+            throw e;
+          }).then(function (n) {
+            if (!n) return r;
+            S.orcLoja = [n].concat(lista()).sort(function (a, b) { return String(b.data).localeCompare(String(a.data)) || String(b.criado_em).localeCompare(String(a.criado_em)); });
+            r.reg = n; return r;
+          }, function () { S.semOrcLoja = true; r.reg = null; return r; });
+        });
       });
     });
   }

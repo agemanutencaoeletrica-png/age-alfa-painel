@@ -477,6 +477,13 @@ create table if not exists public.orcamentos_loja (
   criado_em  timestamptz not null default now()
 );
 create index if not exists orcamentos_loja_data_idx on public.orcamentos_loja (data desc);
+-- não aceita o mesmo orçamento duas vezes: mesmo arquivo (impressão digital), mesma chave da NF-e ou mesma loja + nº
+alter table public.orcamentos_loja add column if not exists arquivo_hash text;   -- SHA-256 do arquivo
+alter table public.orcamentos_loja add column if not exists chave text;          -- chave de 44 dígitos (XML da nota)
+create unique index if not exists orcamentos_loja_hash_idx on public.orcamentos_loja (arquivo_hash) where arquivo_hash is not null;
+create unique index if not exists orcamentos_loja_chave_idx on public.orcamentos_loja (chave) where chave is not null;
+create unique index if not exists orcamentos_loja_num_idx on public.orcamentos_loja
+  ((coalesce(nullif(regexp_replace(coalesce(cnpj, ''), '\D', '', 'g'), ''), lower(trim(loja)))), numero) where numero is not null;
 
 -- 👷 Candidatos a vaga (formulário "Trabalhe com a gente" do site): o site só envia pela função enviar_candidatura; só você lê
 create table if not exists public.candidatos (
