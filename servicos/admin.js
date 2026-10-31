@@ -12,41 +12,9 @@
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
   var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["propostas", "📑 Propostas prontas"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
-  // corretor dos itens do orçamento: palavras do dia a dia de elétrica e pintura escritas sem acento ou com erro comum
-  var CORRECOES = {
-    eletrica: "elétrica", eletricas: "elétricas", eletrico: "elétrico", eletricos: "elétricos", eletricista: "eletricista",
-    bifasica: "bifásica", bifasico: "bifásico", trifasica: "trifásica", trifasico: "trifásico", monofasica: "monofásica", monofasico: "monofásico",
-    distribuicao: "distribuição", distribicao: "distribuição", distribiçao: "distribuição", distribição: "distribuição", distribuiçao: "distribuição",
-    instalacao: "instalação", instalaçao: "instalação", istalacao: "instalação", istalação: "instalação", istalarção: "instalação", instalarção: "instalação",
-    instalacoes: "instalações", istalar: "instalar", adequarçao: "adequação", adequarção: "adequação", adequaçao: "adequação", adequacao: "adequação", espostos: "expostos", esposto: "exposto", espostas: "expostas", indentificar: "identificar", indentificacao: "identificação", identificacao: "identificação", vistoria: "vistoria", instalacão: "instalação", lancar: "lançar", lancamento: "lançamento", manutencao: "manutenção", manutençao: "manutenção", iluminacao: "iluminação", iluminaçao: "iluminação",
-    fixacao: "fixação", fixaçao: "fixação", fixaçar: "fixar", conexao: "conexão", conexoes: "conexões", extensao: "extensão", tensao: "tensão",
-    potencia: "potência", saida: "saída", saidas: "saídas", padrao: "padrão", medicao: "medição", protecao: "proteção", ligacao: "ligação", ligacoes: "ligações",
-    alimentacao: "alimentação", substituicao: "substituição", substituiçao: "substituição", adequacao: "adequação", revisao: "revisão",
-    conteiner: "contêiner", conteineres: "contêineres", container: "contêiner", metalica: "metálica", metalicas: "metálicas", metalico: "metálico",
-    galpao: "galpão", galpoes: "galpões", industria: "indústria", industrial: "industrial", epoxi: "epóxi", epoxy: "epóxi",
-    demarcacao: "demarcação", sinalizacao: "sinalização", impermeabilizacao: "impermeabilização", pintura: "pintura", demaos: "demãos", demao: "demão",
-    servico: "serviço", servicos: "serviços", mao: "mão", area: "área", areas: "áreas", agua: "água", calcada: "calçada",
-    eletrocalha: "eletrocalha", eletroduto: "eletroduto", disjuntor: "disjuntor", diferencial: "diferencial", aterramento: "aterramento",
-    refletor: "refletor", refletores: "refletores", lampada: "lâmpada", lampadas: "lâmpadas", luminaria: "luminária", luminarias: "luminárias",
-    tomadas: "tomadas", interruptor: "interruptor", chuveiro: "chuveiro", chuveiros: "chuveiros", poste: "poste", postes: "postes",
-    rapido: "rápido", tecnico: "técnico", tecnica: "técnica", eletronico: "eletrônico", automatico: "automático", automatica: "automática",
-    cabeamento: "cabeamento", subterraneo: "subterrâneo", subterranea: "subterrânea", aereo: "aéreo", aerea: "aérea",
-    nessecario: "necessário", nessecaria: "necessária", nescessario: "necessário", nescessaria: "necessária", necessario: "necessário", necessaria: "necessária",
-    solucao: "solução", solucoes: "soluções", constatacao: "constatação", tefon: "teflon", teflom: "teflon", curvasde: "curvas de", ceramica: "cerâmica",
-    receptaculo: "receptáculo", receptaculos: "receptáculos", identificacao: "identificação", aterramento: "aterramento", policarbonato: "policarbonato"
-  };
-  // corrige palavra a palavra mantendo MAIÚSCULAS / Primeira maiúscula; devolve o texto e a lista do que mudou
-  function corrigirTexto(t) {
-    var feitas = [];
-    var novo = String(t || "").replace(/[A-Za-zÀ-ÿ]+/g, function (w) {
-      var c = CORRECOES[w.toLowerCase()];
-      if (!c || c === w.toLowerCase()) return w;
-      var r = w === w.toUpperCase() ? c.toLocaleUpperCase("pt-BR") : (w.charAt(0) === w.charAt(0).toUpperCase() ? c.charAt(0).toUpperCase() + c.slice(1) : c);
-      if (r !== w) feitas.push(w + " → " + r);
-      return r;
-    });
-    return { texto: novo, feitas: feitas };
-  }
+  // ✍ corretor de português (acentos, erros comuns, espaços e pontuação): corretor.js. Corrige ao sair dos campos de texto livre
+  function corrigirTexto(t) { return window.AGE_CORR.corrigir(t); }
+  window.AGE_CORR.automatico("#eo2-obs, #eo2-pag, #eo2-prazo, [id^='ns-'][id$='-desc'], #ns-obs, #eo-obs, #es-desc, #dv-leg, #os-obs, #md-obs, #kc-obs, #kc-obj, #lc-obj, #lc-obs, .pp-tit, .pp-intro, .pp-esc, .pp-cond, .it-desc", A.avisar);
   // 🔍 laudo técnico do orçamento (vistoria e solução): modelo pronto + os que o dono salvar
   var MODELOS_LAUDO = [{
     id: "padrao-rede-chuveiro", padrao: true, titulo: "Rede principal e chuveiro com cabo inadequado",

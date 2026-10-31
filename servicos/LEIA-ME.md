@@ -316,6 +316,15 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
 - A comparação entre lojas é pelo **nome igual** do material (cada loja escreve de um jeito).
 - Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `orcamentos_loja` e `precos_historico`). Sem elas, o acervo salva do mesmo jeito e o app avisa.
 
+## ✍ Corretor de português
+O app corrige o texto **ao sair do campo** (toque fora) e mostra o que mudou ("✍ Corrigido: ..."): **acentos** (instalacao → instalação, portao → portão, nao → não), erros comuns de
+digitação (comado → comando, nessecario → necessário, afim de → a fim de, contatado que → constatado que), **espaços e vírgulas** fora do lugar, palavra repetida ("de de") e **letra
+maiúscula** no começo do campo e de cada linha.
+- Vale para: itens, laudo (vistoria e solução), observações, forma de pagamento e prazo do orçamento, propostas prontas, "O que fazer" e observações dos serviços, legenda do post de
+  divulgação, relatório e observações do funcionário. **Não mexe** no nome do cliente, endereço, números, medidas (2,5 mm), siglas (NBR, LED), e-mails e sites.
+- Funciona **sem internet** e o texto não sai do aparelho. Ele **não** corrige concordância ("2 fotocélula" → "2 fotocélulas") nem crase: isso precisa de uma revisão de verdade; confira o que
+  é de cliente antes de enviar. Notou uma palavra que ele deixa passar? Me avise para entrar na lista.
+
 ## 🔍 Modelos de laudo técnico (no orçamento)
 No orçamento, em **🔍 Laudo técnico**, o campo **📑 Usar um modelo de laudo...** traz o texto pronto de **vistoria** e **solução**; edite à vontade para o cliente.
 - **Modelos prontos** (não mudam): rede principal e chuveiro, **portão automático** (motor bifásico, 2 fotocélulas, fechadura automática, interfone com visor, botoeira
