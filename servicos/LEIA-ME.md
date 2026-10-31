@@ -316,6 +316,14 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
 - A comparação entre lojas é pelo **nome igual** do material (cada loja escreve de um jeito).
 - Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `orcamentos_loja` e `precos_historico`). Sem elas, o acervo salva do mesmo jeito e o app avisa.
 
+## 🔍 Modelos de laudo técnico (no orçamento)
+No orçamento, em **🔍 Laudo técnico**, o campo **📑 Usar um modelo de laudo...** traz o texto pronto de **vistoria** e **solução**; edite à vontade para o cliente.
+- **Modelos prontos** (não mudam): rede principal e chuveiro, **portão automático** (motor bifásico, 2 fotocélulas, fechadura automática, interfone com visor, botoeira
+  e acionamento remoto), **câmeras de segurança (CFTV)**, **interfone** e **TI** (rede e computadores).
+- **💾 Salvar como modelo** guarda o laudo que você escreveu com o nome que escolher e ele passa a aparecer na lista de todos os orçamentos. Escolheu um modelo seu,
+  editou e quer **atualizá-lo**? Salve com o **mesmo nome**: o app pergunta e atualiza (não cria outro). **🗑 Apagar modelo** tira da lista (os orçamentos já feitos não mudam).
+- Precisa da tabela `modelos_laudo` (já está no `supabase.sql`); sem ela o modelo fica só no aparelho.
+
 ## 📑 Propostas prontas (orçamentos técnicos que você já escreveu)
 Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reusar** os orçamentos técnicos (como os da DEVA: pintura, lavagem, lava-jato).
 - **📥 Importar proposta (PDF)** (pode escolher vários; também lê foto): o app separa **cliente, CNPJ, telefone, endereço, data, serviço, o que será feito,
@@ -325,8 +333,11 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
   condições nas observações). Daí em diante é o orçamento de sempre: ajusta, salva e gera o **PDF igual aos outros orçamentos**, ou manda pelo WhatsApp.
 - O **mesmo arquivo não entra duas vezes** (nem a mesma proposta: cliente, serviço, data e valor iguais). **🗑 Excluir** apaga a proposta e o arquivo guardado;
   os orçamentos que já usaram a proposta não mudam.
-- No orçamento, o campo **Área** agora tem também **Manutenção** (além de Elétrica, Pintura e Elétrica e pintura).
-- Precisa rodar uma vez o **supabase.sql** atualizado (tabela `propostas`).
+- No orçamento (e na proposta), o campo **Área** tem agora **Manutenção**, **TI** e **Câmeras**, além de Elétrica, Pintura e Elétrica e pintura.
+  O botão **✏️ Áreas**, ao lado do campo, deixa você **acrescentar** áreas novas (ex.: Segurança eletrônica), **renomear** e **tirar**. Elétrica, Pintura e
+  Elétrica e pintura são fixas (a lista de preços depende delas). Tirar uma área que já foi usada não muda os orçamentos antigos, só a área sai da lista.
+- Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `propostas` e `areas_orcamento`). Sem a tabela das áreas, valem Manutenção, TI e Câmeras, mas
+  não dá para editar.
 
 ## 📊 Fechamento mensal dos chamados (Supermercados BH)
 Aba **✅ Executados → 📊 Fechamento mensal**: cada chamado concluído no mês com data, chamado, loja, serviço realizado, OS,

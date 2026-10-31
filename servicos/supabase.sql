@@ -560,6 +560,19 @@ language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.funcionarios where token = p_token and ativo);
 $$;
 
+-- áreas de serviço do orçamento (além de Elétrica, Pintura e Elétrica e pintura, que são fixas): o dono acrescenta, renomeia e tira
+create table if not exists public.areas_orcamento (
+  id        uuid primary key default gen_random_uuid(),
+  chave     text not null unique check (chave ~ '^[a-z0-9_]{1,40}$'),
+  nome      text not null check (length(trim(nome)) between 1 and 60),
+  ordem     integer not null default 100,
+  criado_em timestamptz not null default now()
+);
+-- só na primeira vez (tabela vazia): Manutenção, TI e Câmeras
+insert into public.areas_orcamento (chave, nome, ordem)
+select v.chave, v.nome, v.ordem from (values ('manutencao', 'Manutenção', 10), ('ti', 'TI', 20), ('cameras', 'Câmeras', 30)) as v(chave, nome, ordem)
+where not exists (select 1 from public.areas_orcamento);
+
 -- 📑 propostas prontas: orçamentos técnicos já escritos (cliente, texto do serviço, itens e valores) para guardar, editar e carregar no orçamento do app
 create table if not exists public.propostas (
   id            uuid primary key default gen_random_uuid(),
@@ -599,7 +612,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
