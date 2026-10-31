@@ -351,7 +351,11 @@
       }).join("") + "</tbody></table></div>";
   }
   // nº do orçamento da loja no texto ("ORÇAMENTO Nº: 14/034/035877")
-  function numeroOrc(t) { var m = /or[cç]amento\s*(?:n[ºo°.]*|n[uú]mero)\s*:?\s*([A-Z0-9][\w\/.-]{2,30})/i.exec(String(t || "")); return m ? m[1] : null; }
+  function numeroOrc(t) {
+    var m = /or[cç]amento\s*(?:n[ºo°.]*|n[uú]mero)\s*:?\s*([A-Z0-9][\w\/.-]{2,30})/i.exec(String(t || "")) ||
+      /\bpedido\s*(?:n[ºo°.]*)?\s*:?\s*(\d[\w\/.-]{2,30})/i.exec(String(t || ""));   // "Pedido: 321560" (o número começa com dígito: "Nº PEDIDO ERP:" vazio não conta)
+    return m ? m[1] : null;
+  }
   // loja pelo CNPJ: a já cadastrada, a de uma nota anterior ou o cadastro público
   function nomeLoja(S, d) {
     if (d.fornecedor) return Promise.resolve(d.fornecedor);

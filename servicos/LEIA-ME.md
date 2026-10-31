@@ -297,6 +297,11 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
 - Aba **🏪 Orçamentos das lojas** → **📥 Lançar orçamento**: escolha o PDF (ou vários), a foto ou o XML da nota. O PDF e o XML
   **salvam sozinhos**; a foto passa antes pela conferência (a leitura de foto pode errar).
 - **Cada orçamento fica separado** (loja pelo CNPJ, nº, data, validade, total, itens e o arquivo da loja).
+- **✍️ Lançar à mão**: digite loja, nº, data e os itens (➕ acrescenta linha, ✕ tira). Quando o app **não acha os materiais**
+  num arquivo, aparece **✍️ Digitar os itens**, já com a loja, o total lido e o arquivo guardado junto.
+- **✏️ Editar** (dentro do orçamento): corrige loja, nº, data e itens; os preços corrigidos vão para o acervo e o 📈 histórico.
+- Foto/print de **pedido de balcão** ("DOCUMENTO NÃO FISCAL": `código - descrição qtd unitário R$total`) é lido; print muito pequeno
+  pode vir com o nome aproximado — corrija na conferência antes de salvar.
 - **Validade**: é a que a loja escreveu no orçamento (até essa data ela garante os preços). Vencida fica em vermelho.
 - **🗑 Excluir** em cada cartão (e dentro do orçamento). Se foi lançado por engano, marque para tirar também do acervo os materiais
   que entraram por ele (só os que ainda estão com o preço dele) e os preços dele no 📈 histórico.

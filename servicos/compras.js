@@ -105,11 +105,12 @@
     // de preferência a linha com cara de razão social (LTDA, EIRELI...; depois COMÉRCIO, TINTAS, MATERIAIS...)
     var forte = /\b(ltda|eireli|epp)\b|\bs\.a\.|\bs\/a\b|\bme\s*$/i;
     var razao = cand.filter(function (x) { return forte.test(x); })[0] ||
-      cand.filter(function (x) { return /\b(comercio|comercial|materiais|tintas|eletric\w*|constru\w*|home|deposito|ferragens|distribuidora)\b/i.test(x); })[0];
+      cand.filter(function (x) { return !/^\W*\d{3,}\s*-/.test(x) && !/\d,\d{2}/.test(x) && /\b(comercio|comercial|materiais|tintas|eletric\w*|constru\w*|home|deposito|ferragens|distribuidora)\b/i.test(x); })[0];   // linha de produto ("4679060 - FECHADURA ELETRICA ...") não é a loja
     // sem razão social reconhecível: melhor deixar em branco (você escolhe na lista) do que gravar um nome errado
     var limpo = function (x) { var sem = x.replace(/\s/g, ""); return sem.length && (sem.match(/[A-Za-zÀ-ú]/g) || []).length / sem.length >= 0.85; };
+    var CAB_LOJA = /\b(produto|qtde?|quant\w*|unit\w*|descri\w*|vendedor|cliente|total)\b/i;   // cabeçalho da tabela não é o nome da loja
     var endereco = /\b(contagem|horizonte|betim|ibirit\w*|industrial|bairro|centro|mg|sp|rj|loja\s*\d+|n[ºo°]\s*\d)\b|\d{3,}/i;
-    var f0 = razao || cand.slice(0, 3).filter(function (x) { return limpo(x) && !endereco.test(x) && (x.match(/[A-Za-zÀ-ú]{4,}/g) || []).length >= 2 && x.split(/\s+/).length <= 5; })[0];
+    var f0 = razao || cand.slice(0, 3).filter(function (x) { return limpo(x) && !CAB_LOJA.test(x) && !endereco.test(x) && (x.match(/[A-Za-zÀ-ú]{4,}/g) || []).length >= 2 && x.split(/\s+/).length <= 5; })[0];
     // nome dentro de uma linha suja: "COMERCIAL MARTINS", "CASA DO ELETRICISTA", "LIDER TINTAS"...
     var mk = !forte.test(f0 || "") && (f0 || "").match(/\b(?:COMERCIAL|COMERCIO|DEP[OÓ]SITO|CASA|MATERIAIS|DISTRIBUIDORA|FERRAGENS|[A-ZÀ-Ú]{3,}\s+TINTAS|TINTAS)(?:\s+(?:D[AEO]S?\s+)?[A-ZÀ-Ú]{3,}){0,2}/);
     if (mk) f0 = mk[0];
@@ -227,6 +228,53 @@
       if (tot === null) tot = Math.round(qtd * unit * 100) / 100;
       r.itens.push({ item: desc.slice(0, 120), qtd: qtd, un: mu[2].toLowerCase().replace(/und|unid/, "un").replace("mt", "m"), unit: unit, valor: tot });
     });
+    // orçamento/pedido de balcão ("DOCUMENTO NÃO FISCAL"): "4520004 - VIDEO PORTEIRO C/ MONOFONE 1 1445,7959 R$1.445,80",
+    // o nome pode continuar na linha de baixo ("IVR 7", "CINZA"). Na foto o OCR troca letras nos números (1445,7D58) e a quantidade
+    // ("1" vira "49"): vale a conta total ÷ unitário.
+    if (!r.itens.length) {
+      var digOCR = function (w) { return String(w).replace(/[DOo]/g, "0").replace(/[Il|]/g, "1").replace(/S/g, "5").replace(/B/g, "8"); };
+      var FIM = /^(valor|total|sub-?total|observa|assinatura|documento|muito\s+obrigado|validade|vendedor|produto|forma|pagamento|desconto)/i;
+      ls.forEach(function (x, i) {
+        var l = String(x || "").replace(/[|\[\]“”"=_{}]/g, " ").replace(/\s+/g, " ").trim();
+        var mb = l.match(/^\W*(\d{3,10})\s*[-–]\s*(.+?)\s*R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/);
+        if (!mb) return;
+        var tot = A.lerNumero(mb[3]), ws = mb[2].split(" "), unit = null, qtd = null, iu = -1;
+        for (var k = ws.length - 1; k >= 0 && iu < 0; k--) {
+          var n = digOCR(ws[k]).replace(/R\$.*$/, "");
+          if (/^\d{1,6}(?:\.\d{3})*,\d{2,4}$/.test(n)) { unit = A.lerNumero(n); iu = k; }
+          else if (/^\d{1,6}$/.test(n) && Number(n) > 0 && Math.abs(Math.round(tot / Number(n)) * Number(n) - tot) < 0.01 && tot / Number(n) <= 999) { unit = Number(n); iu = k; }   // "1 407 R$407,00": unitário sem vírgula
+        }
+        if (!(tot > 0)) return;
+        if (unit > 0) {
+          var qt = iu > 0 ? A.lerNumero(digOCR(ws[iu - 1])) : null, qc = Math.round(tot / unit);
+          qtd = qt > 0 && Math.abs(qt * unit - tot) <= Math.max(0.05, tot * 0.01) ? qt : qc >= 1 && Math.abs(qc * unit - tot) <= Math.max(0.05, tot * 0.01) ? qc : null;
+        }
+        if (!qtd) { qtd = 1; unit = tot; }
+        if (Math.abs(qtd * unit - tot) > 0.01) unit = tot / qtd;   // o total impresso é o certo (o unitário da foto pode vir embaralhado)
+        var dw = ws.slice(0, iu > 0 ? iu - 1 : iu < 0 ? ws.length : iu);
+        while (dw.length && !/[A-Za-zÀ-ú0-9]/.test(dw[dw.length - 1])) dw.pop();
+        // continuação do nome na linha de baixo (sem preço e sem ser rodapé)
+        var prox = String(ls[i + 1] || "").replace(/\s+/g, " ").trim();
+        if (prox && prox.length <= 40 && !/\d,\d{2}/.test(prox) && !/^\W*\d{3,10}\s*[-–]/.test(prox) && !FIM.test(prox) && /[A-Za-zÀ-ú]{2,}/.test(prox)) dw.push(prox);
+        if (dw.length > 2 && /^[a-zà-ú]{1,2}$|^[A-Z][a-z]$/.test(dw[0])) dw.shift();   // pedaço solto que o OCR leu no começo ("a PORTEIRO")
+        var desc = dw.join(" ").trim();
+        if (palavras(desc) < 1 || CAB.test(desc)) return;
+        r.itens.push({ item: desc.slice(0, 120), qtd: qtd, un: "un", unit: Math.round(unit * 100) / 100, valor: tot });
+      });
+    }
+    // pedido de UM item só cujos números saíram ilegíveis na foto (print pequeno): o item fica com o total do documento
+    // e o nome que deu para ler; como é foto, vai para a conferência antes de salvar.
+    var balcao = /documento\s+n[aã]o\s+fiscal|^\W*pedido\b|\bor[cç]amento\b/im.test(t) && !/danfe|nf-?e|nfc-?e|chave\s+de\s+acesso|icms|cupom\s+fiscal/i.test(t);
+    if (!r.itens.length && r.valor > 0 && balcao) {
+      var ih = -1, ie = -1;
+      ls.forEach(function (x, i) { if (ih < 0 && /produto|descri/i.test(x) && /total/i.test(x)) ih = i; if (ih >= 0 && ie < 0 && i > ih && /valor\s*total|^total\b/i.test(x)) ie = i; });
+      var bloco = ih >= 0 && ie > ih ? ls.slice(ih + 1, ie) : [];
+      var comCodigo = bloco.filter(function (x) { return /^\W*\S{2,10}\s*[-–]\s+/.test(x); }).length;
+      if (bloco.length >= 1 && bloco.length <= 3 && comCodigo <= 1) {
+        var nome = bloco.join(" ").replace(/^\W*\S{2,10}\s*[-–]\s+/, "").split(/\s+/).filter(function (w) { return /[A-Za-zÀ-ú]{3,}|^\d+[A-Za-z]{1,3}$/.test(w) && !/[^A-Za-zÀ-ú0-9\/,.-]/.test(w); }).join(" ");
+        if (palavras(nome) >= 1 && !CAB.test(nome)) { r.itens.push({ item: nome.toUpperCase().slice(0, 120), qtd: 1, un: "un", unit: r.valor, valor: r.valor }); r.itemPeloTotal = true; }
+      }
+    }
     // descrição limpa: sem o código do produto no começo ("ODOUO069" = 00000069 lido torto), sem NCM/CST/CFOP e sem traços soltos
     var ehCodigo = function (w) { return w.length >= 5 && (w.match(/\d/g) || []).length >= 2 && (w.match(/[\dOoUIl]/g) || []).length / w.length >= 0.8; };
     r.itens.forEach(function (x) {
