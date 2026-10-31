@@ -316,6 +316,18 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
 - A comparação entre lojas é pelo **nome igual** do material (cada loja escreve de um jeito).
 - Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `orcamentos_loja` e `precos_historico`). Sem elas, o acervo salva do mesmo jeito e o app avisa.
 
+## 📑 Propostas prontas (orçamentos técnicos que você já escreveu)
+Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reusar** os orçamentos técnicos (como os da DEVA: pintura, lavagem, lava-jato).
+- **📥 Importar proposta (PDF)** (pode escolher vários; também lê foto): o app separa **cliente, CNPJ, telefone, endereço, data, serviço, o que será feito,
+  itens com valores e condições**. Confira os campos, corrija o que precisar e **💾 Salvar**. **✍️ Escrever à mão** abre a mesma ficha em branco.
+- Proposta com mais de um serviço (ex.: "1. Lavagem… Valor do serviço: R$ 700,00 / 2. Pintura… R$ 1.100,00") vira **um item por serviço**.
+- **📝 Usar no orçamento**: abre o **orçamento do app já preenchido** (cliente, itens e valores, o texto do serviço no 🔍 laudo técnico — "vistoria" e "solução" — e as
+  condições nas observações). Daí em diante é o orçamento de sempre: ajusta, salva e gera o **PDF igual aos outros orçamentos**, ou manda pelo WhatsApp.
+- O **mesmo arquivo não entra duas vezes** (nem a mesma proposta: cliente, serviço, data e valor iguais). **🗑 Excluir** apaga a proposta e o arquivo guardado;
+  os orçamentos que já usaram a proposta não mudam.
+- No orçamento, o campo **Área** agora tem também **Manutenção** (além de Elétrica, Pintura e Elétrica e pintura).
+- Precisa rodar uma vez o **supabase.sql** atualizado (tabela `propostas`).
+
 ## 📊 Fechamento mensal dos chamados (Supermercados BH)
 Aba **✅ Executados → 📊 Fechamento mensal**: cada chamado concluído no mês com data, chamado, loja, serviço realizado, OS,
 situação no portal e **valor**; total do mês, o que falta finalizar e o que está sem valor. **📋 Colar do portal**: cole as

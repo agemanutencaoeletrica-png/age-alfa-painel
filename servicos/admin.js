@@ -11,7 +11,7 @@
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["propostas", "📑 Propostas prontas"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
   // corretor dos itens do orçamento: palavras do dia a dia de elétrica e pintura escritas sem acento ou com erro comum
   var CORRECOES = {
     eletrica: "elétrica", eletricas: "elétricas", eletrico: "elétrico", eletricos: "elétricos", eletricista: "eletricista",
@@ -112,7 +112,7 @@
   function nomeOrc(o, maiusc) { var t = soMateriais(o) ? "Orçamento de materiais" : "Orçamento"; return maiusc ? t.toUpperCase() : t; }
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
-  var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };
+  var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura", manutencao: "Manutenção" };
   var UNIDADES = ["un", "m", "m²", "barra", "rolo", "L", "galão", "lata", "balde", "kg", "cx", "pç", "par", "cento", "kit", "serv", "h", "dia", "vb"];
 
   // ---------- utilidades ----------
@@ -502,7 +502,8 @@
       q(sb.from("candidatos").select("*").order("criado_em", { ascending: false }).limit(500)).catch(function () { return null; }),
       q(sb.from("modelos_laudo").select("*").order("titulo")).catch(function () { return null; }),
       q(sb.from("precos_historico").select("*").order("data", { ascending: false }).limit(10000)).catch(function () { return null; }),
-      q(sb.from("orcamentos_loja").select("*").order("data", { ascending: false }).limit(2000)).catch(function () { return null; })
+      q(sb.from("orcamentos_loja").select("*").order("data", { ascending: false }).limit(2000)).catch(function () { return null; }),
+      q(sb.from("propostas").select("*").order("data", { ascending: false }).limit(1000)).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -520,6 +521,7 @@
       S.lic = r[7] ? r[7][3] : []; S.docs = r[7] ? r[7][4] : [];
       S.semHist = !r[18]; S.precosHist = r[18] || [];   // 📈 histórico de preços das lojas
       S.semOrcLoja = !r[19]; S.orcLoja = r[19] || [];   // 🏪 orçamentos das lojas (cada um separado)
+      S.semPropostas = !r[20]; S.propostas = r[20] || [];   // 📑 propostas prontas (orçamentos técnicos guardados)
     });
   }
 
@@ -567,7 +569,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, orclojas: function (c2) { window.AGE_ORCLOJA.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, orclojas: function (c2) { window.AGE_ORCLOJA.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, propostas: function (c2) { window.AGE_PROP.ver(c2, P); }, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -4507,6 +4509,8 @@
     opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,
     rota: rota, atualizarAbas: function () { desenharAbas(location.hash.slice(1) || "hoje"); }, resumoServ: resumoServ, importarChamado: importarChamado, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES, carregarLeaflet: carregarLeaflet,
     // 🧾 Compras → orçamento de materiais com os itens de uma nota
+    // 📑 Propostas prontas → orçamento do app já preenchido
+    novoOrcamento: function (base) { editarOrcamento(null, base || {}); },
     orcMateriais: function (c) { editarOrcamento(null, { tipo: "materiais", categoria: c.area === "eletrica" || c.area === "pintura" ? c.area : "", _nota: c }); }
   };
 

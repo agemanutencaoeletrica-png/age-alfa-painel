@@ -560,6 +560,34 @@ language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.funcionarios where token = p_token and ativo);
 $$;
 
+-- 📑 propostas prontas: orçamentos técnicos já escritos (cliente, texto do serviço, itens e valores) para guardar, editar e carregar no orçamento do app
+create table if not exists public.propostas (
+  id            uuid primary key default gen_random_uuid(),
+  titulo        text not null default '' check (length(titulo) <= 300),   -- "SERVIÇO: ..." da proposta
+  cliente       text,
+  documento     text,                                -- CNPJ ou CPF do cliente
+  telefone      text,
+  email         text,
+  endereco      text,
+  categoria     text,                                -- eletrica | pintura
+  data          date not null default current_date,  -- data da proposta
+  introducao    text,                                -- objetivo e apresentação (vai no laudo, "vistoria")
+  escopo        text,                                -- procedimento técnico (vai no laudo, "solução")
+  itens         jsonb not null default '[]'::jsonb,  -- [{descricao, qtd, un, valor}]
+  total         numeric(12, 2),
+  condicoes     text,                                -- condição / observação (vai nas observações do orçamento)
+  arquivo       text,                                -- PDF original no Storage (bucket fotos)
+  arquivo_hash  text,                                -- SHA-256 do PDF: o mesmo arquivo não entra duas vezes
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now(),
+  constraint propostas_itens check (jsonb_typeof(itens) = 'array' and jsonb_array_length(itens) <= 200)
+);
+create index if not exists propostas_data_idx on public.propostas (data desc);
+create unique index if not exists propostas_hash_idx on public.propostas (arquivo_hash) where arquivo_hash is not null;
+drop trigger if exists propostas_atualizado_em on public.propostas;
+create trigger propostas_atualizado_em before update on public.propostas
+  for each row execute function public._tocar_atualizado_em();
+
 -- ---------- Regras de acesso (RLS) ----------
 
 alter table public.admins enable row level security;
@@ -571,7 +599,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
