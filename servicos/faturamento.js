@@ -517,7 +517,7 @@
   function pareceExtrato(t) { return /lan[cç]amentos\s+do\s+per[ií]odo|saldo\s+anterior|extrato\s+(de\s+)?conta|entradas\s+e\s+sa[ií]das/i.test(String(t || "")); }
   // todas as páginas do PDF com a posição de cada texto (o extrato do mês tem várias páginas)
   function pecasTodas(f) {
-    return f.arrayBuffer().then(function (buf) { return window.pdfjsLib.getDocument({ data: buf }).promise; }).then(function (doc) {
+    return f.arrayBuffer().then(function (buf) { return window.pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise; }).then(function (doc) {
       var ps = [], seq = Promise.resolve();
       for (var n = 1; n <= doc.numPages; n++) (function (n) {
         seq = seq.then(function () { return doc.getPage(n); }).then(function (pg) { return pg.getTextContent(); }).then(function (tc) {

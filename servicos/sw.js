@@ -1,7 +1,7 @@
 // Service worker do app de serviços da AGE (só vale dentro da pasta servicos/).
 // Sempre busca a versão nova na internet; se estiver sem sinal, abre a última
 // versão guardada. Dados do Supabase e fotos NUNCA ficam guardados aqui.
-var CACHE = "age-servicos-v99";
+var CACHE = "age-servicos-v101";
 var BASICOS = ["./index.html", "./funcionario.html", "./estilo.css", "./comum.js", "./admin.js", "./funcionario.js", "./geo.js", "./lojas-doc.js", "./prefeitura.js", "./pagamentos.js", "./fornecedores.js", "./compras.js", "./fechamento.js", "./faturamento.js", "./prospeccao.js", "./precos-base.js", "./materiais-base.js", "./leitor-texto.js", "./precos.js", "./orclojas.js", "./config.js",
   "./icone.svg", "./icone-192.png", "./icone-512.png", "./manifest.webmanifest", "./manifest-funcionario.webmanifest"];
 
@@ -30,9 +30,21 @@ function receber(r) {
   }).catch(function () { /* sem nada para guardar */ }).then(function () { return Response.redirect("./" + pagina + "?recebido=1", 303); });
 }
 
+// POST de outro site (formulário que outra página envia para cá) não é "Compartilhar": não guarda nada.
+// O Compartilhar do Android chega sem Origin (ou "null") e sem Referer; o service worker não enxerga o Sec-Fetch-Site.
+function deOutroSite(r) {
+  var o = r.headers.get("Origin");
+  if (o && o !== "null" && o !== self.location.origin) return true;
+  try { if (/^https?:/i.test(r.referrer || "") && new URL(r.referrer).origin !== self.location.origin) return true; } catch (e) { return true; }
+  return false;
+}
+
 self.addEventListener("fetch", function (e) {
   var r = e.request;
-  if (r.method === "POST" && new URL(r.url).searchParams.has("receber")) { e.respondWith(receber(r)); return; }
+  if (r.method === "POST" && new URL(r.url).searchParams.has("receber")) {
+    if (deOutroSite(r)) { e.respondWith(Response.redirect("./" + (new URL(r.url).pathname.split("/").pop() || "index.html"), 303)); return; }
+    e.respondWith(receber(r)); return;
+  }
   if (r.method !== "GET") return;
   var u = new URL(r.url);
   // só os arquivos do próprio app; Supabase (dados e fotos) e bibliotecas vão direto para a internet

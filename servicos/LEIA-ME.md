@@ -123,7 +123,9 @@ O painel funciona no celular igual ao notebook. No **Chrome do celular** abra
 menu ⋮ → **Instalar app** (ou *Adicionar à tela inicial*). Para **outra pessoa** também mandar serviços, crie um login
 para ela: Supabase → **Authentication → Users → Add user → Create new user** (e-mail dela, senha, *Auto Confirm User*) e,
 no **SQL Editor**, rode `insert into public.admins (email) values ('email-dela@...') on conflict do nothing;`.
-Ela passa a ver tudo o que você vê (inclusive orçamentos). Para tirar o acesso: apague o usuário em Authentication → Users.
+Ela passa a ver tudo o que você vê (inclusive orçamentos). Para tirar o acesso: no **SQL Editor** rode
+`delete from public.admins where lower(email) = lower('email-dela@...');` (corta na hora) e apague o usuário em Authentication → Users.
+Só vale como admin o login com e-mail **confirmado** (por isso o *Auto Confirm User*).
 
 ### Lojas e rotas (lojas próximas no mesmo dia)
 1. **Rode de novo o `supabase.sql`** (SQL Editor → colar tudo → Run). Ele cria as tabelas de lojas e rotas sem apagar nada.
@@ -295,6 +297,11 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
 - Aba **🏪 Orçamentos das lojas** → **📥 Lançar orçamento**: escolha o PDF (ou vários), a foto ou o XML da nota. O PDF e o XML
   **salvam sozinhos**; a foto passa antes pela conferência (a leitura de foto pode errar).
 - **Cada orçamento fica separado** (loja pelo CNPJ, nº, data, validade, total, itens e o arquivo da loja).
+- **✍️ Lançar à mão**: digite loja, nº, data e os itens (➕ acrescenta linha, ✕ tira). Quando o app **não acha os materiais**
+  num arquivo, aparece **✍️ Digitar os itens**, já com a loja, o total lido e o arquivo guardado junto.
+- **✏️ Editar** (dentro do orçamento): corrige loja, nº, data e itens; os preços corrigidos vão para o acervo e o 📈 histórico.
+- Foto/print de **pedido de balcão** ("DOCUMENTO NÃO FISCAL": `código - descrição qtd unitário R$total`) é lido; print muito pequeno
+  pode vir com o nome aproximado — corrija na conferência antes de salvar.
 - **Validade**: é a que a loja escreveu no orçamento (até essa data ela garante os preços). Vencida fica em vermelho.
 - **🗑 Excluir** em cada cartão (e dentro do orçamento). Se foi lançado por engano, marque para tirar também do acervo os materiais
   que entraram por ele (só os que ainda estão com o preço dele) e os preços dele no 📈 histórico.

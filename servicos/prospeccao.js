@@ -335,7 +335,7 @@
     $("#bm-so", el).onchange = function () { mostrar(); };
     function mostrar() {
       var so = $("#bm-so", el).checked, ls = achados.filter(function (x) { return !so || x.telefone || x.whatsapp || x.email; });
-      if (camada) { camada.clearLayers(); ls.forEach(function (x) { if (x.lat) window.L.circleMarker([x.lat, x.lng], { radius: 7, color: "#1f4e8c", fillColor: "#f2c200", fillOpacity: .9, weight: 2 }).addTo(camada).bindTooltip(x.nome); }); }
+      if (camada) { camada.clearLayers(); ls.forEach(function (x) { if (x.lat) window.L.circleMarker([x.lat, x.lng], { radius: 7, color: "#1f4e8c", fillColor: "#f2c200", fillOpacity: .9, weight: 2 }).addTo(camada).bindTooltip(esc(x.nome)); }); }   // o nome vem do OpenStreetMap (qualquer pessoa edita): o tooltip do Leaflet é HTML
       $("#bm-st", el).innerHTML = "<b>" + achados.length + "</b> empresa(s) na área" + (so ? ", <b>" + ls.length + "</b> com contato" : "") + ".";
       $("#bm-res", el).innerHTML = ls.length ? '<div class="tabela-caixa"><table><tbody>' + ls.map(function (x, i) {
         var ja = repetido(x.nome, x.telefone || x.whatsapp, null);

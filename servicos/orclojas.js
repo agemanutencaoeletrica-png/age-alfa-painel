@@ -55,7 +55,7 @@
   function ver(c, ctx) {
     P = ctx;
     var semTab = P.S.semOrcLoja;
-    c.innerHTML = '<div class="cab-secao"><h2>🏪 Orçamentos das lojas</h2><span><button class="prim" id="ol-lancar">📥 Lançar orçamento</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>🏪 Orçamentos das lojas</h2><span><button class="prim" id="ol-lancar">📥 Lançar orçamento</button> <button id="ol-mao">✍️ Lançar à mão</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Lance aqui o <b>orçamento de cada loja</b> (PDF, foto ou XML; pode escolher vários). Cada um fica separado para você conferir os preços. ' +
       "Os materiais que ainda não estão no app entram sozinhos no acervo da 💲 tabela e todo preço fica no 📈 histórico.</p>" +
       (semTab ? '<div class="aviso">Para guardar os orçamentos separados, rode no Supabase o <b>supabase.sql</b> atualizado (tabela <b>orcamentos_loja</b>). Até lá, os materiais vão para o acervo normalmente.</div>' : "") +
@@ -65,6 +65,10 @@
     $("#ol-lancar").onclick = function () { $("#ol-arq").value = ""; $("#ol-arq").click(); };
     $("#ol-arq").onchange = function () { var fs = Array.prototype.slice.call(this.files || []); this.value = ""; if (fs.length) lancar(fs, $("#ol-novos")); };
     $("#ol-busca").oninput = function () { filtro.busca = this.value; listar(); };
+    $("#ol-mao").onclick = function () {
+      var cx = document.createElement("div"); cx.className = "cartao"; $("#ol-novos").insertBefore(cx, $("#ol-novos").firstChild);
+      editarItens({ loja: "", numero: null, data: hoje(), area: "eletrica", origem: "orcamento_loja" }, [], null, cx, { titulo: "✍️ Orçamento digitado à mão" });
+    };
     listar();
   }
   function listar() {
@@ -113,7 +117,16 @@
             return { descricao: String(x.item || "").replace(/\s+/g, " ").trim(), qtd: qtd, un: String(x.un || "un").toLowerCase().replace(/\.$/, ""), unit: unit,
               valor: Number(x.valor) || Math.round(qtd * unit * 100) / 100, ok: true };
           }).filter(function (x) { return x.descricao; });
-          if (!itens.length) { cx.innerHTML = "<b>" + esc(f.name) + '</b>: <span class="selo critico">não achei materiais com preço</span> <span class="peq mudo">Tente o PDF original ou o XML da nota.</span>'; return; }
+          if (!itens.length) {
+            // não achou os materiais: oferece digitar à mão, já com a loja, a data, o total e o arquivo
+            return PR.nomeLoja(P.S, d).then(function (loja) {
+              var o0 = { loja: loja, cnpj: d.cnpj || null, numero: PR.numeroOrc(rl.bruto) || d.numero || null, data: String(d.data || hoje()).slice(0, 10), validade: validadeDoTexto(rl.bruto),
+                arquivo_hash: hash, chave: d.chave || null, total: d.valor || null, area: "eletrica", origem: "orcamento_loja" };
+              cx.innerHTML = "<b>" + esc(f.name) + '</b>: <span class="selo critico">não achei materiais com preço</span> <span class="peq mudo">Tente o PDF original, ou digite os itens.</span>' +
+                (d.valor ? ' <span class="peq">(total lido: <b>' + A.dinheiro(d.valor) + "</b>)</span>" : "") + ' <button class="peq prim" data-digitar>✍️ Digitar os itens</button>';
+              $("[data-digitar]", cx).onclick = function () { editarItens(o0, [], f, cx, { titulo: "✍️ " + f.name }); };
+            });
+          }
           return PR.nomeLoja(P.S, d).then(function (loja) {
             var o = { loja: loja, cnpj: d.cnpj || null, numero: PR.numeroOrc(rl.bruto) || d.numero || null, data: String(d.data || hoje()).slice(0, 10), validade: validadeDoTexto(rl.bruto),
               arquivo_hash: hash, chave: d.chave || null, itens: itens,
@@ -133,29 +146,65 @@
     return "<b>" + esc(o.loja || "Loja não identificada") + "</b>" + (o.numero ? " · orçamento nº " + esc(o.numero) : "") + " · " + esc(A.dataSimples(o.data)) +
       " · " + n + " material(is)" + (o.total ? " · total " + A.dinheiro(Number(o.total)) : "");
   }
-  function conferir(o, itens, f, cx) {
-    cx.innerHTML = cabecalho(o, itens.length) + '<p class="peq mudo" style="margin:4px 0">Foto: confira o nome, a quantidade e o preço (a leitura pode errar) e desmarque o que não vai.</p>' +
-      '<div class="tabela-caixa"><table><thead><tr><th></th><th>Material</th><th class="num">Qtd</th><th>Un</th><th class="num">Preço (un.)</th></tr></thead><tbody>' + itens.map(function (x, n) {
-        return '<tr data-cf="' + n + '"><td><input type="checkbox" class="cf-ok" checked aria-label="Usar"></td><td><input class="cf-desc" maxlength="300" style="min-width:180px"></td>' +
-          '<td><input class="cf-qtd" inputmode="decimal" style="width:70px"></td><td>' + esc(x.un) + '</td><td><input class="cf-unit" inputmode="decimal" style="width:100px"></td></tr>';
-      }).join("") + "</tbody></table></div>" +
-      '<div class="linha"><select class="cf-area">' + Object.keys(AREAS).map(function (k) { return '<option value="' + k + '"' + (k === o.area ? " selected" : "") + ">" + AREAS[k] + "</option>"; }).join("") +
-      '</select><button class="prim cf-salvar">Salvar orçamento</button></div>';
-    $$("tr[data-cf]", cx).forEach(function (tr) {
-      var x = itens[Number(tr.dataset.cf)];
-      $(".cf-desc", tr).value = x.descricao; $(".cf-qtd", tr).value = A.numero(x.qtd, 3); $(".cf-unit", tr).value = x.unit ? A.numero(x.unit, 2) : "";
-      tr.oninput = tr.onchange = function () {
-        x.ok = $(".cf-ok", tr).checked; x.descricao = $(".cf-desc", tr).value.trim(); x.qtd = A.lerNumero($(".cf-qtd", tr).value) || 1; x.unit = A.lerNumero($(".cf-unit", tr).value);
-        x.valor = Math.round(x.qtd * x.unit * 100) / 100;
-      };
-    });
-    $(".cf-salvar", cx).onclick = function () {
-      var usar = itens.filter(function (x) { return x.ok && x.descricao; });
-      if (!usar.length) { A.avisar("Marque pelo menos um material.", "erro"); return; }
-      o.area = $(".cf-area", cx).value;
-      if (!o.total) o.total = Math.round(usar.reduce(function (t, x) { return t + (Number(x.valor) || 0); }, 0) * 100) / 100;
-      salvar(o, usar, f, cx);
-    };
+  function conferir(o, itens, f, cx) { editarItens(o, itens, f, cx, { aviso: "Foto: confira o nome, a quantidade e o preço (a leitura pode errar). Corrija, acrescente ou tire linhas." }); }
+  // ✍️ editor dos itens: conferir a foto, digitar à mão (leitura falhou ou sem arquivo) e corrigir um orçamento já lançado
+  // op: { titulo, aviso, rotulo, aoSalvar(o, itens) } — sem aoSalvar, grava como orçamento novo (salvar)
+  function editarItens(o, itens, f, cx, op) {
+    op = op || {};
+    var L = itens.map(function (x) { return { descricao: x.descricao || "", qtd: Number(x.qtd) || 1, un: x.un || "un", unit: Number(x.unit) || 0 }; });
+    if (!L.length) L.push({ descricao: "", qtd: 1, un: "un", unit: 0 });
+    var UNS = ["un", "m", "pç", "rolo", "cx", "kg", "l", "galão", "lata", "barra", "par", "jg", "pct", "m²"];
+    function desenhar() {
+      cx.innerHTML = (op.titulo ? "<b>" + esc(op.titulo) + "</b>" : cabecalho(o, L.length)) + (op.aviso ? '<p class="peq mudo" style="margin:4px 0">' + esc(op.aviso) + "</p>" : "") +
+        '<div class="duas" style="margin-top:6px"><div><label>Loja</label><input class="ed-loja" maxlength="120" placeholder="Nome da loja"></div>' +
+        '<div><label>Nº do orçamento</label><input class="ed-num" maxlength="40" placeholder="opcional"></div></div>' +
+        '<div class="duas"><div><label>Data</label><input class="ed-data" type="date"></div><div><label>Área</label><select class="ed-area">' +
+        Object.keys(AREAS).map(function (k) { return '<option value="' + k + '">' + AREAS[k] + "</option>"; }).join("") + "</select></div></div>" +
+        '<div class="tabela-caixa" style="margin-top:8px"><table><thead><tr><th>Material</th><th class="num">Qtd</th><th>Un</th><th class="num">Preço (un.)</th><th class="num">Total</th><th></th></tr></thead><tbody>' +
+        L.map(function (x, n) {
+          return '<tr data-ed="' + n + '"><td><input class="ed-desc" maxlength="300" style="min-width:200px" placeholder="Ex.: Cabo flexível 2,5 mm"></td>' +
+            '<td><input class="ed-qtd" inputmode="decimal" style="width:70px"></td><td><select class="ed-un">' +
+            UNS.concat(UNS.indexOf(x.un) < 0 ? [x.un] : []).map(function (u) { return "<option>" + esc(u) + "</option>"; }).join("") + "</select></td>" +
+            '<td><input class="ed-unit" inputmode="decimal" style="width:100px" placeholder="0,00"></td><td class="num ed-tot"></td>' +
+            '<td><button class="peq" data-ed-tirar aria-label="Tirar a linha">✕</button></td></tr>';
+        }).join("") + "</tbody></table></div>" +
+        '<div class="acoes"><button class="peq" data-ed-mais>➕ Adicionar material</button><span class="dir peq ed-soma"></span></div>' +
+        '<div class="acoes"><button class="prim" data-ed-salvar>' + esc(op.rotulo || "Salvar orçamento") + "</button>" + (op.cancelar ? '<button data-ed-cancelar>Cancelar</button>' : "") + "</div>";
+      $(".ed-loja", cx).value = o.loja || ""; $(".ed-num", cx).value = o.numero || ""; $(".ed-data", cx).value = String(o.data || hoje()).slice(0, 10); $(".ed-area", cx).value = o.area === "pintura" ? "pintura" : "eletrica";
+      $$("tr[data-ed]", cx).forEach(function (tr) {
+        var x = L[Number(tr.dataset.ed)];
+        $(".ed-desc", tr).value = x.descricao; $(".ed-qtd", tr).value = A.numero(x.qtd, 3); $(".ed-un", tr).value = x.un; $(".ed-unit", tr).value = x.unit ? Number(x.unit).toFixed(2).replace(".", ",") : "";
+        tr.oninput = tr.onchange = function () {
+          x.descricao = $(".ed-desc", tr).value; x.qtd = A.lerNumero($(".ed-qtd", tr).value) || 0; x.un = $(".ed-un", tr).value; x.unit = A.lerNumero($(".ed-unit", tr).value) || 0; somar();
+        };
+        $("[data-ed-tirar]", tr).onclick = function () { lerTopo(); L.splice(Number(tr.dataset.ed), 1); if (!L.length) L.push({ descricao: "", qtd: 1, un: "un", unit: 0 }); desenhar(); };
+      });
+      $("[data-ed-mais]", cx).onclick = function () { lerTopo(); L.push({ descricao: "", qtd: 1, un: "un", unit: 0 }); desenhar(); var u = $$(".ed-desc", cx); u[u.length - 1].focus(); };
+      $("[data-ed-salvar]", cx).onclick = salvarEd;
+      if ($("[data-ed-cancelar]", cx)) $("[data-ed-cancelar]", cx).onclick = function () { op.cancelar(); };
+      somar();
+    }
+    function lerTopo() { o.loja = $(".ed-loja", cx).value.trim(); o.numero = $(".ed-num", cx).value.trim() || null; o.data = $(".ed-data", cx).value || hoje(); o.area = $(".ed-area", cx).value; }
+    function soma() { return Math.round(L.reduce(function (t, x) { return t + (Number(x.qtd) || 0) * (Number(x.unit) || 0); }, 0) * 100) / 100; }
+    function somar() {
+      $$("tr[data-ed]", cx).forEach(function (tr) { var x = L[Number(tr.dataset.ed)]; $(".ed-tot", tr).textContent = x.qtd && x.unit ? A.dinheiro(Math.round(x.qtd * x.unit * 100) / 100) : "—"; });
+      var sm = soma(), dif = o.total && Math.abs(sm - Number(o.total)) > 0.05;
+      $(".ed-soma", cx).innerHTML = "Soma: <b>" + A.dinheiro(sm) + "</b>" + (dif ? ' <span class="selo atencao">total do documento ' + A.dinheiro(Number(o.total)) + "</span>" : "");
+    }
+    function salvarEd() {
+      lerTopo();
+      var usar = L.filter(function (x) { return String(x.descricao).trim(); }).map(function (x) {
+        return { descricao: String(x.descricao).replace(/\s+/g, " ").trim(), qtd: Number(x.qtd) || 1, un: x.un || "un", unit: Math.round((Number(x.unit) || 0) * 100) / 100,
+          valor: Math.round((Number(x.qtd) || 1) * (Number(x.unit) || 0) * 100) / 100 };
+      });
+      if (!usar.length) { A.avisar("Escreva pelo menos um material.", "erro"); return; }
+      if (usar.some(function (x) { return !(x.unit > 0); }) && !A.confirmar("Há material sem preço. Salvar mesmo assim? (o que está sem preço não vai para o 📈 histórico)")) return;
+      if (!o.loja && !A.confirmar("Salvar sem o nome da loja?")) return;
+      // sem total do documento (digitado à mão): vale a soma
+      if (!o.total || op.recalcularTotal) o.total = Math.round(usar.reduce(function (t, x) { return t + x.valor; }, 0) * 100) / 100;
+      if (op.aoSalvar) op.aoSalvar(o, usar); else salvar(o, usar, f, cx);
+    }
+    desenhar();
   }
   // guarda o arquivo, põe os materiais no acervo (e no histórico) e grava o orçamento separado
   function subir(f, data) {
@@ -250,7 +299,7 @@
         (o.validade ? ' · <span class="selo ' + (vencido(o) ? "critico" : "bom") + '">' + selValidade(o) + "</span>" : "") +
         (o.cnpj ? " · CNPJ " + esc(o.cnpj) : "") + (o.area && AREAS[o.area] ? " · " + AREAS[o.area] : "") + "</div>" +
       '<div class="acoes">' + (o.arquivo ? '<button class="peq" id="ol-arquivo">📄 Ver o arquivo da loja</button>' : "") +
-        '<button class="peq" id="ol-orc">🧾 Usar num orçamento de cliente</button><button class="peq" id="ol-copiar">📋 Copiar a lista</button><button class="peq perigo" id="ol-apagar">🗑 Excluir</button></div>' +
+        '<button class="peq prim" id="ol-editar">✏️ Editar</button><button class="peq" id="ol-orc">🧾 Usar num orçamento de cliente</button><button class="peq" id="ol-copiar">📋 Copiar a lista</button><button class="peq perigo" id="ol-apagar">🗑 Excluir</button></div>' +
       (o.validade ? '<p class="peq mudo" style="margin:0">A validade é a que a loja escreveu no orçamento: até essa data ela garante estes preços. Depois, peça um orçamento novo.</p>' : "") +
       (nv.length ? '<div class="cartao" style="margin-top:8px"><div class="linha"><h3 style="margin:0">🆕 Materiais que ainda não tinham no app (' + nv.length + ')</h3><button class="peq dir" id="ol-copiar-novos">📋 Copiar</button></div>' +
         '<p class="peq mudo" style="margin:2px 0 6px">Já foram guardados no acervo da 💲 tabela, com o preço desta loja.</p><ul style="margin:0;padding-left:18px">' +
@@ -275,6 +324,7 @@
         .catch(function (e) { if (w) w.close(); P.falhou(e); });
     };
     // vira orçamento de materiais para o cliente (o 📷 Ler da nota abre já com estes itens, para pôr o acréscimo)
+    $("#ol-editar", j.el).onclick = function () { j.fechar(); editarGuardado(o); };
     $("#ol-orc", j.el).onclick = function () {
       j.fechar();
       P.orcMateriais({ area: o.area, fornecedor: o.loja, comprado_em: o.data, cnpj: o.cnpj, itens: itens.map(function (x) { return { item: x.descricao, qtd: x.qtd, un: x.un, unit: x.unit, valor: x.valor }; }) });
@@ -282,6 +332,33 @@
     $("#ol-apagar", j.el).onclick = function () { excluir(o, function () { j.fechar(); }); };
   }
 
+  // ✏️ corrigir um orçamento já lançado (loja, nº, data, itens): grava por cima e manda os preços corrigidos para o acervo e o histórico
+  function editarGuardado(o) {
+    var cx = document.createElement("div"); cx.className = "cartao"; $("#ol-novos").insertBefore(cx, $("#ol-novos").firstChild);
+    cx.scrollIntoView && cx.scrollIntoView({ block: "start" });
+    var cop = { loja: o.loja, numero: o.numero, data: o.data, area: o.area, total: null, cnpj: o.cnpj };
+    editarItens(cop, o.itens || [], null, cx, { titulo: "✏️ Editando: " + (o.loja || "orçamento") + (o.numero ? " nº " + o.numero : ""), rotulo: "Salvar alterações", recalcularTotal: true,
+      cancelar: function () { cx.remove(); },
+      aoSalvar: function (n, itens) {
+        cx.innerHTML = '<span class="carregando"></span> Salvando...';
+        var PR = window.AGE_PRECOS, antes = {};
+        (o.itens || []).forEach(function (i) { antes[chaveMat(i.descricao)] = i; });
+        PR.guardarDaLoja(P, itens, n.area === "pintura" ? "pintura" : "eletrica", { loja: n.loja, cnpj: o.cnpj, data: n.data, numero: n.numero, origem: "orcamento_loja" }).then(function (r) {
+          var sit = {}; r.linhas.forEach(function (l) { sit[chaveMat(l.descricao)] = l.situacao; });
+          var d = { loja: String(n.loja || "").slice(0, 120), numero: n.numero || null, data: n.data, area: n.area, total: n.total,
+            itens: itens.map(function (x) { var k = chaveMat(x.descricao); return Object.assign({}, x, { novo: !!((antes[k] && antes[k].novo) || sit[k] === "novo") }); }) };
+          return P.q(P.sb.from("orcamentos_loja").update(d).eq("id", o.id).select().single());
+        }).then(function (nr) {
+          P.trocar(P.S.orcLoja, nr);
+          cx.innerHTML = '<div class="aviso ok">✅ Orçamento de <b>' + esc(nr.loja || "loja") + "</b> atualizado (" + (nr.itens || []).length + " material(is), " + A.dinheiro(Number(nr.total) || 0) + ').</div><div class="acoes"><button class="peq" data-abrir>Abrir</button></div>';
+          $("[data-abrir]", cx).onclick = function () { abrir(nr); };
+          listar(); A.avisar("✏️ Orçamento atualizado", "ok");
+        }).catch(function (e) {
+          var m = A.msgErro(e) + " " + (e && e.code);
+          cx.innerHTML = '<div class="aviso erro">Não salvou: ' + esc(/23505|duplicate|duplicad/i.test(m) ? "já existe outro orçamento desta loja com esse nº." : A.msgErro(e)) + "</div>";
+        });
+      } });
+  }
   // 🗑 excluir o orçamento da loja; se foi lançado por engano, pode tirar também do acervo o que entrou por ele
   function excluir(o, depois) {
     if (!o) return;

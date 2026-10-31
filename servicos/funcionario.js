@@ -587,7 +587,8 @@
     A.lerRecebido().then(function (rc) {
       if (!rc || (!rc.texto && !rc.arquivos.length)) return;
       if (!D.servicos.length) { A.avisar("Você não tem serviço aberto para anexar o que recebeu.", "erro"); return; }
-      var j = A.janela('<p style="margin-top:0">📥 Recebido: ' + (rc.arquivos.length ? "<b>" + rc.arquivos.length + " foto" + (rc.arquivos.length > 1 ? "s" : "") + "</b>" : "") +
+      var j = A.janela('<div class="aviso peq" style="margin-top:0">⚠ Só continue se foi <b>você</b> que acabou de compartilhar isto. Se abriu sozinho, feche.</div>' +
+        '<p>📥 Recebido: ' + (rc.arquivos.length ? "<b>" + rc.arquivos.length + " foto" + (rc.arquivos.length > 1 ? "s" : "") + "</b>" : "") +
         (rc.arquivos.length && rc.texto ? " e " : "") + (rc.texto ? "<b>texto</b>" : "") + ".</p>" +
         '<label for="rc-serv">Anexar ao relatório de qual serviço?</label><select id="rc-serv">' + opcoesServico(D.servicos[0].id, false) + "</select>" +
         '<p class="mudo peq">As fotos recebidas ficam marcadas como “recebida por compartilhamento” (não valem como foto tirada no local).</p>' +
