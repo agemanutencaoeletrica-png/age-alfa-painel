@@ -146,7 +146,7 @@
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
   var BASE_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };   // fixas: a lista de preços e os chamados dependem delas
-  var AREAS_PADRAO = [{ chave: "manutencao", nome: "Manutenção", ordem: 10 }, { chave: "ti", nome: "TI", ordem: 20 }, { chave: "cameras", nome: "Câmeras", ordem: 30 }];
+  var AREAS_PADRAO = [{ chave: "manutencao", nome: "Manutenção", ordem: 10 }, { chave: "ti", nome: "TI", ordem: 20 }, { chave: "cameras", nome: "Câmeras", ordem: 30 }, { chave: "interfones", nome: "Interfones", ordem: 40 }];
   var CAT_ORC = Object.assign({}, BASE_ORC);   // as fixas + as áreas que o dono acrescentou (monta em montarAreas)
   function montarAreas() {
     Object.keys(CAT_ORC).forEach(function (k) { delete CAT_ORC[k]; });

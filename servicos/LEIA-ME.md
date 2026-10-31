@@ -333,10 +333,10 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
   condições nas observações). Daí em diante é o orçamento de sempre: ajusta, salva e gera o **PDF igual aos outros orçamentos**, ou manda pelo WhatsApp.
 - O **mesmo arquivo não entra duas vezes** (nem a mesma proposta: cliente, serviço, data e valor iguais). **🗑 Excluir** apaga a proposta e o arquivo guardado;
   os orçamentos que já usaram a proposta não mudam.
-- No orçamento (e na proposta), o campo **Área** tem agora **Manutenção**, **TI** e **Câmeras**, além de Elétrica, Pintura e Elétrica e pintura.
+- No orçamento (e na proposta), o campo **Área** tem agora **Manutenção**, **TI**, **Câmeras** e **Interfones**, além de Elétrica, Pintura e Elétrica e pintura.
   O botão **✏️ Áreas**, ao lado do campo, deixa você **acrescentar** áreas novas (ex.: Segurança eletrônica), **renomear** e **tirar**. Elétrica, Pintura e
   Elétrica e pintura são fixas (a lista de preços depende delas). Tirar uma área que já foi usada não muda os orçamentos antigos, só a área sai da lista.
-- Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `propostas` e `areas_orcamento`). Sem a tabela das áreas, valem Manutenção, TI e Câmeras, mas
+- Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `propostas` e `areas_orcamento`). Sem a tabela das áreas, valem Manutenção, TI, Câmeras e Interfones, mas
   não dá para editar.
 
 ## 📊 Fechamento mensal dos chamados (Supermercados BH)

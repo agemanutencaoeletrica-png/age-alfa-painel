@@ -568,9 +568,9 @@ create table if not exists public.areas_orcamento (
   ordem     integer not null default 100,
   criado_em timestamptz not null default now()
 );
--- só na primeira vez (tabela vazia): Manutenção, TI e Câmeras
+-- só na primeira vez (tabela vazia): Manutenção, TI, Câmeras e Interfones
 insert into public.areas_orcamento (chave, nome, ordem)
-select v.chave, v.nome, v.ordem from (values ('manutencao', 'Manutenção', 10), ('ti', 'TI', 20), ('cameras', 'Câmeras', 30)) as v(chave, nome, ordem)
+select v.chave, v.nome, v.ordem from (values ('manutencao', 'Manutenção', 10), ('ti', 'TI', 20), ('cameras', 'Câmeras', 30), ('interfones', 'Interfones', 40)) as v(chave, nome, ordem)
 where not exists (select 1 from public.areas_orcamento);
 
 -- 📑 propostas prontas: orçamentos técnicos já escritos (cliente, texto do serviço, itens e valores) para guardar, editar e carregar no orçamento do app
