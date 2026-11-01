@@ -2501,11 +2501,17 @@
         '<p class="mudo peq" style="margin:4px 0 0">Os valores continuam guardados no app; aqui você escolhe se o cliente vê ou não.</p></div>' : "") +
       '<div class="cartao" style="margin-top:10px" id="eo2-totais"></div>' +
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
+      '<div class="linha" style="margin-top:4px"><select id="eo2-cond" aria-label="Condição de pagamento pronta" style="flex:1 1 100%"><option value="">✍️ Manual: eu escrevo a forma de pagamento</option>' +
+        '<option value="matmo">💲 100% dos materiais + 50% da mão de obra na aprovação, 50% da mão de obra na entrega (calcula sozinho)</option>' +
+        '<option value="50">💲 50% na aprovação e 50% na entrega (calcula sozinho)</option>' +
+        '<option value="vista">💲 À vista na aprovação (calcula sozinho)</option>' +
+        '<option value="combinar">A combinar</option></select></div>' +
+      '<p class="mudo peq" id="eo2-cond-dica" style="margin:2px 0 0">Escolha uma condição pronta e o app escreve os valores sozinho (e refaz se você mudar os itens), ou deixe em Manual e escreva do seu jeito. Pode corrigir o texto à mão quando quiser.</p>' +
       '<label for="eo2-obs">Observações</label><textarea id="eo2-obs" rows="3"></textarea>' +
       '<label for="eo2-st">Situação</label><select id="eo2-st">' + Object.keys(STATUS_ORC).map(function (k) { return '<option value="' + k + '">' + STATUS_ORC[k] + "</option>"; }).join("") + "</select>" +
       '<p class="peq" id="eo2-auto" style="position:sticky;bottom:0;z-index:2;margin:8px -16px 0;padding:8px 16px;background:var(--sup2);border-top:1px solid var(--borda);font-weight:600">💾 O orçamento salva sozinho enquanto você digita (com o cliente preenchido).</p>' +
       '<div class="acoes"><button class="prim" id="eo2-salvar">Salvar</button>' +
-      (podeCompartilharArquivo() ? '<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>' : "") +
+      ('<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>') +
       '<button id="eo2-pdf">📄 Baixar PDF</button></div>' +
       '<div class="acoes" style="margin-top:8px"><button class="zap" id="eo2-zap">📲 WhatsApp do cliente</button><button id="eo2-email-b">✉ E-mail do cliente</button>' +
       '<button id="eo2-imprimir">🖨 Imprimir</button>' + (!soMateriais(M) ? '<button id="eo2-gmat">🧱 Gerar orçamento de materiais</button>' : "") + '<button id="eo2-dup">📋 Usar como modelo</button>' + (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
@@ -2802,8 +2808,25 @@
       if (soMateriais(M)) { var rm = $('input[name="eo2-mmodo"]:checked', el); M.valores_cliente = rm ? rm.value : "itens"; M.materiais_cliente = true; }
       if ($("#eo2-vist", el)) M.laudo = { vistoria: $("#eo2-vist", el).value.trim(), solucao: $("#eo2-sol", el).value.trim() };
     }
+    // 💲 forma de pagamento pronta: o app calcula pelos materiais e pela mão de obra do orçamento; "Manual" não mexe no que você escreve
+    var condAuto = "";
+    function textoCond(k, t) {
+      var R = function (v) { return A.dinheiro(Math.round(v * 100) / 100); }, total = t.total, matC = t.mc ? Math.min(t.mat, total) : 0, mo = Math.max(0, total - matC);
+      if (k === "matmo" && matC > 0) { var ap = matC + Math.round(mo / 2 * 100) / 100; return "Na aprovação: " + R(ap) + " (100% dos materiais + 50% da mão de obra). Na entrega do serviço: " + R(total - ap) + " (50% da mão de obra)."; }
+      if (k === "matmo" || k === "50") { var m1 = Math.round(total / 2 * 100) / 100; return "50% na aprovação (" + R(m1) + ") e 50% na entrega do serviço (" + R(total - m1) + ")."; }
+      if (k === "vista") return "À vista na aprovação (" + R(total) + ").";
+      return "A combinar.";
+    }
+    function aplicarCond() {
+      if (!condAuto) return;
+      var t = calcOrc(M), txt = textoCond(condAuto, t);
+      if (condAuto === "matmo" && !(t.mc && t.mat > 0)) $("#eo2-cond-dica", el).textContent = "Sem materiais no valor do cliente: usei 50% na aprovação e 50% na entrega.";
+      $("#eo2-pag", el).value = txt; M.pagamento = txt;
+    }
+    $("#eo2-cond", el).addEventListener("change", function () { condAuto = this.value; if (condAuto) { aplicarCond(); totais(); } });
+    $("#eo2-pag", el).addEventListener("input", function (ev) { if (ev.isTrusted && condAuto) { condAuto = ""; $("#eo2-cond", el).value = ""; } });   // digitou à mão: volta para Manual
     function totais() {
-      lerCampos(); guardarRasc();
+      lerCampos(); aplicarCond(); marcarModoValores(); guardarRasc();
       M.itens.forEach(function (i, n) {
         var c = $('#eo2-itens .item-orc[data-i="' + n + '"] .i-sub', el);
         if (c) c.textContent = A.dinheiro((Number(i.qtd) || 0) * ((Number(i.valor) || 0) + (i.tipo === "ambos" ? Number(i.valor_mat) || 0 : 0)));
@@ -3407,9 +3430,26 @@
   function podeCompartilharArquivo() {
     try { return !!(navigator.canShare && navigator.canShare({ files: [new File(["x"], "x.pdf", { type: "application/pdf" })] })); } catch (e) { return false; }
   }
+  // mensagem que acompanha o PDF (o orçamento completo vai anexo)
+  function msgPdf(o) {
+    var E = A.CFG.EMPRESA || {}, num = String(o.numero).padStart(4, "0");
+    return "Olá, " + String(o.cliente || "").split(" ")[0] + "! Segue em anexo o orçamento nº " + num + " (PDF), com validade de " + (o.validade_dias || 15) + " dias." +
+      "\nQualquer dúvida, é só chamar." + (E.nome ? "\n" + E.nome : "") + (E.telefone ? " · " + E.telefone : "");
+  }
   function compartilharPdf(o, blob) {
-    var arq = new File([blob], nomePdf(o), { type: "application/pdf" });
-    var dados = { files: [arq], title: "Orçamento nº " + String(o.numero).padStart(4, "0"), text: "Orçamento nº " + String(o.numero).padStart(4, "0") + " — " + o.cliente };
+    var arq = new File([blob], nomePdf(o), { type: "application/pdf" }), texto = msgPdf(o);
+    var dados = { files: [arq], title: "Orçamento nº " + String(o.numero).padStart(4, "0"), text: texto };
+    // sem compartilhar arquivo (computador): baixa o PDF e abre a conversa do cliente já com a mensagem; é só anexar o arquivo baixado
+    function manual() {
+      baixar(blob, arq.name);
+      var tel = A.soDigitos(o.telefone), link = tel.length >= 10 ? A.linkZap(tel, texto) : "https://wa.me/?text=" + encodeURIComponent(texto);
+      var j = A.janela('<p>O PDF <b>' + esc(arq.name) + '</b> foi baixado (pasta Downloads).</p><ol class="peq"><li>Toque em <b>Abrir a conversa</b>' + (tel.length >= 10 ? " do cliente" : " e escolha o contato") +
+        '.</li><li>No WhatsApp, clique no <b>clipe 📎 → Documento</b> e escolha o PDF.</li><li>Envie.</li></ol>' +
+        '<div class="acoes"><a class="botao zap" id="ok-zap" target="_blank" rel="noopener" href="' + esc(link) + '">📲 Abrir a conversa</a><button id="ok-baixar2">📄 Baixar de novo</button></div>', { titulo: "Enviar PDF pelo WhatsApp" });
+      $("#ok-baixar2", j.el).onclick = function () { baixar(blob, arq.name); };
+      $("#ok-zap", j.el).onclick = function () { setTimeout(j.fechar, 400); };
+    }
+    if (!navigator.share || !podeCompartilharArquivo()) { manual(); return Promise.resolve(); }
     return navigator.share(dados).catch(function (e) {
       if (e && e.name === "AbortError") return;           // a pessoa fechou a janela de compartilhar
       // o navegador exige um toque novo depois de gerar o PDF

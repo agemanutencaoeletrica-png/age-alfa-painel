@@ -322,6 +322,14 @@ No orçamento, em **O que vai para o cliente (PDF, impressão e WhatsApp)**, esc
 - **Só o valor total:** o cliente recebe a **lista dos itens com as quantidades, sem o valor de cada um**, e o total. O valor de cada item continua só no app, para você.
 A escolha fica gravada no orçamento. Em **Ajuste fino** dá para separar o valor dos serviços e o dos materiais.
 
+## 💲 Forma de pagamento pronta (ou manual) e envio do PDF
+- No orçamento, abaixo da **Forma de pagamento**, escolha uma condição pronta e o app **escreve os valores sozinho** pelos materiais e pela mão de obra do orçamento (e refaz se você mudar os itens ou o desconto):
+  - **100% dos materiais + 50% da mão de obra na aprovação, 50% da mão de obra na entrega** (o desconto sai da mão de obra);
+  - **50% na aprovação e 50% na entrega**; **à vista**; **a combinar**.
+- **✍️ Manual:** deixe em Manual e escreva do seu jeito. Se você digitar no campo depois de escolher uma condição pronta, o app volta para Manual e **não mexe mais no seu texto**.
+- **📤 Enviar PDF:** no celular abre a lista de compartilhar com o PDF anexado e a mensagem pronta ("Olá, Fulano! Segue em anexo o orçamento nº ..."). No computador baixa o PDF e abre a conversa do cliente no WhatsApp
+  com a mensagem; é só clicar no clipe 📎 → Documento e escolher o PDF. O WhatsApp não permite que um app anexe o arquivo sozinho.
+
 ## ✍ Corretor de português
 O app corrige o texto **ao sair do campo** (toque fora) e mostra o que mudou ("✍ Corrigido: ..."): **acentos** (instalacao → instalação, portao → portão, nao → não), erros comuns de
 digitação (comado → comando, nessecario → necessário, afim de → a fim de, contatado que → constatado que), **espaços e vírgulas** fora do lugar, palavra repetida ("de de") e **letra
