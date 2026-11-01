@@ -7,7 +7,9 @@
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var P = null;
   var filtro = { busca: "" };
-  var AREAS = { "": "—", eletrica: "⚡ Elétrica", pintura: "🖌️ Pintura", eletrica_pintura: "⚡🖌️ Elétrica e pintura", manutencao: "🔧 Manutenção" };
+  // áreas do orçamento do app (as fixas + as que o dono acrescentou em ✏️ Áreas)
+  function areas() { var a = Object.assign({ "": "—" }, P.areas()); return a; }
+  function nomeArea(k) { var a = areas(); return a[k] || String(k || "").replace(/_/g, " "); }
   var UNS = ["serv", "un", "m", "m²", "pç", "dia", "h", "vb"];
   var PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
   var MESES = { janeiro: 1, fevereiro: 2, "março": 3, marco: 3, abril: 4, maio: 5, junho: 6, julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12 };
@@ -193,7 +195,7 @@
       return '<div class="cartao" data-pp="' + o.id + '" style="cursor:pointer"><div class="linha"><h3 style="margin:0">' + esc(o.titulo || "Proposta sem título") + "</h3>" +
         '<span class="dir"><b>' + (Number(o.total) ? A.dinheiro(Number(o.total)) : "") + "</b></span></div>" +
         '<div class="peq">' + esc(o.cliente || "Cliente não informado") + " · " + esc(A.dataSimples(String(o.data).slice(0, 10))) + " · " + (o.itens || []).length + " item(ns)" +
-        (o.categoria && AREAS[o.categoria] ? " · " + AREAS[o.categoria] : "") + "</div>" +
+        (o.categoria ? " · " + esc(nomeArea(o.categoria)) : "") + "</div>" +
         '<div class="acoes" style="margin-top:6px"><button class="peq prim" data-pp-usar>📝 Usar no orçamento</button><button class="peq" data-pp-editar>✏️ Editar</button><button class="peq perigo" data-pp-excluir>🗑 Excluir</button></div></div>';
     }).join("") || '<div class="cartao vazio">Nada com essa busca.</div>';
     $$("[data-pp]", r).forEach(function (cx) {
@@ -255,7 +257,7 @@
         '<div class="duas"><div><label>Cliente</label><input class="pp-cli" maxlength="160"></div><div><label>CNPJ / CPF</label><input class="pp-doc" maxlength="20"></div></div>' +
         '<div class="duas"><div><label>Telefone</label><input class="pp-tel" maxlength="40"></div><div><label>E-mail</label><input class="pp-email" type="email" maxlength="120"></div></div>' +
         '<label>Endereço</label><input class="pp-end" maxlength="300">' +
-        '<div class="duas"><div><label>Área</label><select class="pp-cat">' + Object.keys(AREAS).map(function (k) { return '<option value="' + k + '">' + AREAS[k] + "</option>"; }).join("") + "</select></div><div></div></div>" +
+        '<div class="duas"><div><label>Área</label><div class="linha" style="gap:6px"><select class="pp-cat" style="flex:1"></select><button type="button" class="peq" data-pp-areas title="Acrescentar, renomear ou tirar áreas (TI, Câmeras...)">✏️ Áreas</button></div></div><div></div></div>' +
         '<label>Apresentação e objetivo <span class="peq mudo">(vai no laudo, em "vistoria")</span></label><textarea class="pp-intro" rows="4" maxlength="5000"></textarea>' +
         '<label>O que será feito <span class="peq mudo">(procedimento; vai no laudo, em "solução". Linhas com • viram tópicos)</span></label><textarea class="pp-esc" rows="7" maxlength="8000"></textarea>' +
         '<div class="tabela-caixa" style="margin-top:8px"><table><thead><tr><th>Item / serviço</th><th class="num">Qtd</th><th>Un</th><th class="num">Valor (un.)</th><th class="num">Total</th><th></th></tr></thead><tbody>' +
@@ -270,7 +272,7 @@
         (o.id ? '<button class="perigo" data-pp-apagar>🗑 Excluir</button>' : "") + (j ? "" : '<button data-pp-cancelar>Cancelar</button>') + "</div>" +
         '<p class="peq mudo" id="pp-aviso"></p>';
       $(".pp-tit", el).value = o.titulo || ""; $(".pp-data", el).value = String(o.data || hoje()).slice(0, 10); $(".pp-cli", el).value = o.cliente || ""; $(".pp-doc", el).value = o.documento || "";
-      $(".pp-tel", el).value = o.telefone || ""; $(".pp-email", el).value = o.email || ""; $(".pp-end", el).value = o.endereco || ""; $(".pp-cat", el).value = o.categoria || "";
+      $(".pp-tel", el).value = o.telefone || ""; $(".pp-email", el).value = o.email || ""; $(".pp-end", el).value = o.endereco || ""; montarAreasSel(o.categoria || "");
       $(".pp-intro", el).value = o.introducao || ""; $(".pp-esc", el).value = o.escopo || ""; $(".pp-cond", el).value = o.condicoes || "";
       $$("tr[data-it]", el).forEach(function (tr) {
         var x = L[Number(tr.dataset.it)];
@@ -279,11 +281,18 @@
         $("[data-it-tirar]", tr).onclick = function () { lerTopo(); L.splice(Number(tr.dataset.it), 1); if (!L.length) L.push({ descricao: "", qtd: 1, un: "serv", valor: 0 }); desenhar(); };
       });
       $("[data-it-mais]", el).onclick = function () { lerTopo(); L.push({ descricao: "", qtd: 1, un: "serv", valor: 0 }); desenhar(); var u = $$(".it-desc", el); u[u.length - 1].focus(); };
+      $("[data-pp-areas]", el).onclick = function () { lerTopo(); P.editarAreas(function () { montarAreasSel($(".pp-cat", el).value); }); };
       $("[data-pp-salvar]", el).onclick = function () { gravar(this, false); };
       $("[data-pp-salvar-usar]", el).onclick = function () { gravar(this, true); };
       if ($("[data-pp-apagar]", el)) $("[data-pp-apagar]", el).onclick = function () { if (j) j.fechar(); excluir(o); };
       if ($("[data-pp-cancelar]", el)) $("[data-pp-cancelar]", el).onclick = function () { el.remove(); };
       somar();
+    }
+    function montarAreasSel(v) {
+      var sel = $(".pp-cat", el), a = areas();
+      sel.innerHTML = Object.keys(a).map(function (k) { return '<option value="' + esc(k) + '">' + esc(a[k]) + "</option>"; }).join("");
+      if (v && !a[v]) sel.insertAdjacentHTML("beforeend", '<option value="' + esc(v) + '">' + esc(nomeArea(v)) + "</option>");
+      sel.value = v || "";
     }
     function lerTopo() {
       o.titulo = $(".pp-tit", el).value.trim(); o.data = $(".pp-data", el).value || hoje(); o.cliente = $(".pp-cli", el).value.trim(); o.documento = $(".pp-doc", el).value.trim();

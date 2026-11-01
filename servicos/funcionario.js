@@ -4,6 +4,8 @@
   "use strict";
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var app = $("#app");
+  // ✍ corretor de português (corretor.js): acentos, erros comuns, espaços e pontuação, ao sair do campo
+  window.AGE_CORR.automatico("#fr-desc, #fp-obs, #ns-desc", A.avisar);
   var sb = null, TOKEN = null, D = null;
 
   var TIPOS_SERVICO = {

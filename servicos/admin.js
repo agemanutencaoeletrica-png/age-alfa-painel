@@ -12,41 +12,9 @@
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
   var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["propostas", "📑 Propostas prontas"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
-  // corretor dos itens do orçamento: palavras do dia a dia de elétrica e pintura escritas sem acento ou com erro comum
-  var CORRECOES = {
-    eletrica: "elétrica", eletricas: "elétricas", eletrico: "elétrico", eletricos: "elétricos", eletricista: "eletricista",
-    bifasica: "bifásica", bifasico: "bifásico", trifasica: "trifásica", trifasico: "trifásico", monofasica: "monofásica", monofasico: "monofásico",
-    distribuicao: "distribuição", distribicao: "distribuição", distribiçao: "distribuição", distribição: "distribuição", distribuiçao: "distribuição",
-    instalacao: "instalação", instalaçao: "instalação", istalacao: "instalação", istalação: "instalação", istalarção: "instalação", instalarção: "instalação",
-    instalacoes: "instalações", istalar: "instalar", adequarçao: "adequação", adequarção: "adequação", adequaçao: "adequação", adequacao: "adequação", espostos: "expostos", esposto: "exposto", espostas: "expostas", indentificar: "identificar", indentificacao: "identificação", identificacao: "identificação", vistoria: "vistoria", instalacão: "instalação", lancar: "lançar", lancamento: "lançamento", manutencao: "manutenção", manutençao: "manutenção", iluminacao: "iluminação", iluminaçao: "iluminação",
-    fixacao: "fixação", fixaçao: "fixação", fixaçar: "fixar", conexao: "conexão", conexoes: "conexões", extensao: "extensão", tensao: "tensão",
-    potencia: "potência", saida: "saída", saidas: "saídas", padrao: "padrão", medicao: "medição", protecao: "proteção", ligacao: "ligação", ligacoes: "ligações",
-    alimentacao: "alimentação", substituicao: "substituição", substituiçao: "substituição", adequacao: "adequação", revisao: "revisão",
-    conteiner: "contêiner", conteineres: "contêineres", container: "contêiner", metalica: "metálica", metalicas: "metálicas", metalico: "metálico",
-    galpao: "galpão", galpoes: "galpões", industria: "indústria", industrial: "industrial", epoxi: "epóxi", epoxy: "epóxi",
-    demarcacao: "demarcação", sinalizacao: "sinalização", impermeabilizacao: "impermeabilização", pintura: "pintura", demaos: "demãos", demao: "demão",
-    servico: "serviço", servicos: "serviços", mao: "mão", area: "área", areas: "áreas", agua: "água", calcada: "calçada",
-    eletrocalha: "eletrocalha", eletroduto: "eletroduto", disjuntor: "disjuntor", diferencial: "diferencial", aterramento: "aterramento",
-    refletor: "refletor", refletores: "refletores", lampada: "lâmpada", lampadas: "lâmpadas", luminaria: "luminária", luminarias: "luminárias",
-    tomadas: "tomadas", interruptor: "interruptor", chuveiro: "chuveiro", chuveiros: "chuveiros", poste: "poste", postes: "postes",
-    rapido: "rápido", tecnico: "técnico", tecnica: "técnica", eletronico: "eletrônico", automatico: "automático", automatica: "automática",
-    cabeamento: "cabeamento", subterraneo: "subterrâneo", subterranea: "subterrânea", aereo: "aéreo", aerea: "aérea",
-    nessecario: "necessário", nessecaria: "necessária", nescessario: "necessário", nescessaria: "necessária", necessario: "necessário", necessaria: "necessária",
-    solucao: "solução", solucoes: "soluções", constatacao: "constatação", tefon: "teflon", teflom: "teflon", curvasde: "curvas de", ceramica: "cerâmica",
-    receptaculo: "receptáculo", receptaculos: "receptáculos", identificacao: "identificação", aterramento: "aterramento", policarbonato: "policarbonato"
-  };
-  // corrige palavra a palavra mantendo MAIÚSCULAS / Primeira maiúscula; devolve o texto e a lista do que mudou
-  function corrigirTexto(t) {
-    var feitas = [];
-    var novo = String(t || "").replace(/[A-Za-zÀ-ÿ]+/g, function (w) {
-      var c = CORRECOES[w.toLowerCase()];
-      if (!c || c === w.toLowerCase()) return w;
-      var r = w === w.toUpperCase() ? c.toLocaleUpperCase("pt-BR") : (w.charAt(0) === w.charAt(0).toUpperCase() ? c.charAt(0).toUpperCase() + c.slice(1) : c);
-      if (r !== w) feitas.push(w + " → " + r);
-      return r;
-    });
-    return { texto: novo, feitas: feitas };
-  }
+  // ✍ corretor de português (acentos, erros comuns, espaços e pontuação): corretor.js. Corrige ao sair dos campos de texto livre
+  function corrigirTexto(t) { return window.AGE_CORR.corrigir(t); }
+  window.AGE_CORR.automatico("#eo2-obs, #eo2-pag, #eo2-prazo, [id^='ns-'][id$='-desc'], #ns-obs, #eo-obs, #es-desc, #dv-leg, #os-obs, #md-obs, #kc-obs, #kc-obj, #lc-obj, #lc-obs, .pp-tit, .pp-intro, .pp-esc, .pp-cond, .it-desc", A.avisar);
   // 🔍 laudo técnico do orçamento (vistoria e solução): modelo pronto + os que o dono salvar
   var MODELOS_LAUDO = [{
     id: "padrao-rede-chuveiro", padrao: true, titulo: "Rede principal e chuveiro com cabo inadequado",
@@ -55,6 +23,39 @@
     solucao: "• Substituir a rede principal (do padrão até o QL) de 6 mm² por cabo de 10 mm², conforme a norma técnica ABNT NBR 5410.\n" +
       "• Substituir o circuito do chuveiro (127 V) por cabo de 6 mm² de boa qualidade, certificado pelo Inmetro.\n" +
       "• Conferir os disjuntores e as conexões dos circuitos trocados e testar o funcionamento ao final."
+  }, {
+    id: "padrao-portao-automatico", padrao: true, titulo: "Portão automático: motor, fotocélulas, fechadura, interfone e acionamento",
+    vistoria: "Conforme a vistoria técnica realizada no local, há necessidade da instalação de um motor bifásico para o portão, de 2 fotocélulas de segurança, de uma fechadura automática, " +
+      "de um interfone porteiro com visor, de um interruptor próximo ao portão para o acionamento e de comando de acionamento remoto a partir da sala de segurança.",
+    solucao: "• Instalar o motor bifásico no portão, com regulagem do curso e da força.\n" +
+      "• Instalar 2 fotocélulas de segurança, que impedem o fechamento do portão quando há pessoa, veículo ou objeto na passagem.\n" +
+      "• Instalar a fechadura automática, acionada junto com o portão.\n" +
+      "• Instalar o interfone porteiro com visor, para atender e identificar quem chama.\n" +
+      "• Instalar um interruptor (botoeira) próximo ao portão, para o acionamento no local.\n" +
+      "• Instalar o comando de acionamento remoto na sala de segurança, para abrir e fechar o portão à distância.\n" +
+      "• Passar a fiação e os eletrodutos necessários, ligar a alimentação e os comandos, testar todos os acionamentos e orientar o responsável no uso."
+  }, {
+    id: "padrao-cameras", padrao: true, titulo: "Câmeras de segurança (CFTV)",
+    vistoria: "Conforme a vistoria técnica realizada no local, há necessidade da instalação de câmeras de segurança para monitorar os pontos de acesso e as áreas de circulação, com gravação das imagens e acesso remoto.",
+    solucao: "• Instalar as câmeras nos pontos definidos na vistoria, com suporte e proteção contra chuva.\n" +
+      "• Instalar o gravador (DVR/NVR) e o HD para guardar as imagens.\n" +
+      "• Passar o cabeamento e a alimentação das câmeras, com fonte e proteção.\n" +
+      "• Configurar a gravação e o acesso às imagens pelo celular.\n" +
+      "• Testar o enquadramento e a qualidade das imagens e orientar o responsável no uso."
+  }, {
+    id: "padrao-interfone", padrao: true, titulo: "Interfone",
+    vistoria: "Conforme a vistoria técnica realizada no local, há necessidade da instalação (ou da troca) de interfone para atendimento e identificação de quem chama na entrada.",
+    solucao: "• Instalar o porteiro eletrônico na entrada e o(s) aparelho(s) interno(s) nos pontos definidos.\n" +
+      "• Passar a fiação entre a entrada e os aparelhos internos.\n" +
+      "• Ligar o acionamento da fechadura ou do portão, quando houver.\n" +
+      "• Testar o atendimento, o áudio (e a imagem, nos modelos com visor) e orientar o responsável no uso."
+  }, {
+    id: "padrao-ti", padrao: true, titulo: "TI: rede e computadores",
+    vistoria: "Conforme a vistoria técnica realizada no local, há necessidade de serviço de TI na rede e nos equipamentos, para o funcionamento estável de computadores, internet e impressoras.",
+    solucao: "• Verificar a rede, o roteador, os pontos de rede e o cabeamento.\n" +
+      "• Instalar ou ajustar os equipamentos de rede e os pontos necessários.\n" +
+      "• Configurar os computadores, a impressora e o acesso à internet.\n" +
+      "• Testar a conexão em cada ponto e orientar o responsável no uso."
   }];
   // primeira letra maiúscula (do campo, ou de cada linha nos textos longos) enquanto você digita
   function maiusculaInicial(t, linhas) {
@@ -112,7 +113,21 @@
   function nomeOrc(o, maiusc) { var t = soMateriais(o) ? "Orçamento de materiais" : "Orçamento"; return maiusc ? t.toUpperCase() : t; }
   var STATUS_ORC = { rascunho: "Rascunho", enviado: "Enviado", aprovado: "Aprovado", recusado: "Recusado" };
   var COR_ORC = { rascunho: "", enviado: "atencao", aprovado: "bom", recusado: "critico" };
-  var CAT_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura", manutencao: "Manutenção" };
+  var BASE_ORC = { eletrica: "Elétrica", pintura: "Pintura", eletrica_pintura: "Elétrica e pintura" };   // fixas: a lista de preços e os chamados dependem delas
+  var AREAS_PADRAO = [{ chave: "manutencao", nome: "Manutenção", ordem: 10 }, { chave: "ti", nome: "TI", ordem: 20 }, { chave: "cameras", nome: "Câmeras", ordem: 30 }, { chave: "interfones", nome: "Interfones", ordem: 40 }];
+  var CAT_ORC = Object.assign({}, BASE_ORC);   // as fixas + as áreas que o dono acrescentou (monta em montarAreas)
+  function montarAreas() {
+    Object.keys(CAT_ORC).forEach(function (k) { delete CAT_ORC[k]; });
+    Object.keys(BASE_ORC).forEach(function (k) { CAT_ORC[k] = BASE_ORC[k]; });
+    (S.areasOrc || AREAS_PADRAO).slice().sort(function (a, b) { return (a.ordem - b.ordem) || String(a.nome).localeCompare(String(b.nome), "pt-BR"); })
+      .forEach(function (x) { if (!BASE_ORC[x.chave]) CAT_ORC[x.chave] = x.nome; });
+  }
+  // nome da área; uma área que o dono tirou depois de usar continua aparecendo pelo código
+  function catNome(k) {
+    if (!k) return "";
+    var p = AREAS_PADRAO.filter(function (x) { return x.chave === k; })[0];
+    return CAT_ORC[k] || (p && p.nome) || String(k).replace(/_/g, " ").replace(/^./, function (c) { return c.toUpperCase(); });
+  }
   var UNIDADES = ["un", "m", "m²", "barra", "rolo", "L", "galão", "lata", "balde", "kg", "cx", "pç", "par", "cento", "kit", "serv", "h", "dia", "vb"];
 
   // ---------- utilidades ----------
@@ -503,7 +518,8 @@
       q(sb.from("modelos_laudo").select("*").order("titulo")).catch(function () { return null; }),
       q(sb.from("precos_historico").select("*").order("data", { ascending: false }).limit(10000)).catch(function () { return null; }),
       q(sb.from("orcamentos_loja").select("*").order("data", { ascending: false }).limit(2000)).catch(function () { return null; }),
-      q(sb.from("propostas").select("*").order("data", { ascending: false }).limit(1000)).catch(function () { return null; })
+      q(sb.from("propostas").select("*").order("data", { ascending: false }).limit(1000)).catch(function () { return null; }),
+      q(sb.from("areas_orcamento").select("*").order("ordem").order("nome")).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -522,6 +538,7 @@
       S.semHist = !r[18]; S.precosHist = r[18] || [];   // 📈 histórico de preços das lojas
       S.semOrcLoja = !r[19]; S.orcLoja = r[19] || [];   // 🏪 orçamentos das lojas (cada um separado)
       S.semPropostas = !r[20]; S.propostas = r[20] || [];   // 📑 propostas prontas (orçamentos técnicos guardados)
+      S.semAreas = !r[21]; S.areasOrc = r[21] || null; montarAreas();   // áreas de serviço do orçamento (sem a tabela: Manutenção, TI e Câmeras padrão)
     });
   }
 
@@ -2262,7 +2279,7 @@
   // busca por número, cliente, endereço ou qualquer item (sem ligar para acento e maiúscula)
   function orcBate(o, b) {
     if (!b) return true;
-    var txt = semAcento([String(o.numero).padStart(4, "0"), o.cliente, o.documento, soDig(o.documento), o.endereco, o.telefone, CAT_ORC[o.categoria] || ""].concat((o.itens || []).map(function (i) { return i.descricao; })).join(" "));
+    var txt = semAcento([String(o.numero).padStart(4, "0"), o.cliente, o.documento, soDig(o.documento), o.endereco, o.telefone, catNome(o.categoria)].concat((o.itens || []).map(function (i) { return i.descricao; })).join(" "));
     return b.split(/\s+/).every(function (p) { return txt.indexOf(p) >= 0; });
   }
   function verOrcamentos(c) {
@@ -2285,7 +2302,7 @@
       });
       $("#bo-lista", c).innerHTML = ls.map(function (o) {
         return '<tr class="clic" data-orc="' + o.id + '" style="cursor:pointer"><td>' + String(o.numero).padStart(4, "0") + "</td><td>" + esc(o.cliente) + (soMateriais(o) ? ' <span class="selo">🧱 materiais</span>' : "") + '</td><td class="esconde-cel">' +
-          esc(CAT_ORC[o.categoria] || "") + '</td><td><span class="selo ' + COR_ORC[o.status] + '">' + STATUS_ORC[o.status] + '</span></td><td class="num">' + A.dinheiro(o.total) +
+          esc(catNome(o.categoria)) + '</td><td><span class="selo ' + COR_ORC[o.status] + '">' + STATUS_ORC[o.status] + '</span></td><td class="num">' + A.dinheiro(o.total) +
           '</td><td class="esconde-cel">' + A.data(o.criado_em) + '</td><td><button class="peq" data-dup="' + o.id + '" title="Abre um orçamento novo com os mesmos itens">📋 Usar como modelo</button> ' +
           '<button class="peq perigo" data-apagar-orc="' + o.id + '" title="Apagar este orçamento" aria-label="Apagar orçamento nº ' + String(o.numero).padStart(4, "0") + '">🗑 Apagar</button></td></tr>';
       }).join("");
@@ -2387,6 +2404,58 @@
   // valor unitário que o cliente vê (no "material + mão de obra", só a mão de obra, a não ser que os materiais vão para o cliente)
   function unCliente(i, o) { return (Number(i.valor) || 0) + (i.tipo === "ambos" && matCliente(o) ? Number(i.valor_mat) || 0 : 0); }
 
+  function opcoesAreas() { return Object.keys(CAT_ORC).map(function (k) { return '<option value="' + esc(k) + '">' + esc(CAT_ORC[k]) + "</option>"; }).join(""); }
+  function chaveArea(nome, usadas) {
+    var k = semAcento(nome).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 36) || "area", b = k, n = 2;
+    while (usadas.indexOf(k) >= 0) k = b + "_" + (n++);
+    return k;
+  }
+  // ✏️ áreas de serviço do orçamento: acrescentar (TI, Câmeras...), renomear e tirar. Elétrica, Pintura e Elétrica e pintura são fixas.
+  function editarAreas(depois) {
+    var L = (S.areasOrc || AREAS_PADRAO).slice().sort(function (x, y) { return (x.ordem - y.ordem) || String(x.nome).localeCompare(String(y.nome), "pt-BR"); })
+      .map(function (x) { return { id: x.id || null, chave: x.chave, nome: x.nome, ordem: x.ordem, novo: false }; });
+    var tirados = [];
+    var j = A.janela('<p class="peq mudo" style="margin-top:0">Fixas (não mudam): ' + Object.keys(BASE_ORC).map(function (k) { return "<b>" + esc(BASE_ORC[k]) + "</b>"; }).join(", ") + ".</p>" +
+      (S.semAreas ? '<div class="aviso">Para acrescentar, renomear ou tirar áreas, rode no Supabase o <b>supabase.sql</b> atualizado (tabela <b>areas_orcamento</b>). Até lá, valem Manutenção, TI e Câmeras.</div>' : "") +
+      '<div id="ar-lista"></div><div class="acoes"><button class="peq" id="ar-mais"' + (S.semAreas ? " disabled" : "") + '>➕ Acrescentar área</button></div>' +
+      '<div class="acoes"><button class="prim" id="ar-salvar"' + (S.semAreas ? " disabled" : "") + '>💾 Salvar áreas</button><button id="ar-cancelar">Cancelar</button></div>', { titulo: "✏️ Áreas de serviço" });
+    function desenhar() {
+      $("#ar-lista", j.el).innerHTML = L.map(function (x, n) {
+        return '<div class="linha" data-ar="' + n + '" style="gap:6px;margin-bottom:6px"><input class="ar-nome" maxlength="60" style="flex:1" placeholder="Nome da área"' + (S.semAreas ? " disabled" : "") +
+          '><button class="peq perigo" data-ar-tirar aria-label="Tirar a área"' + (S.semAreas ? " disabled" : "") + ">🗑</button></div>";
+      }).join("") || '<p class="peq mudo">Nenhuma área acrescentada. Toque em ➕ Acrescentar área.</p>';
+      $$("[data-ar]", j.el).forEach(function (d) {
+        var x = L[Number(d.dataset.ar)];
+        $(".ar-nome", d).value = x.nome;
+        $(".ar-nome", d).oninput = function () { x.nome = this.value; };
+        $("[data-ar-tirar]", d).onclick = function () { L.splice(Number(d.dataset.ar), 1); if (x.id) tirados.push(x); desenhar(); };
+      });
+    }
+    desenhar();
+    $("#ar-cancelar", j.el).onclick = function () { j.fechar(); };
+    $("#ar-mais", j.el).onclick = function () { L.push({ id: null, chave: null, nome: "", ordem: 100 + L.length, novo: true }); desenhar(); var u = $$(".ar-nome", j.el); u[u.length - 1].focus(); };
+    $("#ar-salvar", j.el).onclick = function () {
+      var b = this, nomes = L.map(function (x) { return String(x.nome).trim(); });
+      if (nomes.some(function (n) { return !n; })) { A.avisar("Escreva o nome de cada área ou tire a linha vazia.", "erro"); return; }
+      var todosNomes = nomes.concat(Object.keys(BASE_ORC).map(function (k) { return BASE_ORC[k]; })).map(semAcento);
+      if (todosNomes.some(function (n, i) { return todosNomes.indexOf(n) !== i; })) { A.avisar("Há duas áreas com o mesmo nome.", "erro"); return; }
+      var emUso = tirados.map(function (x) { return { x: x, n: S.orc.filter(function (o) { return o.categoria === x.chave; }).length + (S.propostas || []).filter(function (o) { return o.categoria === x.chave; }).length }; }).filter(function (y) { return y.n > 0; });
+      if (emUso.length && !A.confirmar("Há orçamentos/propostas na área " + emUso.map(function (y) { return "“" + y.x.nome + "” (" + y.n + ")"; }).join(", ") + ". Eles continuam como estão, só a área sai da lista. Tirar mesmo?")) return;
+      A.ocupado(b, true, "Salvando...");
+      var usadas = Object.keys(BASE_ORC).concat(L.filter(function (x) { return x.chave; }).map(function (x) { return x.chave; }), tirados.map(function (x) { return x.chave; }));
+      var ops = [];
+      tirados.forEach(function (x) { ops.push(q(sb.from("areas_orcamento").delete().eq("id", x.id))); });
+      L.forEach(function (x, n) {
+        var nome = String(x.nome).trim();
+        if (x.novo) { var k = chaveArea(nome, usadas); usadas.push(k); ops.push(q(sb.from("areas_orcamento").insert({ chave: k, nome: nome, ordem: 100 + n }))); }
+        else if (x.id) ops.push(q(sb.from("areas_orcamento").update({ nome: nome, ordem: 100 + n }).eq("id", x.id)));
+      });
+      Promise.all(ops).then(function () { return q(sb.from("areas_orcamento").select("*").order("ordem").order("nome")); }).then(function (rs) {
+        S.areasOrc = rs || []; S.semAreas = false; montarAreas(); j.fechar(); A.avisar("✏️ Áreas salvas", "ok"); if (depois) depois();
+      }).catch(function (e) { A.ocupado(b, false); falhou(e); });
+    };
+  }
+
   function editarOrcamento(orc, base) {
     var M = orc ? JSON.parse(JSON.stringify(orc)) : Object.assign({
       id: null, numero: null, obra_id: null, relatorio_id: null, cliente: "", telefone: "", email: "", endereco: "", categoria: "", itens: [],
@@ -2408,8 +2477,8 @@
       '<label for="eo2-doc">CPF ou CNPJ do cliente</label><div class="linha"><input id="eo2-doc" inputmode="numeric" maxlength="20" placeholder="Só os números ou com pontos" style="flex:1">' +
       '<button class="peq" id="eo2-doc-busca" title="Com CNPJ, busca a razão social e o endereço na Receita">🔎 Buscar CNPJ</button></div><div id="eo2-doc-msg" class="peq"></div>' +
       '<div class="duas"><div><label for="eo2-tel">WhatsApp do cliente</label><input id="eo2-tel" type="tel" maxlength="40"></div><div><label for="eo2-email">E-mail do cliente</label><input id="eo2-email" type="email" maxlength="200"></div></div>' +
-      '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><select id="eo2-cat"><option value="">—</option>' +
-      Object.keys(CAT_ORC).map(function (k) { return '<option value="' + k + '">' + CAT_ORC[k] + "</option>"; }).join("") + "</select></div></div>" +
+      '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><div class="linha" style="gap:6px"><select id="eo2-cat" style="flex:1"><option value="">—</option>' +
+      opcoesAreas() + '</select><button type="button" class="peq" id="eo2-areas" title="Acrescentar, renomear ou tirar áreas (TI, Câmeras...)">✏️ Áreas</button></div></div></div>' +
       (soMateriais(M) ? "" : '<details class="cartao" id="eo2-laudo-cx" style="margin-top:12px"' + (temLaudo(M) ? " open" : "") + '><summary><b>🔍 Laudo técnico (vistoria e solução)</b> <span class="peq mudo">· opcional, vai no PDF antes dos itens</span></summary>' +
         '<div class="linha" style="margin-top:8px"><select id="eo2-lmod" aria-label="Modelo de laudo" style="flex:1 1 100%"></select><button class="peq" id="eo2-lsalvar" title="Guarda este laudo para usar em outros orçamentos">💾 Salvar como modelo</button>' +
         '<button class="peq" id="eo2-lapagar" title="Apaga o modelo escolhido na lista">🗑 Apagar modelo</button></div>' +
@@ -2421,19 +2490,28 @@
         '<button class="peq" id="eo2-organizar" title="Põe os itens parecidos um embaixo do outro, em ordem de medida (ex.: Cabo PP 2x1,5, 2x2,5, 3x1,5). Para mudar um item de lugar, segure o ⠿ e arraste.">🔀 Organizar itens</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
       '<div class="cartao' + (soMateriais(M) ? " oculto" : "") + '" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="itens"> <b>Cada item com o seu valor</b> (valor unitário e subtotal)</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="total"> <b>Só o valor total</b>, com a lista dos itens e as quantidades, sem o valor de cada item</label>' +
+      '<details style="margin-top:6px"><summary class="mudo peq">Ajuste fino (serviços e materiais separados)</summary>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-vitens"> Mostrar o valor de cada serviço de mão de obra</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-mcli"> Enviar também o valor dos materiais</label>' +
-      '<p class="mudo peq" style="margin:4px 0 0">Desmarcado: os materiais vão só com a quantidade e o valor deles fica só no app. Para mandar os materiais com preço, use <b>🧱 Orçamento de materiais</b>.</p></div>' +
+      '<p class="mudo peq" style="margin:4px 0 0">Desmarcado: os materiais vão só com a quantidade e o valor deles fica só no app. Para mandar os materiais com preço, use <b>🧱 Orçamento de materiais</b>.</p></details></div>' +
       (soMateriais(M) ? '<div class="cartao" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
         Object.keys(MODOS_MAT).map(function (k) { return '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-mmodo" value="' + k + '"> ' + MODOS_MAT[k] + "</label>"; }).join("") +
         '<p class="mudo peq" style="margin:4px 0 0">Os valores continuam guardados no app; aqui você escolhe se o cliente vê ou não.</p></div>' : "") +
       '<div class="cartao" style="margin-top:10px" id="eo2-totais"></div>' +
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
+      '<div class="linha" style="margin-top:4px"><select id="eo2-cond" aria-label="Condição de pagamento pronta" style="flex:1 1 100%"><option value="">✍️ Manual: eu escrevo a forma de pagamento</option>' +
+        '<option value="matmo">💲 100% dos materiais + 50% da mão de obra na aprovação, 50% da mão de obra na entrega (calcula sozinho)</option>' +
+        '<option value="50">💲 50% na aprovação e 50% na entrega (calcula sozinho)</option>' +
+        '<option value="vista">💲 À vista na aprovação (calcula sozinho)</option>' +
+        '<option value="combinar">A combinar</option></select></div>' +
+      '<p class="mudo peq" id="eo2-cond-dica" style="margin:2px 0 0">Escolha uma condição pronta e o app escreve os valores sozinho (e refaz se você mudar os itens), ou deixe em Manual e escreva do seu jeito. Pode corrigir o texto à mão quando quiser.</p>' +
       '<label for="eo2-obs">Observações</label><textarea id="eo2-obs" rows="3"></textarea>' +
       '<label for="eo2-st">Situação</label><select id="eo2-st">' + Object.keys(STATUS_ORC).map(function (k) { return '<option value="' + k + '">' + STATUS_ORC[k] + "</option>"; }).join("") + "</select>" +
       '<p class="peq" id="eo2-auto" style="position:sticky;bottom:0;z-index:2;margin:8px -16px 0;padding:8px 16px;background:var(--sup2);border-top:1px solid var(--borda);font-weight:600">💾 O orçamento salva sozinho enquanto você digita (com o cliente preenchido).</p>' +
       '<div class="acoes"><button class="prim" id="eo2-salvar">Salvar</button>' +
-      (podeCompartilharArquivo() ? '<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>' : "") +
+      ('<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>') +
       '<button id="eo2-pdf">📄 Baixar PDF</button></div>' +
       '<div class="acoes" style="margin-top:8px"><button class="zap" id="eo2-zap">📲 WhatsApp do cliente</button><button id="eo2-email-b">✉ E-mail do cliente</button>' +
       '<button id="eo2-imprimir">🖨 Imprimir</button>' + (!soMateriais(M) ? '<button id="eo2-gmat">🧱 Gerar orçamento de materiais</button>' : "") + '<button id="eo2-dup">📋 Usar como modelo</button>' + (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
@@ -2441,13 +2519,18 @@
         // fechou a janela: grava na hora o que ainda não foi para o servidor
         aoFechar: function () { document.removeEventListener("visibilitychange", aoSumir); salvarJa(); } });
     var el = j.el;
+    function marcarModoValores() {
+      var v = $("#eo2-vitens", el), m = $("#eo2-mcli", el); if (!v || !m) return;
+      var temMat = (M.itens || []).some(function (i) { return i.tipo === "material" || i.tipo === "ambos"; }), mv = m.checked || !temMat;   // sem materiais, o ajuste dos materiais não conta
+      $$('input[name="eo2-vmodo"]', el).forEach(function (r) { r.checked = (r.value === "itens" && v.checked && mv) || (r.value === "total" && !v.checked && !m.checked); });
+    }
     function preencher() {
       $("#eo2-doc", el).value = M.documento ? fmtDoc(M.documento) : "";
       $("#eo2-cli", el).value = M.cliente || ""; $("#eo2-tel", el).value = M.telefone || ""; $("#eo2-email", el).value = M.email || ""; $("#eo2-end", el).value = M.endereco || "";
       $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? reais2(M.desconto) : "";
       $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
       $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
-      $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente;
+      $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente; marcarModoValores();
       $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.checked = r.value === modoMat(M); });
       if ($("#eo2-vist", el)) { $("#eo2-vist", el).value = M.laudo.vistoria || ""; $("#eo2-sol", el).value = M.laudo.solucao || ""; }
     }
@@ -2725,8 +2808,25 @@
       if (soMateriais(M)) { var rm = $('input[name="eo2-mmodo"]:checked', el); M.valores_cliente = rm ? rm.value : "itens"; M.materiais_cliente = true; }
       if ($("#eo2-vist", el)) M.laudo = { vistoria: $("#eo2-vist", el).value.trim(), solucao: $("#eo2-sol", el).value.trim() };
     }
+    // 💲 forma de pagamento pronta: o app calcula pelos materiais e pela mão de obra do orçamento; "Manual" não mexe no que você escreve
+    var condAuto = "";
+    function textoCond(k, t) {
+      var R = function (v) { return A.dinheiro(Math.round(v * 100) / 100); }, total = t.total, matC = t.mc ? Math.min(t.mat, total) : 0, mo = Math.max(0, total - matC);
+      if (k === "matmo" && matC > 0) { var ap = matC + Math.round(mo / 2 * 100) / 100; return "Na aprovação: " + R(ap) + " (100% dos materiais + 50% da mão de obra). Na entrega do serviço: " + R(total - ap) + " (50% da mão de obra)."; }
+      if (k === "matmo" || k === "50") { var m1 = Math.round(total / 2 * 100) / 100; return "50% na aprovação (" + R(m1) + ") e 50% na entrega do serviço (" + R(total - m1) + ")."; }
+      if (k === "vista") return "À vista na aprovação (" + R(total) + ").";
+      return "A combinar.";
+    }
+    function aplicarCond() {
+      if (!condAuto) return;
+      var t = calcOrc(M), txt = textoCond(condAuto, t);
+      if (condAuto === "matmo" && !(t.mc && t.mat > 0)) $("#eo2-cond-dica", el).textContent = "Sem materiais no valor do cliente: usei 50% na aprovação e 50% na entrega.";
+      $("#eo2-pag", el).value = txt; M.pagamento = txt;
+    }
+    $("#eo2-cond", el).addEventListener("change", function () { condAuto = this.value; if (condAuto) { aplicarCond(); totais(); } });
+    $("#eo2-pag", el).addEventListener("input", function (ev) { if (ev.isTrusted && condAuto) { condAuto = ""; $("#eo2-cond", el).value = ""; } });   // digitou à mão: volta para Manual
     function totais() {
-      lerCampos(); guardarRasc();
+      lerCampos(); aplicarCond(); marcarModoValores(); guardarRasc();
       M.itens.forEach(function (i, n) {
         var c = $('#eo2-itens .item-orc[data-i="' + n + '"] .i-sub', el);
         if (c) c.textContent = A.dinheiro((Number(i.qtd) || 0) * ((Number(i.valor) || 0) + (i.tipo === "ambos" ? Number(i.valor_mat) || 0 : 0)));
@@ -2741,12 +2841,24 @@
     $("#eo2-desc", el).oninput = totais;
     $("#eo2-desc", el).addEventListener("blur", function () { var v = A.lerNumero(this.value); this.value = v ? reais2(v) : ""; });
     $("#eo2-cat", el).addEventListener("change", listaPrecos); listaPrecos();
+    $("#eo2-areas", el).onclick = function () {
+      editarAreas(function () { var sel = $("#eo2-cat", el), v = sel.value; sel.innerHTML = '<option value="">—</option>' + opcoesAreas(); if (!CAT_ORC[v] && v) sel.insertAdjacentHTML("beforeend", '<option value="' + esc(v) + '">' + esc(catNome(v)) + "</option>"); sel.value = v; });
+    };
     $("#eo2-mais-mat", el).onclick = function () { M.itens.push({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }); desenharItens(); focarUltimo(); };
     if ($("#eo2-mais-serv", el)) $("#eo2-mais-serv", el).onclick = function () { M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 }); desenharItens(); focarUltimo(); };
     if ($("#eo2-mais-ambos", el)) $("#eo2-mais-ambos", el).onclick = function () { M.itens.push({ tipo: "ambos", descricao: "", qtd: 1, un: "un", valor: 0, valor_mat: 0 }); desenharItens(); focarUltimo(); };
     // trocar a opção dos materiais muda o rótulo do valor e o total para o cliente
     $("#eo2-mcli", el).addEventListener("change", function () { lerCampos(); desenharItens(); });
-    $("#eo2-vitens", el).addEventListener("change", totais);
+    $("#eo2-vitens", el).addEventListener("change", function () { marcarModoValores(); totais(); });
+    $("#eo2-mcli", el).addEventListener("change", function () { marcarModoValores(); });
+    // 💲 como o cliente vê os valores: cada item com valor (como estava) ou só o total com a lista dos itens e quantidades
+    $$('input[name="eo2-vmodo"]', el).forEach(function (r) {
+      r.addEventListener("change", function () {
+        var tot = this.value === "total";
+        $("#eo2-vitens", el).checked = !tot; $("#eo2-mcli", el).checked = !tot;
+        $("#eo2-vitens", el).dispatchEvent(new Event("change", { bubbles: true })); $("#eo2-mcli", el).dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    });
     $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.addEventListener("change", function () { lerCampos(); desenharItens(); }); });
     function focarUltimo() { var x = $$(".i-desc", el); if (x.length) x[x.length - 1].focus(); }
     desenharItens();
@@ -2943,21 +3055,29 @@
         lerCampos();
         if (!temLaudo(M)) { A.avisar("Escreva a vistoria ou a solução antes de salvar como modelo.", "erro"); return; }
         var sug = (M.laudo.solucao || M.laudo.vistoria).replace(/^[•\-–✓✔*\s]+/, "").split(/[\n.]/)[0].slice(0, 60);
-        var titulo = window.prompt("Nome do modelo de laudo (para achar na lista):", sug);
+        var escolhido = modelosLaudo().filter(function (y) { return y.id === $("#eo2-lmod", el).value; })[0];
+        if (escolhido && !escolhido.padrao) sug = escolhido.titulo;   // modelo seu em uso: mantém o nome para atualizar
+        var titulo = window.prompt("Nome do modelo de laudo (para achar na lista).\nSe já existir um modelo seu com este nome, ele é atualizado:", sug);
         if (titulo === null) return;
         titulo = String(titulo).trim().slice(0, 120) || sug || "Modelo de laudo";
         var dados = { titulo: titulo, vistoria: M.laudo.vistoria || null, solucao: M.laudo.solucao || null }, b = this;
+        var igual = (S.modelosLaudo || []).filter(function (y) { return semAcento(y.titulo).trim() === semAcento(titulo).trim(); })[0];
+        if (!igual && modelosLaudo().some(function (y) { return y.padrao && semAcento(y.titulo).trim() === semAcento(titulo).trim(); })) { A.avisar("Já existe um modelo pronto com este nome. Escolha outro nome.", "erro"); return; }
+        if (igual && !A.confirmar("Já existe o modelo “" + igual.titulo + "”. Atualizar com o texto que está escrito agora?")) return;
         function local() {
+          if (igual) { Object.assign(igual, dados); guardarModelosLocal(); return igual; }
           var n = Object.assign({ id: "local-" + Date.now(), local: true }, dados); S.modelosLaudo.push(n); guardarModelosLocal(); return n;
         }
-        var pr = S.semModLaudo ? Promise.resolve(local()) : q(sb.from("modelos_laudo").insert(dados).select().single()).then(function (n) { S.modelosLaudo.push(n); return n; })
+        var pr = S.semModLaudo || (igual && igual.local) ? Promise.resolve(local())
+          : igual ? q(sb.from("modelos_laudo").update(dados).eq("id", igual.id).select().single()).then(function (n) { trocar(S.modelosLaudo, n); return n; })
+          : q(sb.from("modelos_laudo").insert(dados).select().single()).then(function (n) { S.modelosLaudo.push(n); return n; })
           .catch(function (e) {
             if (!/modelos_laudo|relation|does not exist|schema cache|not find/i.test(A.msgErro(e) + " " + (e && e.message))) throw e;
             S.semModLaudo = true; A.avisar("Modelo guardado só neste aparelho. Para usar em todos, rode o supabase.sql no Supabase (tabela modelos_laudo).", "erro");
             return local();
           });
         A.ocupado(b, true, "Salvando...");
-        pr.then(function (n) { A.ocupado(b, false); listaModelos(n.id); A.avisar("💾 Modelo de laudo “" + n.titulo + "” salvo", "ok"); })
+        pr.then(function (n) { A.ocupado(b, false); listaModelos(n.id); A.avisar("💾 Modelo de laudo “" + n.titulo + "” " + (igual ? "atualizado" : "salvo"), "ok"); })
           .catch(function (e) { A.ocupado(b, false); falhou(e); });
       };
       $("#eo2-lapagar", el).onclick = function () {
@@ -3310,9 +3430,26 @@
   function podeCompartilharArquivo() {
     try { return !!(navigator.canShare && navigator.canShare({ files: [new File(["x"], "x.pdf", { type: "application/pdf" })] })); } catch (e) { return false; }
   }
+  // mensagem que acompanha o PDF (o orçamento completo vai anexo)
+  function msgPdf(o) {
+    var E = A.CFG.EMPRESA || {}, num = String(o.numero).padStart(4, "0");
+    return "Olá, " + String(o.cliente || "").split(" ")[0] + "! Segue em anexo o orçamento nº " + num + " (PDF), com validade de " + (o.validade_dias || 15) + " dias." +
+      "\nQualquer dúvida, é só chamar." + (E.nome ? "\n" + E.nome : "") + (E.telefone ? " · " + E.telefone : "");
+  }
   function compartilharPdf(o, blob) {
-    var arq = new File([blob], nomePdf(o), { type: "application/pdf" });
-    var dados = { files: [arq], title: "Orçamento nº " + String(o.numero).padStart(4, "0"), text: "Orçamento nº " + String(o.numero).padStart(4, "0") + " — " + o.cliente };
+    var arq = new File([blob], nomePdf(o), { type: "application/pdf" }), texto = msgPdf(o);
+    var dados = { files: [arq], title: "Orçamento nº " + String(o.numero).padStart(4, "0"), text: texto };
+    // sem compartilhar arquivo (computador): baixa o PDF e abre a conversa do cliente já com a mensagem; é só anexar o arquivo baixado
+    function manual() {
+      baixar(blob, arq.name);
+      var tel = A.soDigitos(o.telefone), link = tel.length >= 10 ? A.linkZap(tel, texto) : "https://wa.me/?text=" + encodeURIComponent(texto);
+      var j = A.janela('<p>O PDF <b>' + esc(arq.name) + '</b> foi baixado (pasta Downloads).</p><ol class="peq"><li>Toque em <b>Abrir a conversa</b>' + (tel.length >= 10 ? " do cliente" : " e escolha o contato") +
+        '.</li><li>No WhatsApp, clique no <b>clipe 📎 → Documento</b> e escolha o PDF.</li><li>Envie.</li></ol>' +
+        '<div class="acoes"><a class="botao zap" id="ok-zap" target="_blank" rel="noopener" href="' + esc(link) + '">📲 Abrir a conversa</a><button id="ok-baixar2">📄 Baixar de novo</button></div>', { titulo: "Enviar PDF pelo WhatsApp" });
+      $("#ok-baixar2", j.el).onclick = function () { baixar(blob, arq.name); };
+      $("#ok-zap", j.el).onclick = function () { setTimeout(j.fechar, 400); };
+    }
+    if (!navigator.share || !podeCompartilharArquivo()) { manual(); return Promise.resolve(); }
     return navigator.share(dados).catch(function (e) {
       if (e && e.name === "AbortError") return;           // a pessoa fechou a janela de compartilhar
       // o navegador exige um toque novo depois de gerar o PDF
@@ -3355,7 +3492,7 @@
       doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.8); doc.line(L, y, R, y); y += 6;
 
       // cliente
-      var cli = [["Cliente: ", o.cliente], [rotuloDoc(o.documento) + ": ", o.documento ? fmtDoc(o.documento) : ""], ["WhatsApp: ", o.telefone], ["E-mail: ", o.email], ["Local: ", o.endereco], ["Serviço: ", CAT_ORC[o.categoria] || o.categoria]]
+      var cli = [["Cliente: ", o.cliente], [rotuloDoc(o.documento) + ": ", o.documento ? fmtDoc(o.documento) : ""], ["WhatsApp: ", o.telefone], ["E-mail: ", o.email], ["Local: ", o.endereco], ["Serviço: ", catNome(o.categoria)]]
         .filter(function (c) { return c[1]; });
       var linhasCli = cli.map(function (c) { return { r: c[0], v: doc.splitTextToSize(tx(c[1]), 150) }; });
       var altCli = linhasCli.reduce(function (s2, c) { return s2 + c.v.length * 5; }, 0) + 5;
@@ -3479,7 +3616,7 @@
       [E.documento, E.telefone, E.email, E.endereco, E.cidade].filter(Boolean).map(esc).join("<br>") + "</div>" +
       '<div class="num"><b>' + nomeOrc(o, true) + " Nº " + String(o.numero).padStart(4, "0") + "</b><br>Data: " + A.data(o.criado_em) + "<br>Válido até: " + A.data(validade) + "</div></div>" +
       '<div class="cli"><b>Cliente:</b> ' + esc(o.cliente) + (o.documento ? " · <b>" + rotuloDoc(o.documento) + ":</b> " + esc(fmtDoc(o.documento)) : "") + (o.telefone ? " · " + esc(o.telefone) : "") + (o.email ? " · " + esc(o.email) : "") + (o.endereco ? "<br><b>Local:</b> " + esc(o.endereco) : "") +
-      (o.categoria ? "<br><b>Serviço:</b> " + esc(CAT_ORC[o.categoria] || o.categoria) : "") + "</div>" +
+      (o.categoria ? "<br><b>Serviço:</b> " + esc(catNome(o.categoria)) : "") + "</div>" +
       (temLaudo(o) ? '<div class="laudo"><h3>Laudo técnico</h3>' + LAUDO_PARTES.map(function (pt) {
         var ls = linhasLaudo(o.laudo[pt[0]]); if (!ls.length) return "";
         var h = "<h4>" + pt[1] + "</h4>", aberto = false;
@@ -4511,6 +4648,7 @@
     // 🧾 Compras → orçamento de materiais com os itens de uma nota
     // 📑 Propostas prontas → orçamento do app já preenchido
     novoOrcamento: function (base) { editarOrcamento(null, base || {}); },
+    areas: function () { return CAT_ORC; }, editarAreas: function (depois) { editarAreas(depois); },
     orcMateriais: function (c) { editarOrcamento(null, { tipo: "materiais", categoria: c.area === "eletrica" || c.area === "pintura" ? c.area : "", _nota: c }); }
   };
 
