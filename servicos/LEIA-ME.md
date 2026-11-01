@@ -316,6 +316,12 @@ Precisa rodar o **supabase.sql** de novo (cria a tabela de compras).
 - A comparação entre lojas é pelo **nome igual** do material (cada loja escreve de um jeito).
 - Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `orcamentos_loja` e `precos_historico`). Sem elas, o acervo salva do mesmo jeito e o app avisa.
 
+## 💲 Como o cliente vê os valores do orçamento
+No orçamento, em **O que vai para o cliente (PDF, impressão e WhatsApp)**, escolha:
+- **Cada item com o seu valor:** valor unitário e subtotal de cada item (como sempre foi).
+- **Só o valor total:** o cliente recebe a **lista dos itens com as quantidades, sem o valor de cada um**, e o total. O valor de cada item continua só no app, para você.
+A escolha fica gravada no orçamento. Em **Ajuste fino** dá para separar o valor dos serviços e o dos materiais.
+
 ## ✍ Corretor de português
 O app corrige o texto **ao sair do campo** (toque fora) e mostra o que mudou ("✍ Corrigido: ..."): **acentos** (instalacao → instalação, portao → portão, nao → não), erros comuns de
 digitação (comado → comando, nessecario → necessário, afim de → a fim de, contatado que → constatado que), **espaços e vírgulas** fora do lugar, palavra repetida ("de de") e **letra

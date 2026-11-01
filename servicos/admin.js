@@ -2490,9 +2490,12 @@
         '<button class="peq" id="eo2-organizar" title="Põe os itens parecidos um embaixo do outro, em ordem de medida (ex.: Cabo PP 2x1,5, 2x2,5, 3x1,5). Para mudar um item de lugar, segure o ⠿ e arraste.">🔀 Organizar itens</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
       '<div class="cartao' + (soMateriais(M) ? " oculto" : "") + '" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="itens"> <b>Cada item com o seu valor</b> (valor unitário e subtotal)</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="total"> <b>Só o valor total</b>, com a lista dos itens e as quantidades, sem o valor de cada item</label>' +
+      '<details style="margin-top:6px"><summary class="mudo peq">Ajuste fino (serviços e materiais separados)</summary>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-vitens"> Mostrar o valor de cada serviço de mão de obra</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-mcli"> Enviar também o valor dos materiais</label>' +
-      '<p class="mudo peq" style="margin:4px 0 0">Desmarcado: os materiais vão só com a quantidade e o valor deles fica só no app. Para mandar os materiais com preço, use <b>🧱 Orçamento de materiais</b>.</p></div>' +
+      '<p class="mudo peq" style="margin:4px 0 0">Desmarcado: os materiais vão só com a quantidade e o valor deles fica só no app. Para mandar os materiais com preço, use <b>🧱 Orçamento de materiais</b>.</p></details></div>' +
       (soMateriais(M) ? '<div class="cartao" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
         Object.keys(MODOS_MAT).map(function (k) { return '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-mmodo" value="' + k + '"> ' + MODOS_MAT[k] + "</label>"; }).join("") +
         '<p class="mudo peq" style="margin:4px 0 0">Os valores continuam guardados no app; aqui você escolhe se o cliente vê ou não.</p></div>' : "") +
@@ -2510,13 +2513,18 @@
         // fechou a janela: grava na hora o que ainda não foi para o servidor
         aoFechar: function () { document.removeEventListener("visibilitychange", aoSumir); salvarJa(); } });
     var el = j.el;
+    function marcarModoValores() {
+      var v = $("#eo2-vitens", el), m = $("#eo2-mcli", el); if (!v || !m) return;
+      var temMat = (M.itens || []).some(function (i) { return i.tipo === "material" || i.tipo === "ambos"; }), mv = m.checked || !temMat;   // sem materiais, o ajuste dos materiais não conta
+      $$('input[name="eo2-vmodo"]', el).forEach(function (r) { r.checked = (r.value === "itens" && v.checked && mv) || (r.value === "total" && !v.checked && !m.checked); });
+    }
     function preencher() {
       $("#eo2-doc", el).value = M.documento ? fmtDoc(M.documento) : "";
       $("#eo2-cli", el).value = M.cliente || ""; $("#eo2-tel", el).value = M.telefone || ""; $("#eo2-email", el).value = M.email || ""; $("#eo2-end", el).value = M.endereco || "";
       $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? reais2(M.desconto) : "";
       $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
       $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
-      $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente;
+      $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente; marcarModoValores();
       $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.checked = r.value === modoMat(M); });
       if ($("#eo2-vist", el)) { $("#eo2-vist", el).value = M.laudo.vistoria || ""; $("#eo2-sol", el).value = M.laudo.solucao || ""; }
     }
@@ -2818,7 +2826,16 @@
     if ($("#eo2-mais-ambos", el)) $("#eo2-mais-ambos", el).onclick = function () { M.itens.push({ tipo: "ambos", descricao: "", qtd: 1, un: "un", valor: 0, valor_mat: 0 }); desenharItens(); focarUltimo(); };
     // trocar a opção dos materiais muda o rótulo do valor e o total para o cliente
     $("#eo2-mcli", el).addEventListener("change", function () { lerCampos(); desenharItens(); });
-    $("#eo2-vitens", el).addEventListener("change", totais);
+    $("#eo2-vitens", el).addEventListener("change", function () { marcarModoValores(); totais(); });
+    $("#eo2-mcli", el).addEventListener("change", function () { marcarModoValores(); });
+    // 💲 como o cliente vê os valores: cada item com valor (como estava) ou só o total com a lista dos itens e quantidades
+    $$('input[name="eo2-vmodo"]', el).forEach(function (r) {
+      r.addEventListener("change", function () {
+        var tot = this.value === "total";
+        $("#eo2-vitens", el).checked = !tot; $("#eo2-mcli", el).checked = !tot;
+        $("#eo2-vitens", el).dispatchEvent(new Event("change", { bubbles: true })); $("#eo2-mcli", el).dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    });
     $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.addEventListener("change", function () { lerCampos(); desenharItens(); }); });
     function focarUltimo() { var x = $$(".i-desc", el); if (x.length) x[x.length - 1].focus(); }
     desenharItens();
