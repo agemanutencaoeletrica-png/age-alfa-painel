@@ -84,6 +84,85 @@
     return m;
   }
 
+  // ---------- 📝 rascunho e memória de preenchimento (vale para TODA janela com campos) ----------
+  // Rascunho: o que você digita numa janela fica guardado neste aparelho. Se a janela fechar sem querer (X, Esc, clique fora),
+  // a página atualizar ou o app reiniciar, ao abrir de novo o que você tinha escrito volta, com o botão "Descartar".
+  // O rascunho some quando você salva ou toca em Cancelar (qualquer fechamento feito pelo próprio app) e depois de 7 dias.
+  // Memória: cidade, e-mail, telefone, endereço, cliente e empresa já digitados viram sugestões nos próximos campos parecidos.
+  var RASC = "age_rascunhos_v1", MEM = "age_memoria_v1", RASC_DIAS = 7;
+  function lerLS(k) { try { return JSON.parse(localStorage.getItem(k) || "{}") || {}; } catch (e) { return {}; } }
+  function gravarLS(k, o) { try { localStorage.setItem(k, JSON.stringify(o)); } catch (e) { /* sem espaço ou bloqueado: segue sem guardar */ } }
+  function camposDe(el) {
+    return Array.prototype.filter.call(el.querySelectorAll("input[id], textarea[id], select[id]"), function (c) {
+      return !/^(password|file|hidden|button|submit|reset|image)$/i.test(c.type) && !/senha|pass|token|chave|secret|pin\b/i.test(c.id);
+    });
+  }
+  function valorDe(c) { return c.type === "checkbox" || c.type === "radio" ? (c.checked ? "1" : "0") : c.value; }
+  function porValor(c, v) { if (c.type === "checkbox" || c.type === "radio") c.checked = v === "1"; else c.value = v; try { c.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) { /* ok */ } }
+  function tirarRasc(chave) { var o = lerLS(RASC); if (o[chave]) { delete o[chave]; gravarLS(RASC, o); } }
+  function categoria(c) {
+    var t = (c.id + " " + (c.placeholder || "") + " " + (c.getAttribute("aria-label") || "")).toLowerCase();
+    if (c.type === "email" || /mail/.test(t)) return "email";
+    if (c.type === "tel" || /zap|fone|whats|celular/.test(t)) return "telefone";
+    if (/cidade|\bcid\b|-cid\b/.test(t)) return "cidade";
+    if (/endere|\bend\b|-end\b/.test(t)) return "endereco";
+    if (/(^|[-_])(cli|cliente|emp|empresa)\b/.test(c.id.toLowerCase())) return "cliente";
+    return "";
+  }
+  var memCont = 0;
+  function memoria(el) {
+    var mem = lerLS(MEM);
+    camposDe(el).forEach(function (c) {
+      if (c.tagName !== "INPUT" || c.getAttribute("list") || !/^(text|email|tel|search|)$/i.test(c.type)) return;
+      var cat = categoria(c); if (!cat) return;
+      var lst = (mem[cat] || []);
+      if (lst.length) {
+        var dl = document.createElement("datalist"); dl.id = "age-mem-" + (++memCont);
+        dl.innerHTML = lst.map(function (v) { return '<option value="' + esc(v) + '">'; }).join("");
+        c.parentNode.appendChild(dl); c.setAttribute("list", dl.id);
+      }
+      c.addEventListener("change", function () {
+        var v = String(c.value || "").trim(); if (v.length < 3 || v.length > 120) return;
+        var m = lerLS(MEM), l = (m[cat] || []).filter(function (x) { return x.toLowerCase() !== v.toLowerCase(); });
+        l.unshift(v); m[cat] = l.slice(0, 40); gravarLS(MEM, m);
+      });
+    });
+  }
+  function rascunho(fundo, corpo, chave) {
+    var ini = {}, ligado = false;
+    function instante() { var o = {}; camposDe(corpo).forEach(function (c) { o[c.id] = valorDe(c); }); return o; }
+    setTimeout(function () {
+      if (!corpo.isConnected) return;
+      var campos = camposDe(corpo); if (!campos.length) return;
+      memoria(corpo);
+      ini = instante();
+      var todos = lerLS(RASC), d = todos[chave], volta = 0;
+      if (d && d.t && Date.now() - d.t < RASC_DIAS * 864e5) {
+        campos.forEach(function (c) {
+          if (d.cur && d.cur[c.id] !== undefined && d.ini && d.ini[c.id] === ini[c.id] && d.cur[c.id] !== ini[c.id]) { porValor(c, d.cur[c.id]); volta++; }
+        });
+      }
+      if (volta) {
+        var av = document.createElement("div"); av.className = "aviso";
+        av.innerHTML = '📝 Recuperei o que você tinha preenchido antes. <button type="button" class="peq">Descartar</button>';
+        corpo.insertBefore(av, corpo.firstChild);
+        av.querySelector("button").onclick = function () { campos.forEach(function (c) { if (ini[c.id] !== undefined && valorDe(c) !== ini[c.id]) porValor(c, ini[c.id]); }); tirarRasc(chave); av.remove(); };
+      }
+      ligado = true;
+    }, 250);
+    function guardar() {
+      if (!ligado) return;
+      var cur = instante(), mudou = Object.keys(cur).some(function (k) { return cur[k] !== ini[k]; });
+      var o = lerLS(RASC);
+      if (!mudou) { if (o[chave]) { delete o[chave]; gravarLS(RASC, o); } return; }
+      o[chave] = { t: Date.now(), ini: ini, cur: cur };
+      var ks = Object.keys(o).sort(function (a, b) { return o[b].t - o[a].t; });
+      ks.slice(30).forEach(function (k) { delete o[k]; });
+      gravarLS(RASC, o);
+    }
+    fundo.addEventListener("input", guardar); fundo.addEventListener("change", guardar);
+  }
+
   // Janela (modal). Devolve { el, fechar }.
   function janela(html, op) {
     op = op || {};
@@ -94,7 +173,9 @@
       '<div class="corpo">' + html + "</div></div>";
     document.body.appendChild(fundo);
     document.body.style.overflow = "hidden";
-    var fechado = false;
+    var fechado = false, chaveR = "j:" + String(op.titulo || "").trim();
+    if (op.titulo && !op.semRascunho) rascunho(fundo, $(".corpo", fundo), chaveR);
+    function fecharPeloApp() { tirarRasc(chaveR); fechar(); }   // salvou ou cancelou: o rascunho some
     function fechar() {
       if (fechado) return;
       fechado = true;
@@ -111,7 +192,7 @@
     var comecouFora = false;
     fundo.addEventListener("mousedown", function (ev) { comecouFora = ev.target === fundo && ev.clientX < fundo.clientWidth && ev.clientY < fundo.clientHeight; });
     fundo.addEventListener("click", function (ev) { if (comecouFora && ev.target === fundo && !op.fixa) fechar(); comecouFora = false; });
-    return { el: $(".corpo", fundo), fechar: fechar };
+    return { el: $(".corpo", fundo), fechar: fecharPeloApp };
   }
 
   function confirmar(msg) { return window.confirm(msg); }

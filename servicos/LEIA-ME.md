@@ -362,6 +362,13 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
 - Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `propostas` e `areas_orcamento`). Sem a tabela das áreas, valem Manutenção, TI, Câmeras e Interfones, mas
   não dá para editar.
 
+## 📝 Rascunho e memória (em todas as janelas)
+
+- **Nada que você digita se perde:** o que você escreve numa janela (cadastro, orçamento, serviço...) fica guardado neste aparelho. Se fechar sem querer (X, Esc, clique fora), atualizar a página ou reiniciar o app, ao abrir de novo o texto volta, com o aviso "📝 Recuperei o que você tinha preenchido" e o botão **Descartar**.
+- O rascunho some quando você **salva**, toca em **Cancelar** ou **Descartar**, e depois de 7 dias.
+- **Memória:** cidade, e-mail, telefone, endereço, cliente e empresa que você já digitou aparecem como sugestão nos campos parecidos (toque no campo para ver).
+- Senhas e chaves nunca são guardadas. Rascunho e memória ficam só neste aparelho (não passam para outro celular ou computador).
+
 ## 🤝 Parceiros (contatos e envio de documentos)
 
 Aba **🤝 Parceiros**: guarda os contatos e as informações de quem trabalha com você (eletricistas, pintores, engenheiros, TI e câmeras, fornecedores, clientes parceiros).

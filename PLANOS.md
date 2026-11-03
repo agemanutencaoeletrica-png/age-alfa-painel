@@ -2,6 +2,12 @@
 
 Anotações combinadas com o dono para retomar depois. Quando ele pedir, ler este arquivo e lembrar.
 
+## Regras permanentes do dono (valem para TODO projeto e toda mudança)
+- **Nada digitado pode se perder.** Todo formulário/janela guarda rascunho no aparelho (atualizar a página, fechar sem querer ou reiniciar o app não apaga o que foi preenchido) e só limpa ao salvar, cancelar ou descartar. No painel isso já é automático em toda `A.janela` (servicos/comum.js, chaves `age_rascunhos_v1`); em formulários novos fora de `A.janela`, fazer o mesmo.
+- **Memória de preenchimento:** o que já foi digitado (cidade, e-mail, telefone, endereço, cliente, empresa) vira sugestão nos campos parecidos (`age_memoria_v1`), para não pedir de novo. Preferir também preencher sozinho por CNPJ (BrasilAPI) e CEP (ViaCEP), sem apagar o que já está escrito.
+- Caixas de texto crescem sozinhas; telefones ficam no formato (31) 99999-9999.
+- Nunca guardar senha, chave ou token em rascunho/memória.
+
 ## Ordem combinada
 1. **Criar tudo e deixar funcionando** (AGE, Anuncia Aí, AGE Conecta e o AGEstor).
 2. **Captar clientes** (primeiras empresas testando, depois pagantes).
