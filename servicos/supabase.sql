@@ -573,6 +573,28 @@ insert into public.areas_orcamento (chave, nome, ordem)
 select v.chave, v.nome, v.ordem from (values ('manutencao', 'Manutenção', 10), ('ti', 'TI', 20), ('cameras', 'Câmeras', 30), ('interfones', 'Interfones', 40)) as v(chave, nome, ordem)
 where not exists (select 1 from public.areas_orcamento);
 
+-- 🤝 parceiros: contatos e informações de quem trabalha com a AGE (eletricista, pintor, engenheiro, TI, fornecedor...) para mandar documentos e projetos
+create table if not exists public.parceiros (
+  id            uuid primary key default gen_random_uuid(),
+  nome          text not null check (length(trim(nome)) between 1 and 160),
+  empresa       text check (empresa is null or length(empresa) <= 160),
+  tipo          text check (tipo is null or length(tipo) <= 60),
+  whatsapp      text check (whatsapp is null or length(whatsapp) <= 40),
+  telefone      text check (telefone is null or length(telefone) <= 40),
+  email         text check (email is null or length(email) <= 200),
+  cidade        text check (cidade is null or length(cidade) <= 100),
+  endereco      text check (endereco is null or length(endereco) <= 300),
+  obs           text check (obs is null or length(obs) <= 3000),
+  ativo         boolean not null default true,
+  ultimo_envio  timestamptz,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create index if not exists parceiros_nome_idx on public.parceiros (lower(nome));
+drop trigger if exists parceiros_atualizado_em on public.parceiros;
+create trigger parceiros_atualizado_em before update on public.parceiros
+  for each row execute function public._tocar_atualizado_em();
+
 -- 📑 propostas prontas: orçamentos técnicos já escritos (cliente, texto do serviço, itens e valores) para guardar, editar e carregar no orçamento do app
 create table if not exists public.propostas (
   id            uuid primary key default gen_random_uuid(),
@@ -612,7 +634,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
