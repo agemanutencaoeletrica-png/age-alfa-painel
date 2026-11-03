@@ -369,6 +369,13 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
 - **Memória:** cidade, e-mail, telefone, endereço, cliente e empresa que você já digitou aparecem como sugestão nos campos parecidos (toque no campo para ver).
 - Senhas e chaves nunca são guardadas. Rascunho e memória ficam só neste aparelho (não passam para outro celular ou computador).
 
+## 🧾 Compras: ler várias notas de uma vez e recusar as repetidas
+
+- Em **🧾 Compras → 📷 Nota / cupom** dá para escolher **uma ou mais fotos/PDF/XML** de uma vez (até 20). O app abre uma nota por vez: "Depois desta: mais N nota(s)".
+- **Repetidas são recusadas:** o mesmo arquivo escolhido duas vezes na seleção é ignorado, e uma foto/arquivo que **já foi lançado** antes é recusado (o aviso diz a loja, o valor e a data da compra que já existe). Além disso, continua valendo a recusa por chave de acesso, número da nota ou mesma loja, valor e data.
+- **Nota manuscrita** (letra de mão): o leitor do app não consegue ler o total e a data. Nesse caso o **Valor total** fica **vazio e destacado**: digite o total escrito na nota e confira a data. A foto continua guardada com a compra.
+- Para ativar a recusa da mesma foto em notas futuras, rode de novo o `servicos/supabase.sql` no projeto age-servicos (cria a coluna `arquivo_hash`). Sem isso as compras continuam sendo salvas, só não há recusa da mesma foto depois.
+
 ## 🏦 Extrato do banco (PDF): pagamentos da equipe e baixa das notas
 
 - Em **💰 Pagamentos** ou **Equipe**, toque em **🏦 Ler extrato do banco** e escolha o **PDF do extrato** (do app do banco; testado com o Itaú).

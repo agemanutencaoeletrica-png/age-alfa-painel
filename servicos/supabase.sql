@@ -335,6 +335,8 @@ alter table public.compras add column if not exists categoria text;             
 alter table public.compras add column if not exists veiculo_id uuid references public.veiculos (id) on delete set null;
 alter table public.compras add column if not exists forma_pagamento text;
 alter table public.compras add column if not exists pago boolean not null default true;
+alter table public.compras add column if not exists arquivo_hash text;   -- SHA-256 da foto/arquivo da nota: a mesma foto não é lançada duas vezes
+create index if not exists compras_hash_idx on public.compras (arquivo_hash) where arquivo_hash is not null;
 alter table public.compras add column if not exists vencimento date;
 alter table public.compras add column if not exists pago_em timestamptz;   -- quando a nota foi quitada
 alter table public.compras drop constraint if exists compras_area_check;
