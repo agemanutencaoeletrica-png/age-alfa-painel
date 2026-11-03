@@ -447,6 +447,18 @@
               tipo: it.tipo || "diaria", forma: it.forma === "especie" ? "especie" : "pix", favorecido: it.favorecido || null, id_transacao: it.id || null, descricao: it.descricao || null, comprovante: cam
             };
             if (it.obra && window.AGE_FAT) Object.assign(novo, window.AGE_FAT.resolver(P, it.obra));   // obra/cliente do pagamento (resultado da obra)
+            // o mesmo Pix já entrou pelo EXTRATO (sem hora nem ID): o comprovante completa aquele lançamento em vez de duplicar
+            var doExtrato = (P.S.pag || []).filter(function (x) {
+              return String(x.id_transacao || "").indexOf("extrato|") === 0 && x.funcionario_id === novo.funcionario_id && Math.abs(Number(x.valor) - novo.valor) < 0.005 &&
+                diasEntre(A.isoLocal(new Date(x.pago_em)), it.data) <= 4;
+            })[0];
+            if (doExtrato) {
+              var up = { pago_em: novo.pago_em, forma: novo.forma };
+              if (novo.id_transacao) up.id_transacao = novo.id_transacao;
+              if (novo.comprovante) up.comprovante = novo.comprovante;
+              if (novo.tipo && novo.tipo !== "diaria") up.tipo = novo.tipo;
+              return P.q(P.sb.from("pagamentos").update(up).eq("id", doExtrato.id).select().single()).then(function (n) { P.trocar(P.S.pag, n); });
+            }
             return P.q(P.sb.from("pagamentos").insert(novo).select().single()).then(function (n) { P.S.pag.unshift(n); });
           });
         });
@@ -821,16 +833,18 @@
       G = G.filter(function (g) { return !g.docs.some(function (d) { return proprios.indexOf(soDig(d)) >= 0; }); });   // Pix para a própria empresa não é pagamento
       G.forEach(function (g) {
         g.total = g.itens.reduce(function (s, x) { return s + x.valor; }, 0);
-        var ach = acharNoExtrato(g);
-        g.f = ach ? ach.f : null; g.por = ach ? ach.por : "";
+        // repasse a sócio (ou a conta ligada a ele, ex.: esposa) NÃO é pagamento de funcionário: vai para 👔 Sócios
+        g.socio = window.AGE_SOC ? window.AGE_SOC.achar(g.nome, g.docs) : null;
+        var ach = g.socio ? null : acharNoExtrato(g);
+        g.f = ach ? ach.f : null; g.por = g.socio ? "sócio" : ach ? ach.por : "";
         g.itens.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
-        var ja = g.f ? (P.S.pag || []).filter(function (x) { return x.funcionario_id === g.f.id; }) : [];
+        var ja = g.f ? (P.S.pag || []).filter(function (x) { return x.funcionario_id === g.f.id; }) : g.socio ? (P.S.socRep || []).filter(function (x) { return x.socio_id === g.socio.id; }) : [];
         g.itens.forEach(function (s, i) {
-          s.ja = ja.some(function (x) { return Math.abs(Number(x.valor) - s.valor) < 0.01 && diasEntre(String(x.pago_em).slice(0, 10), s.data) <= 4; });
+          s.ja = ja.some(function (x) { return Math.abs(Number(x.valor) - s.valor) < 0.01 && diasEntre(A.isoLocal(new Date(x.pago_em)), s.data) <= 4; });
           var rep = g.itens.slice(0, i).filter(function (y) { return y.data === s.data && Math.abs(y.valor - s.valor) < 0.01; }).length;
           s.chave = "extrato|" + s.data + "|" + s.valor.toFixed(2) + "|" + soDig(g.docs[0] || g.k) + "|" + rep;
         });
-        g.usar = !!g.f;
+        g.usar = !!g.f || !!g.socio;
         g.novos = g.itens.filter(function (s) { return !s.ja; }).length;
       });
       G.sort(function (a, b) { return (b.f ? 1 : 0) - (a.f ? 1 : 0) || b.itens.length - a.itens.length || b.total - a.total; });
@@ -844,7 +858,8 @@
         '<div class="duas"><div><label for="ex-tipo">Tipo dos pagamentos</label><select id="ex-tipo">' + tipos + '</select></div>' +
         '<div><label for="ex-area">Área dos funcionários novos</label><select id="ex-area"><option value="ambos">Elétrica e pintura</option><option value="eletrica">Elétrica</option><option value="pintura">Pintura</option></select></div></div>' +
         '<div id="ex-lista">' + G.map(function (g, i) {
-          var opcoes = '<option value="">➕ Criar funcionário “' + esc(g.nome) + '”</option>' + P.S.func.map(function (x) { return '<option value="' + x.id + '">' + esc(x.nome) + "</option>"; }).join("");
+          var opcoes = (window.AGE_SOC ? window.AGE_SOC.lista() : []).map(function (so) { return '<option value="socio:' + so.id + '">👔 Repasse ao sócio ' + esc(so.nome) + "</option>"; }).join("") +
+            '<option value="">➕ Criar funcionário “' + esc(g.nome) + '”</option>' + P.S.func.map(function (x) { return '<option value="' + x.id + '">' + esc(x.nome) + "</option>"; }).join("");
           return '<div class="cartao" data-g="' + i + '"><label class="marca-linha" style="font-weight:600"><input type="checkbox" class="ex-uso"' + (g.usar ? " checked" : "") + '> ' + esc(g.nome) + "</label>" +
             '<div class="peq mudo">' + g.itens.length + " Pix · " + dinheiro(g.total) + (g.novos !== g.itens.length ? " · " + (g.itens.length - g.novos) + " já lançado(s)" : "") + (g.docs.length ? " · " + esc(g.docs.join(" / ")) : "") + (g.f ? " · reconhecido por " + esc(g.por) : "") + "</div>" +
             '<div class="peq" style="margin:4px 0">' + g.itens.map(function (s) { return '<span style="' + (s.ja ? "text-decoration:line-through;opacity:.6" : "") + '">' + s.data.slice(8) + "/" + s.data.slice(5, 7) + " " + dinheiro(s.valor) + "</span>"; }).join(" · ") + "</div>" +
@@ -855,7 +870,7 @@
             '<div class="peq">= ' + q.compras.map(function (c) { return "nota " + dataBr2(String(c.comprado_em).slice(0, 10)) + " " + dinheiro(c.valor); }).join(" + ") + "</div></div>"; }).join("") : "") +
         '<div class="acoes"><button class="prim" id="ex-ok">✔ Lançar o que está marcado</button>' +
         (entradas ? '<button id="ex-notas">💼 Dar baixa nas notas pelas ' + entradas + " entrada(s)</button>" : "") + '<button id="ex-fim">Fechar</button></div><div id="ex-msg" class="peq"></div>';
-      $$(".ex-func", el).forEach(function (s, i) { s.value = G[i].f ? G[i].f.id : ""; });
+      $$(".ex-func", el).forEach(function (s, i) { s.value = G[i].socio ? "socio:" + G[i].socio.id : G[i].f ? G[i].f.id : ""; });
       $("#ex-fim", el).onclick = function () { j.fechar(); };
       if ($("#ex-notas", el)) $("#ex-notas", el).onclick = function () { j.fechar(); window.AGE_FAT.baixaPelasEntradas(P, f, function () { if (P.rota) P.rota(); }); };
       $("#ex-ok", el).onclick = function () {
@@ -866,7 +881,7 @@
         });
         var qs = []; $$("[data-q]", el).forEach(function (d) { if ($(".ex-q", d).checked) qs.push(Q[Number(d.dataset.q)]); });
         if (!sel.length && !qs.length) { A.avisar("Marque quem é da equipe ou as notas pagas.", "erro"); return; }
-        var tipo = $("#ex-tipo", el).value, area = $("#ex-area", el).value, total = 0, n = 0, quitadas = 0;
+        var tipo = $("#ex-tipo", el).value, area = $("#ex-area", el).value, total = 0, n = 0, quitadas = 0, nSoc = 0, totalSoc = 0;
         A.ocupado(b, true, "Lançando...");
         qs.reduce(function (pr, q) {
           return pr.then(function () {
@@ -874,6 +889,13 @@
           });
         }, Promise.resolve()).then(function () { return sel.reduce(function (pr, x) {
           return pr.then(function () {
+            if (/^socio:/.test(x.fid)) {
+              var sid = x.fid.slice(6), rowsS = x.g.itens.filter(function (s) { return !s.ja; }).map(function (s) {
+                return { socio_id: sid, pago_em: new Date(s.data + "T12:00:00").toISOString(), valor: s.valor, tipo: "repasse", favorecido: x.g.nome, id_transacao: s.chave, descricao: "Importado do extrato do banco" };
+              });
+              if (!rowsS.length) return;
+              return P.q(P.sb.from("socio_repasses").insert(rowsS).select()).then(function (novos) { (novos || []).forEach(function (r) { P.S.socRep.unshift(r); nSoc++; totalSoc += Number(r.valor); }); });
+            }
             var quando = x.fid ? Promise.resolve(P.S.func.filter(function (y) { return y.id === x.fid; })[0]) :
               P.q(P.sb.from("funcionarios").insert({ nome: x.g.nome.toLowerCase().replace(/(^|\s)\S/g, function (c) { return c.toUpperCase(); }), area: area, pix: x.g.docs[0] || null }).select().single()).then(function (nf) { P.S.func.push(nf); return nf; });
             return quando.then(function (fn) {
@@ -887,7 +909,7 @@
             });
           });
         }, Promise.resolve()); }).then(function () {
-          A.avisar("✅ " + (n ? n + " pagamento(s) da equipe: " + dinheiro(total) : "") + (n && quitadas ? " · " : "") + (quitadas ? quitadas + " nota(s) de material marcadas como pagas" : ""), "ok");
+          A.avisar("✅ " + [n ? n + " pagamento(s) da equipe: " + dinheiro(total) : "", nSoc ? nSoc + " repasse(s) a sócio: " + dinheiro(totalSoc) : "", quitadas ? quitadas + " nota(s) de material pagas" : ""].filter(Boolean).join(" · "), "ok");
           j.fechar(); if (P.rota) P.rota();
         }).catch(function (e) { A.ocupado(b, false); $("#ex-msg", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + (n ? " (já foram lançados " + n + ")" : "") + "</div>"; });
       };

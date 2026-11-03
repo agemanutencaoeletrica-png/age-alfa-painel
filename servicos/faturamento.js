@@ -244,9 +244,9 @@
     c.innerHTML = '<div class="cab-secao"><h2>💼 Notas e resultado</h2><span><button class="prim" id="ft-arq-b">📷 Nota de serviço</button> <button id="ft-dep">💰 Recebi um depósito</button> <button id="ft-mao">➕ Lançar à mão</button></span></div>' +
       '<input type="file" id="ft-arq" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml,.zip,application/zip" multiple class="oculto">' +
       '<p class="mudo peq" style="margin-top:-4px">Lance a nota fiscal de serviço que você emitiu (foto, PDF ou XML da prefeitura). Em <b>Resultado por obra</b>: o que entrou menos material, mão de obra e despesas avulsas.</p>' +
-      '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
+      '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"], ["caixa", "💵 Caixa"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
       '<div class="filtros"><select id="ft-per" aria-label="Período"><option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="ano">Este ano</option><option value="tudo">Tudo</option></select>' +
-      (filtro.aba !== "resultado" ? '<select id="ft-sit" aria-label="Situação"><option value="">Todas</option><option value="areceber">⏳ A receber</option><option value="recebido">✅ Recebidas</option></select>' : "") +
+      (filtro.aba !== "resultado" && filtro.aba !== "caixa" ? '<select id="ft-sit" aria-label="Situação"><option value="">Todas</option><option value="areceber">⏳ A receber</option><option value="recebido">✅ Recebidas</option></select>' : "") +
       '<input type="search" id="ft-busca" placeholder="Buscar cliente, obra, nº da nota..."></div>' + htmlRasc() + '<div id="ft-res"></div>';
     if ($("#ft-rasc-ok")) {
       $("#ft-rasc-ok").onclick = function () { var r = lerRasc(); if (r) continuarRasc(r, function () { ver(c, P); }); };
@@ -273,7 +273,7 @@
     desenhar();
     function desenhar() {
       var r = $("#ft-res"), m = function () { ver(c, P); };
-      if (filtro.aba === "resultado") resultado(r, m); else if (filtro.aba === "empresas") empresas(r, m, c); else notas(r, m);
+      if (filtro.aba === "caixa") caixa(r); else if (filtro.aba === "resultado") resultado(r, m); else if (filtro.aba === "empresas") empresas(r, m, c); else notas(r, m);
     }
   }
   function notasFiltradas() {
@@ -1192,6 +1192,40 @@
     return Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return (a.k === "-") - (b.k === "-") || b.entrada - a.entrada || b.gastos - a.gastos; });
   }
   function pct(v) { return v === null ? "—" : (Math.round(v * 10) / 10).toString().replace(".", ",") + "%"; }
+  // 💵 CAIXA do período: o que ENTROU (notas recebidas) e o que SAIU (equipe, material/despesas e repasses a sócios), cada coisa em sua linha.
+  // Repasse a sócio fica separado: não é custo de obra e não entra no "Resultado por obra".
+  function caixa(r) {
+    var pr = periodo(), dia = function (iso) { return A.isoLocal(new Date(iso)); }, emP = function (d) { return d >= pr.de && d < pr.ate; };
+    var recebidas = (P.S.receitas || []).filter(function (n) { return n.recebido && n.recebido_em && emP(String(n.recebido_em).slice(0, 10)); });
+    var entrou = recebidas.reduce(function (t, n) { return t + (Number(n.valor_recebido) || contas(n).liq); }, 0);
+    var aReceber = (P.S.receitas || []).filter(function (n) { return !n.recebido && emP(n.emitida_em); }).reduce(function (t, n) { return t + contas(n).liq; }, 0);
+    var pags = (P.S.pag || []).filter(function (x) { return emP(dia(x.pago_em)); });
+    var porPessoa = {};
+    pags.forEach(function (x) {
+      var nome = P.nomeFunc(x.funcionario_id) || x.favorecido || "—", k = nome;
+      if (!porPessoa[k]) porPessoa[k] = { nome: nome, n: 0, total: 0, itens: [] };
+      porPessoa[k].n++; porPessoa[k].total += Number(x.valor); porPessoa[k].itens.push(x);
+    });
+    var pessoas = Object.keys(porPessoa).map(function (k) { return porPessoa[k]; }).sort(function (a, b) { return b.total - a.total; });
+    var equipe = pags.reduce(function (t, x) { return t + Number(x.valor); }, 0);
+    var compras = (P.S.compras || []).filter(function (c) { return c.pago !== false && emP(c.comprado_em); }).reduce(function (t, c) { return t + Number(c.valor); }, 0);
+    var reps = (P.S.socRep || []).filter(function (x) { return emP(dia(x.pago_em)); });
+    var repassado = reps.filter(function (x) { return x.tipo !== "aporte"; }).reduce(function (t, x) { return t + Number(x.valor); }, 0);
+    var aportes = reps.filter(function (x) { return x.tipo === "aporte"; }).reduce(function (t, x) { return t + Number(x.valor); }, 0);
+    var sobra = entrou - equipe - compras, saldo = sobra - repassado + aportes;
+    var hora = function (iso) { var d = new Date(iso); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); };
+    var tile = function (rot, v, cor, ds) { return '<div class="ladrilho" style="border-left:4px solid var(--' + cor + ')"><div class="r">' + rot + '</div><div class="v" style="font-size:1.25em">' + dinheiro(v) + '</div>' + (ds ? '<div class="d">' + ds + "</div>" : "") + "</div>"; };
+    r.innerHTML = '<p class="peq mudo">Entradas e saídas <b>pela data em que o dinheiro entrou ou saiu</b>. Pagamentos da equipe vêm de 💰 Pagamentos, material e despesas de 🧾 Compras (só as pagas) e repasses de 👔 Sócios. <b>Repasse a sócio não é custo de obra</b>: aparece só aqui, em linha separada.</p>' +
+      '<div class="grade">' + tile("✅ Entrou (notas recebidas)", entrou, "bom", recebidas.length + " nota(s)") + tile("👷 Equipe", equipe, "eletrica", pags.length + " pagamento(s)") + tile("🧱 Material e despesas pagas", compras, "pintura") +
+      tile("Sobra da empresa", sobra, sobra < 0 ? "critico" : "prim", "antes dos sócios") + tile("👔 Repassado a sócios", repassado, "atencao", aportes ? "+ " + dinheiro(aportes) + " que sócio pagou pela empresa" : "") + tile("💵 Saldo do caixa", saldo, saldo < 0 ? "critico" : "bom", "depois dos sócios") + "</div>" +
+      (aReceber ? '<div class="aviso">⏳ ' + dinheiro(aReceber) + " em notas emitidas neste período ainda <b>a receber</b> (não entram no caixa).</div>" : "") +
+      '<h3 style="margin:14px 0 4px">👷 Pagamentos da equipe por pessoa</h3>' + (pessoas.length ? '<div class="tabela-caixa"><table><thead><tr><th>Pessoa</th><th class="num">Pagamentos</th><th class="num">Total</th></tr></thead><tbody>' +
+        pessoas.map(function (p) { return "<tr><td><b>" + esc(p.nome) + '</b><div class="peq mudo">' + p.itens.sort(function (a, b) { return a.pago_em < b.pago_em ? -1 : 1; }).map(function (x) { return A.dataSimples(dia(x.pago_em)) + " " + hora(x.pago_em) + " " + dinheiro(x.valor); }).join(" · ") + '</div></td><td class="num">' + p.n + '</td><td class="num"><b>' + dinheiro(p.total) + "</b></td></tr>"; }).join("") +
+        '<tr><td><b>Total da equipe</b></td><td class="num">' + pags.length + '</td><td class="num"><b>' + dinheiro(equipe) + "</b></td></tr></tbody></table></div>" : '<div class="cartao vazio">Nenhum pagamento da equipe neste período.</div>') +
+      '<h3 style="margin:14px 0 4px">👔 Repasses a sócios</h3>' + (reps.length ? '<div class="tabela-caixa"><table><tbody>' + reps.sort(function (a, b) { return a.pago_em < b.pago_em ? -1 : 1; }).map(function (x) {
+        var so = (P.S.socios || []).filter(function (y) { return y.id === x.socio_id; })[0];
+        return "<tr><td>" + A.dataSimples(dia(x.pago_em)) + " " + hora(x.pago_em) + "</td><td>" + esc(so ? so.nome : "") + (x.favorecido ? '<div class="peq mudo">' + esc(x.favorecido) + "</div>" : "") + "</td><td>" + (x.tipo === "aporte" ? "sócio pagou pela empresa" : "repasse") + '</td><td class="num">' + dinheiro(x.valor) + "</td></tr>"; }).join("") + "</tbody></table></div>" : '<div class="cartao vazio">Nenhum repasse a sócio neste período.</div>');
+  }
   function resultado(r, mudou) {
     var b = semAcento(filtro.busca), ls = montar().filter(function (x) { return !b || semAcento(x.nome).indexOf(b) >= 0; });
     var T = ls.filter(function (x) { return x.k !== "-"; }).reduce(function (t, x) { t.e += x.entrada; t.m += x.mat; t.o += x.mo; t.a += x.av; return t; }, { e: 0, m: 0, o: 0, a: 0 });

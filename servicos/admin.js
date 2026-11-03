@@ -31,7 +31,7 @@
     }).observe(document.body, { childList: true, subtree: true });
   })();
 
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["propostas", "📑 Propostas prontas"], ["parceiros", "🤝 Parceiros"], ["precos", "💲 Preços"], ["equipe", "Equipe"], ["lixeira", "🗑 Lixeira"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["propostas", "📑 Propostas prontas"], ["parceiros", "🤝 Parceiros"], ["precos", "💲 Preços"], ["socios", "👔 Sócios"], ["equipe", "Equipe"], ["lixeira", "🗑 Lixeira"]];
   // ✍ corretor de português (acentos, erros comuns, espaços e pontuação): corretor.js. Corrige ao sair dos campos de texto livre
   function corrigirTexto(t) { return window.AGE_CORR.corrigir(t); }
   window.AGE_CORR.automatico("#eo2-obs, #eo2-pag, #eo2-prazo, [id^='ns-'][id$='-desc'], #ns-obs, #eo-obs, #es-desc, #dv-leg, #os-obs, #md-obs, #kc-obs, #kc-obj, #lc-obj, #lc-obs, .pp-tit, .pp-intro, .pp-esc, .pp-cond, .it-desc, #pa-obs, #en-msg", A.avisar);
@@ -541,7 +541,10 @@
       q(sb.from("propostas").select("*").order("data", { ascending: false }).limit(1000)).catch(function () { return null; }),
       q(sb.from("areas_orcamento").select("*").order("ordem").order("nome")).catch(function () { return null; }),
       q(sb.from("parceiros").select("*").order("nome")).catch(function () { return null; }),
-      q(sb.from("parceiros_tipos").select("*").order("ordem").order("nome")).catch(function () { return null; })
+      q(sb.from("parceiros_tipos").select("*").order("ordem").order("nome")).catch(function () { return null; }),
+      q(sb.from("socios").select("*").order("nome")).catch(function () { return null; }),
+      q(sb.from("socio_servicos").select("*").order("data", { ascending: false }).limit(3000)).catch(function () { return null; }),
+      q(sb.from("socio_repasses").select("*").order("pago_em", { ascending: false }).limit(3000)).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -560,7 +563,8 @@
       S.semHist = !r[18]; S.precosHist = r[18] || [];   // 📈 histórico de preços das lojas
       S.semOrcLoja = !r[19]; S.orcLoja = r[19] || [];   // 🏪 orçamentos das lojas (cada um separado)
       S.semPropostas = !r[20]; S.propostas = r[20] || [];   // 📑 propostas prontas (orçamentos técnicos guardados)
-      S.semParceiros = !r[22]; S.parceiros = r[22] || []; S.tiposParc = r[23] || null;   // 🤝 parceiros (contatos para mandar documentos e projetos)
+      S.semParceiros = !r[22]; S.parceiros = r[22] || []; S.tiposParc = r[23] || null;
+      S.semSocios = !r[24] || !r[25] || !r[26]; S.socios = r[24] || []; S.socServ = r[25] || []; S.socRep = r[26] || [];   // 👔 sócios   // 🤝 parceiros (contatos para mandar documentos e projetos)
       S.semAreas = !r[21]; S.areasOrc = r[21] || null; montarAreas();   // áreas de serviço do orçamento (sem a tabela: Manutenção, TI e Câmeras padrão)
     });
   }
@@ -609,7 +613,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, orclojas: function (c2) { window.AGE_ORCLOJA.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, propostas: function (c2) { window.AGE_PROP.ver(c2, P); }, parceiros: function (c2) { window.AGE_PARC.ver(c2, P); }, lixeira: function (c2) { window.AGE_LIXO.ver(c2, P); }, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, orclojas: function (c2) { window.AGE_ORCLOJA.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, propostas: function (c2) { window.AGE_PROP.ver(c2, P); }, parceiros: function (c2) { window.AGE_PARC.ver(c2, P); }, lixeira: function (c2) { window.AGE_LIXO.ver(c2, P); }, socios: function (c2) { window.AGE_SOC.ver(c2, P); }, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================

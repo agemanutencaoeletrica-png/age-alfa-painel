@@ -640,6 +640,44 @@ $$;
 revoke execute on function public.lixeira_restaurar(uuid) from public, anon;
 grant execute on function public.lixeira_restaurar(uuid) to authenticated;
 
+-- 👔 sócios: serviços fechados por cada sócio, o que ele tem a receber e os repasses (Pix/extrato) já feitos a ele ou a contas ligadas (ex.: esposa)
+create table if not exists public.socios (
+  id           uuid primary key default gen_random_uuid(),
+  nome         text not null check (length(trim(nome)) between 1 and 160),
+  doc          text check (doc is null or length(doc) <= 30),             -- CPF
+  percentual   numeric(5,2) not null default 0 check (percentual between 0 and 100),   -- parte do sócio nos serviços fechados
+  relacionados jsonb not null default '[]'::jsonb,                          -- outras contas que contam para ele: [{nome, doc}]
+  obs          text check (obs is null or length(obs) <= 2000),
+  ativo        boolean not null default true,
+  criado_em    timestamptz not null default now()
+);
+create table if not exists public.socio_servicos (
+  id          uuid primary key default gen_random_uuid(),
+  socio_id    uuid not null references public.socios (id) on delete cascade,
+  data        date not null,
+  cliente     text check (cliente is null or length(cliente) <= 200),
+  descricao   text check (descricao is null or length(descricao) <= 1000),
+  valor       numeric(12,2) not null check (valor > 0),
+  percentual  numeric(5,2) check (percentual is null or percentual between 0 and 100),   -- vazio = o do sócio
+  receita_id  uuid references public.receitas (id) on delete set null,                   -- nota de serviço ligada (opcional)
+  criado_em   timestamptz not null default now()
+);
+create table if not exists public.socio_repasses (
+  id            uuid primary key default gen_random_uuid(),
+  socio_id      uuid not null references public.socios (id) on delete cascade,
+  pago_em       timestamptz not null,
+  valor         numeric(12,2) not null check (valor > 0),
+  tipo          text not null default 'repasse' check (tipo in ('repasse', 'aporte')),   -- repasse: a empresa pagou ao sócio; aporte: o sócio pagou algo da empresa com o dinheiro dele
+  favorecido    text check (favorecido is null or length(favorecido) <= 200),
+  descricao     text check (descricao is null or length(descricao) <= 1000),
+  id_transacao  text,
+  comprovante   text,
+  criado_em     timestamptz not null default now()
+);
+create unique index if not exists socio_repasses_trans_idx on public.socio_repasses (id_transacao) where id_transacao is not null;
+create index if not exists socio_servicos_socio_idx on public.socio_servicos (socio_id, data);
+create index if not exists socio_repasses_socio_idx on public.socio_repasses (socio_id, pago_em);
+
 -- 📑 propostas prontas: orçamentos técnicos já escritos (cliente, texto do serviço, itens e valores) para guardar, editar e carregar no orçamento do app
 create table if not exists public.propostas (
   id            uuid primary key default gen_random_uuid(),
@@ -679,7 +717,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
