@@ -31,7 +31,7 @@
     }).observe(document.body, { childList: true, subtree: true });
   })();
 
-  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["propostas", "📑 Propostas prontas"], ["parceiros", "🤝 Parceiros"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
+  var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["propostas", "📑 Propostas prontas"], ["parceiros", "🤝 Parceiros"], ["precos", "💲 Preços"], ["equipe", "Equipe"], ["lixeira", "🗑 Lixeira"]];
   // ✍ corretor de português (acentos, erros comuns, espaços e pontuação): corretor.js. Corrige ao sair dos campos de texto livre
   function corrigirTexto(t) { return window.AGE_CORR.corrigir(t); }
   window.AGE_CORR.automatico("#eo2-obs, #eo2-pag, #eo2-prazo, [id^='ns-'][id$='-desc'], #ns-obs, #eo-obs, #es-desc, #dv-leg, #os-obs, #md-obs, #kc-obs, #kc-obj, #lc-obj, #lc-obs, .pp-tit, .pp-intro, .pp-esc, .pp-cond, .it-desc, #pa-obs, #en-msg", A.avisar);
@@ -270,7 +270,7 @@
   // ---------- entrada ----------
   function iniciar() {
     if (!A.configurado()) { A.telaSemConfig(app); return; }
-    try { sb = A.cliente(); } catch (e) { app.innerHTML = '<div class="entrada"><div class="aviso erro">' + esc(A.msgErro(e)) + "</div></div>"; return; }
+    try { sb = A.cliente(); if (window.AGE_LIXO) window.AGE_LIXO.ligar(sb); } catch (e) { app.innerHTML = '<div class="entrada"><div class="aviso erro">' + esc(A.msgErro(e)) + "</div></div>"; return; }
     sb.auth.onAuthStateChange(function (ev) { if (ev === "SIGNED_OUT") telaLogin(); });
     sb.auth.getSession().then(function (r) {
       if (r.data && r.data.session) { if (travaAtiva()) bloquear(verificarAdmin); else verificarAdmin(); }
@@ -609,7 +609,7 @@
     var c = $("#conteudo");
     if (!c) return;
     window.scrollTo(0, 0);
-    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, orclojas: function (c2) { window.AGE_ORCLOJA.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, propostas: function (c2) { window.AGE_PROP.ver(c2, P); }, parceiros: function (c2) { window.AGE_PARC.ver(c2, P); }, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
+    ({ hoje: verHoje, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, orclojas: function (c2) { window.AGE_ORCLOJA.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, orcamentos: verOrcamentos, propostas: function (c2) { window.AGE_PROP.ver(c2, P); }, parceiros: function (c2) { window.AGE_PARC.ver(c2, P); }, lixeira: function (c2) { window.AGE_LIXO.ver(c2, P); }, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, equipe: verEquipe })[aba](c);
   }
 
   // =================================================================
@@ -2336,7 +2336,7 @@
         b.onclick = function (ev) {
           ev.stopPropagation();
           var o = porId(S.orc, b.dataset.apagarOrc); if (!o) return;
-          if (!A.confirmar("Apagar o " + nomeOrc(o).toLowerCase() + " nº " + String(o.numero).padStart(4, "0") + " de " + o.cliente + " (" + A.dinheiro(o.total) + ")?\nIsso não pode ser desfeito.")) return;
+          if (!A.confirmar("Apagar o " + nomeOrc(o).toLowerCase() + " nº " + String(o.numero).padStart(4, "0") + " de " + o.cliente + " (" + A.dinheiro(o.total) + ")?\nEle vai para a 🗑 Lixeira e fica lá 30 dias, para o caso de precisar recuperar.")) return;
           A.ocupado(b, true, "Apagando...");
           q(sb.from("orcamentos").delete().eq("id", o.id)).then(function () {
             tirar(S.orc, o.id);
@@ -4667,7 +4667,7 @@
     get sb() { return sb; }, S: S, q: q, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
     val: val, nulo: nulo, htmlFoto: htmlFoto, hidratarFotos: hidratarFotos, infoFoto: infoFoto, registrarInfoPonto: registrarInfoPonto,
     opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,
-    rota: rota, atualizarAbas: function () { desenharAbas(location.hash.slice(1) || "hoje"); }, resumoServ: resumoServ, importarChamado: importarChamado, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES, carregarLeaflet: carregarLeaflet,
+    rota: rota, recarregar: function () { return carregarBase().then(function () { rota(); }); }, atualizarAbas: function () { desenharAbas(location.hash.slice(1) || "hoje"); }, resumoServ: resumoServ, importarChamado: importarChamado, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES, carregarLeaflet: carregarLeaflet,
     // 🧾 Compras → orçamento de materiais com os itens de uma nota
     // 📑 Propostas prontas → orçamento do app já preenchido
     novoOrcamento: function (base) { editarOrcamento(null, base || {}); },
