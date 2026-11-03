@@ -11,6 +11,26 @@
   var filtroServ = { cat: "", st: "ativos", func: "", busca: "", ordem: "recentes" };
   var filtroPonto = null;
   var filtroRel = "nao_lidos", filtroRelTipo = "";
+  // ↕ caixas de texto crescem sozinhas conforme você escreve (até 70% da tela; depois rola)
+  (function () {
+    function cresce(t) {
+      if (!t || t.tagName !== "TEXTAREA" || !t.scrollHeight) return;
+      var max = Math.round(window.innerHeight * 0.7);
+      t.style.height = "auto";
+      var h = t.scrollHeight + 2;
+      t.style.height = Math.min(h, max) + "px"; t.style.overflowY = h > max ? "auto" : "hidden";
+    }
+    document.addEventListener("input", function (e) { cresce(e.target); }, true);
+    if (window.MutationObserver) new MutationObserver(function (ms) {
+      var novas = [];
+      ms.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes, function (n) {
+        if (n.nodeType !== 1) return;
+        if (n.tagName === "TEXTAREA") novas.push(n); else if (n.querySelectorAll) Array.prototype.push.apply(novas, n.querySelectorAll("textarea"));
+      }); });
+      if (novas.length) requestAnimationFrame(function () { novas.forEach(cresce); });
+    }).observe(document.body, { childList: true, subtree: true });
+  })();
+
   var ABAS = [["hoje", "Hoje"], ["servicos", "Serviços"], ["executados", "✅ Executados"], ["prefeitura", "🏛️ Prefeitura"], ["rotas", "Rotas"], ["lojas", "Lojas"], ["ponto", "Ponto"], ["pagamentos", "💰 Pagamentos"], ["compras", "🧾 Compras"], ["orclojas", "🏪 Orçamentos das lojas"], ["faturamento", "💼 Notas e resultado"], ["prospeccao", "🎯 Prospecção"], ["veiculos", "🚗 Veículos"], ["relatorios", "Relatórios"], ["orcamentos", "Orçamentos"], ["propostas", "📑 Propostas prontas"], ["parceiros", "🤝 Parceiros"], ["precos", "💲 Preços"], ["equipe", "Equipe"]];
   // ✍ corretor de português (acentos, erros comuns, espaços e pontuação): corretor.js. Corrige ao sair dos campos de texto livre
   function corrigirTexto(t) { return window.AGE_CORR.corrigir(t); }

@@ -590,6 +590,7 @@ create table if not exists public.parceiros (
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+alter table public.parceiros add column if not exists cnpj text check (cnpj is null or length(cnpj) <= 20);
 create index if not exists parceiros_nome_idx on public.parceiros (lower(nome));
 drop trigger if exists parceiros_atualizado_em on public.parceiros;
 create trigger parceiros_atualizado_em before update on public.parceiros

@@ -140,14 +140,63 @@
     };
   }
 
+  // ---------------- preenchimento automático ----------------
+  function fmtFone(t) {
+    var n = dig(t).replace(/^55(?=\d{10,11}$)/, "");
+    return n.length === 11 ? "(" + n.slice(0, 2) + ") " + n.slice(2, 7) + "-" + n.slice(7) : n.length === 10 ? "(" + n.slice(0, 2) + ") " + n.slice(2, 6) + "-" + n.slice(6) : String(t || "");
+  }
+  function cepViaCep(cep8) {
+    var ctl = window.AbortController ? new AbortController() : null, t = ctl ? setTimeout(function () { ctl.abort(); }, 8000) : null;
+    return fetch("https://viacep.com.br/ws/" + cep8 + "/json/", ctl ? { signal: ctl.signal } : {}).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (x) { if (t) clearTimeout(t); return x && !x.erro ? x : null; }).catch(function () { if (t) clearTimeout(t); return null; });
+  }
+  // CNPJ ou CEP preenchem sozinhos os campos que ainda estão vazios (nunca apagam o que você já escreveu); telefones ficam no formato (31) 99999-9999
+  function ligarAuto(el) {
+    var aviso = $("#pa-auto", el), ultimo = "", ultimoCep = "";
+    function vazio(id) { return !$(id, el).value.trim(); }
+    function pôr(id, v, lista) { if (v && vazio(id)) { $(id, el).value = v; lista.push(id); } }
+    function consultaCnpj() {
+      var c = dig($("#pa-cnpj", el).value);
+      if (c.length !== 14 || c === ultimo || !window.AGE_FORN) return;
+      if (!window.AGE_FORN.cnpjValido(c)) { aviso.textContent = "⚠ CNPJ com dígito errado. Confira os números."; return; }
+      ultimo = c; aviso.textContent = "🔎 Buscando o CNPJ...";
+      window.AGE_FORN.consultar(c).then(function (r) {
+        if (!r) { aviso.textContent = "Não achei esse CNPJ agora (ou está sem internet). Preencha à mão."; return; }
+        var ok = [];
+        pôr("#pa-emp", r.razao_social, ok); pôr("#pa-nome", r.nome, ok);
+        pôr("#pa-zap", r.whatsapp, ok); pôr("#pa-tel", r.telefone, ok); pôr("#pa-mail", r.email, ok); pôr("#pa-cid", r.cidade, ok);
+        pôr("#pa-end", [r.endereco, r.bairro].filter(Boolean).join(" - ") + (r.cep ? " - CEP " + r.cep : ""), ok);
+        aviso.textContent = ok.length ? "✔ Preenchi " + ok.length + " campo(s) pelo CNPJ: " + r.razao_social + ". Confira antes de salvar." : "✔ CNPJ conferido: " + r.razao_social + ". Os campos já estavam preenchidos.";
+      });
+    }
+    $("#pa-cnpj", el).oninput = consultaCnpj;
+    $("#pa-cnpj", el).onblur = function () { var c = dig(this.value); if (c.length === 14 && window.AGE_FORN) this.value = window.AGE_FORN.fmtCnpj(c); };
+    $("#pa-cep", el).oninput = function () {
+      var c = dig(this.value); if (c.length > 5) this.value = c.slice(0, 5) + "-" + c.slice(5, 8);
+      if (c.length !== 8 || c === ultimoCep) return;
+      ultimoCep = c; aviso.textContent = "🔎 Buscando o CEP...";
+      cepViaCep(c).then(function (x) {
+        if (!x) { aviso.textContent = "Não achei esse CEP. Preencha o endereço à mão."; return; }
+        var ok = [];
+        pôr("#pa-end", [x.logradouro, x.bairro].filter(Boolean).join(" - ") + (x.logradouro ? "" : ""), ok); pôr("#pa-cid", x.localidade, ok);
+        aviso.textContent = "✔ Endereço pelo CEP: " + [x.logradouro, x.bairro, x.localidade + "/" + x.uf].filter(Boolean).join(", ") + ". Falta só o número.";
+      });
+    };
+    ["#pa-zap", "#pa-tel"].forEach(function (id) {
+      $(id, el).onblur = function () { var n = dig(this.value).replace(/^55(?=\d{10,11}$)/, ""); if (n.length === 10 || n.length === 11) this.value = fmtFone(n); };
+    });
+  }
+
   // ---------------- cadastro ----------------
   function editar(p) {
     var novo = !p.id;
     var j = A.janela('<datalist id="pa-dl">' + tiposUsados().map(function (t) { return '<option value="' + esc(t) + '">'; }).join("") + "</datalist>" +
+      '<label for="pa-cnpj">CNPJ (opcional: preenche o resto sozinho)</label><input id="pa-cnpj" inputmode="numeric" maxlength="20" placeholder="00.000.000/0000-00" autocomplete="off"><div id="pa-auto" class="peq mudo" aria-live="polite"></div>' +
       '<label for="pa-nome">Nome *</label><input id="pa-nome" maxlength="160" autocomplete="off">' +
       '<div class="duas"><div><label for="pa-emp">Empresa</label><input id="pa-emp" maxlength="160"></div><div><label for="pa-tp">Tipo (o que faz)</label><input id="pa-tp" list="pa-dl" maxlength="60" placeholder="Ex.: Eletricista"><button type="button" class="peq" id="pa-tp-edit" style="margin-top:4px">✏️ Editar lista de funções</button></div></div>' +
       '<div class="duas"><div><label for="pa-zap">WhatsApp (com DDD)</label><input id="pa-zap" type="tel" maxlength="40" placeholder="(31) 99999-9999"></div><div><label for="pa-tel">Telefone</label><input id="pa-tel" type="tel" maxlength="40"></div></div>' +
       '<div class="duas"><div><label for="pa-mail">E-mail</label><input id="pa-mail" type="email" maxlength="200"></div><div><label for="pa-cid">Cidade</label><input id="pa-cid" maxlength="100"></div></div>' +
+      '<div class="duas"><div><label for="pa-cep">CEP (preenche o endereço)</label><input id="pa-cep" inputmode="numeric" maxlength="9" placeholder="00000-000" autocomplete="off"></div><div></div></div>' +
       '<label for="pa-end">Endereço</label><input id="pa-end" maxlength="300">' +
       '<label for="pa-obs">Informações (especialidade, valores combinados, documentos que ele pede...)</label><textarea id="pa-obs" rows="4" maxlength="3000"></textarea>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="pa-ativo"> Parceiro ativo</label>' +
@@ -157,6 +206,8 @@
     $("#pa-nome", el).value = p.nome || ""; $("#pa-emp", el).value = p.empresa || ""; $("#pa-tp", el).value = p.tipo || ""; $("#pa-zap", el).value = p.whatsapp || "";
     $("#pa-tel", el).value = p.telefone || ""; $("#pa-mail", el).value = p.email || ""; $("#pa-cid", el).value = p.cidade || ""; $("#pa-end", el).value = p.endereco || "";
     $("#pa-obs", el).value = p.obs || ""; $("#pa-ativo", el).checked = p.ativo !== false;
+    $("#pa-cnpj", el).value = p.cnpj || "";
+    ligarAuto(el);
     $("#pa-cancelar", el).onclick = function () { j.fechar(); };
     $("#pa-tp-edit", el).onclick = function () {
       editarTipos(function () { $("#pa-dl", el).innerHTML = tiposUsados().map(function (t) { return '<option value="' + esc(t) + '">'; }).join(""); });
@@ -171,18 +222,25 @@
       var d = { nome: $("#pa-nome", el).value.trim(), empresa: $("#pa-emp", el).value.trim() || null, tipo: $("#pa-tp", el).value.trim() || null, whatsapp: $("#pa-zap", el).value.trim() || null,
         telefone: $("#pa-tel", el).value.trim() || null, email: $("#pa-mail", el).value.trim() || null, cidade: $("#pa-cid", el).value.trim() || null, endereco: $("#pa-end", el).value.trim() || null,
         obs: $("#pa-obs", el).value.trim() || null, ativo: $("#pa-ativo", el).checked };
+      var cnpjDig = dig($("#pa-cnpj", el).value);
+      if (cnpjDig) { if (!(window.AGE_FORN && window.AGE_FORN.cnpjValido(cnpjDig))) { A.avisar("O CNPJ está com dígito errado. Confira ou apague.", "erro"); return; } d.cnpj = window.AGE_FORN.fmtCnpj(cnpjDig); }
+      else if (!novo && p.cnpj) d.cnpj = null;
       if (!d.nome) { A.avisar("Escreva o nome do parceiro.", "erro"); return; }
       if (d.email && !emailOk(d.email)) { A.avisar("O e-mail não parece certo. Confira.", "erro"); return; }
       if (d.whatsapp && dig(d.whatsapp).length < 10) { A.avisar("O WhatsApp precisa do DDD (10 ou 11 números).", "erro"); return; }
       if (P.S.semParceiros) { A.avisar("Rode o supabase.sql atualizado no Supabase (tabela parceiros) para guardar.", "erro"); return; }
       var igual = lista().filter(function (o) {
-        return o.id !== p.id && ((d.whatsapp && dig(o.whatsapp) === dig(d.whatsapp)) || (d.email && String(o.email || "").toLowerCase() === d.email.toLowerCase()));
+        return o.id !== p.id && ((d.cnpj && dig(o.cnpj) === dig(d.cnpj)) || (d.whatsapp && dig(o.whatsapp) === dig(d.whatsapp)) || (d.email && String(o.email || "").toLowerCase() === d.email.toLowerCase()));
       })[0];
-      if (igual && !A.confirmar("Já existe o parceiro “" + igual.nome + "” com este WhatsApp ou e-mail. Salvar mesmo assim?")) return;
+      if (igual && !A.confirmar("Já existe o parceiro “" + igual.nome + "” com este CNPJ, WhatsApp ou e-mail. Salvar mesmo assim?")) return;
       var b = this; A.ocupado(b, true, "Salvando...");
       var pr = novo ? P.q(P.sb.from("parceiros").insert(d).select().single()) : P.q(P.sb.from("parceiros").update(d).eq("id", p.id).select().single());
       pr.then(function (n) { guardarTipo(n.tipo); P.trocar(P.S.parceiros, n); P.S.parceiros.sort(function (x, y) { return semAcento(x.nome).localeCompare(semAcento(y.nome), "pt-BR"); }); j.fechar(); listar(); A.avisar("🤝 Parceiro salvo", "ok"); })
-        .catch(function (e) { A.ocupado(b, false); P.falhou(e); });
+        .catch(function (e) {
+          A.ocupado(b, false);
+          if (/cnpj/i.test(String(e && (e.message || e)))) { A.avisar("Rode o supabase.sql atualizado no Supabase (coluna cnpj do parceiro) para guardar o CNPJ.", "erro"); return; }
+          P.falhou(e);
+        });
     };
     setTimeout(function () { $("#pa-nome", el).focus(); }, 50);
   }
