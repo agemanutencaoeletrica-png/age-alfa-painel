@@ -590,6 +590,7 @@ create table if not exists public.parceiros (
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+alter table public.parceiros add column if not exists cnpj text check (cnpj is null or length(cnpj) <= 20);
 create index if not exists parceiros_nome_idx on public.parceiros (lower(nome));
 drop trigger if exists parceiros_atualizado_em on public.parceiros;
 create trigger parceiros_atualizado_em before update on public.parceiros
@@ -608,6 +609,34 @@ insert into public.parceiros_tipos (nome, ordem)
 select v.nome, v.ordem from (values ('Eletricista', 1), ('Pintor', 2), ('Engenheiro / Arquiteto', 3), ('TI e câmeras', 4),
                                     ('Fornecedor', 5), ('Cliente parceiro', 6), ('Outro', 7)) as v(nome, ordem)
 where not exists (select 1 from public.parceiros_tipos);
+
+-- 🗑 lixeira: cópia do que você apaga (orçamentos, parceiros, prospecção, fornecedores, pagamentos, compras, notas e modelos de laudo), por 30 dias
+create table if not exists public.lixeira (
+  id          uuid primary key default gen_random_uuid(),
+  tabela      text not null check (length(tabela) between 1 and 60),
+  registro_id text not null,
+  titulo      text,
+  dados       jsonb not null,
+  apagado_em  timestamptz not null default now()
+);
+create index if not exists lixeira_apagado_idx on public.lixeira (apagado_em desc);
+-- devolve o item da lixeira ao lugar de origem (inclusive o número do orçamento, que o app não consegue gravar sozinho)
+create or replace function public.lixeira_restaurar(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare r public.lixeira;
+begin
+  if not public.eh_admin() then raise exception 'sem permissão'; end if;
+  select * into r from public.lixeira where id = p_id;
+  if not found then raise exception 'item não está na lixeira'; end if;
+  if r.tabela not in ('orcamentos', 'parceiros', 'prospects', 'fornecedores', 'pagamentos', 'compras', 'receitas', 'modelos_laudo') then
+    raise exception 'tabela não permitida';
+  end if;
+  execute format('insert into public.%I overriding system value select * from jsonb_populate_record(null::public.%I, $1)', r.tabela, r.tabela) using r.dados;
+  delete from public.lixeira where id = p_id;
+end;
+$$;
+revoke execute on function public.lixeira_restaurar(uuid) from public, anon;
+grant execute on function public.lixeira_restaurar(uuid) to authenticated;
 
 -- 📑 propostas prontas: orçamentos técnicos já escritos (cliente, texto do serviço, itens e valores) para guardar, editar e carregar no orçamento do app
 create table if not exists public.propostas (
@@ -648,7 +677,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

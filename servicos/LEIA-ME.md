@@ -362,6 +362,21 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
 - Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `propostas` e `areas_orcamento`). Sem a tabela das áreas, valem Manutenção, TI, Câmeras e Interfones, mas
   não dá para editar.
 
+## 📝 Rascunho e memória (em todas as janelas)
+
+- **Nada que você digita se perde:** o que você escreve numa janela (cadastro, orçamento, serviço...) fica guardado neste aparelho. Se fechar sem querer (X, Esc, clique fora), atualizar a página ou reiniciar o app, ao abrir de novo o texto volta, com o aviso "📝 Recuperei o que você tinha preenchido" e o botão **Descartar**.
+- O rascunho some quando você **salva**, toca em **Cancelar** ou **Descartar**, e depois de 7 dias.
+- **Memória:** cidade, e-mail, telefone, endereço, cliente e empresa que você já digitou aparecem como sugestão nos campos parecidos (toque no campo para ver).
+- Senhas e chaves nunca são guardadas. Rascunho e memória ficam só neste aparelho (não passam para outro celular ou computador).
+
+## 🗑 Lixeira (recuperar o que foi apagado)
+
+- Quando você apaga um **orçamento, parceiro, prospecção, fornecedor, pagamento, compra, nota/receita ou modelo de laudo**, o item **não some**: uma cópia vai para a aba **🗑 Lixeira** e fica lá por **30 dias**.
+- Na lixeira: **↩ Restaurar** devolve o item ao lugar de origem (o orçamento volta com o mesmo número), **🗑 Apagar de vez** e **Esvaziar a lixeira**. Dá para buscar e filtrar por tipo.
+- Se a cópia para a lixeira falhar, **nada é apagado**.
+- **Não passam pela lixeira** (apagar leva fotos e registros ligados junto): serviços, obras, lojas, rotas, equipe, prefeitura, preços, propostas prontas e orçamentos das lojas.
+- Para ativar: rode de novo o `servicos/supabase.sql` no projeto age-servicos (cria a tabela `lixeira` e a função de restaurar). Enquanto isso não for feito, apagar continua definitivo e o app avisa.
+
 ## 🤝 Parceiros (contatos e envio de documentos)
 
 Aba **🤝 Parceiros**: guarda os contatos e as informações de quem trabalha com você (eletricistas, pintores, engenheiros, TI e câmeras, fornecedores, clientes parceiros).
@@ -373,6 +388,8 @@ Aba **🤝 Parceiros**: guarda os contatos e as informações de quem trabalha c
   - **No celular:** abre o menu de compartilhar com os arquivos já anexados (WhatsApp, e-mail, etc.).
   - **No computador:** baixa os arquivos e abre a conversa do WhatsApp ou o e-mail; é só arrastar os arquivos baixados para a mensagem. (O WhatsApp e o e-mail não permitem que um site anexe arquivos sozinho.)
   - Para vários parceiros: marque os cartões e use **Enviar para os marcados**. O e-mail vai em cópia oculta, para um não ver o contato do outro.
+- **Preenchimento automático:** digite o **CNPJ** e o sistema busca na Receita (BrasilAPI) e preenche empresa, nome, telefone, e-mail e endereço. Digite o **CEP** e ele preenche o endereço e a cidade (ViaCEP). Só entram nos campos vazios, nunca apagam o que você escreveu. WhatsApp e telefone ficam no formato (31) 99999-9999. Se estiver sem internet, preencha à mão.
+- **Caixas de texto crescem sozinhas** em todo o painel, conforme você escreve.
 - **✏️ Editar funções** (Eletricista, Pintor...): acrescente, renomeie ou tire funções. Renomear muda também nos parceiros que têm a função. Uma função nova digitada no cadastro entra sozinha na lista. Também há o botão **✏️ Editar lista de funções** dentro do cadastro.
 - Os arquivos **não ficam guardados** no painel; só o contato e a data do último envio.
 - Para ativar: rode de novo o `servicos/supabase.sql` no SQL Editor do projeto age-servicos (cria a tabela `parceiros`, visível só para o dono).
