@@ -595,6 +595,20 @@ drop trigger if exists parceiros_atualizado_em on public.parceiros;
 create trigger parceiros_atualizado_em before update on public.parceiros
   for each row execute function public._tocar_atualizado_em();
 
+-- 🤝 funções dos parceiros (Eletricista, Pintor...): lista que você acrescenta, renomeia e tira no painel
+create table if not exists public.parceiros_tipos (
+  id        uuid primary key default gen_random_uuid(),
+  nome      text not null check (length(trim(nome)) between 1 and 60),
+  ordem     integer not null default 100,
+  criado_em timestamptz not null default now()
+);
+create unique index if not exists parceiros_tipos_nome_idx on public.parceiros_tipos (lower(trim(nome)));
+-- só na primeira vez (tabela vazia): funções iniciais
+insert into public.parceiros_tipos (nome, ordem)
+select v.nome, v.ordem from (values ('Eletricista', 1), ('Pintor', 2), ('Engenheiro / Arquiteto', 3), ('TI e câmeras', 4),
+                                    ('Fornecedor', 5), ('Cliente parceiro', 6), ('Outro', 7)) as v(nome, ordem)
+where not exists (select 1 from public.parceiros_tipos);
+
 -- 📑 propostas prontas: orçamentos técnicos já escritos (cliente, texto do serviço, itens e valores) para guardar, editar e carregar no orçamento do app
 create table if not exists public.propostas (
   id            uuid primary key default gen_random_uuid(),
@@ -634,7 +648,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
