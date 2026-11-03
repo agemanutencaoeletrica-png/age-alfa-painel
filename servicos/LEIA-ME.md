@@ -362,6 +362,20 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
 - Precisa rodar uma vez o **supabase.sql** atualizado (tabelas `propostas` e `areas_orcamento`). Sem a tabela das áreas, valem Manutenção, TI, Câmeras e Interfones, mas
   não dá para editar.
 
+## 🤝 Parceiros (contatos e envio de documentos)
+
+Aba **🤝 Parceiros**: guarda os contatos e as informações de quem trabalha com você (eletricistas, pintores, engenheiros, TI e câmeras, fornecedores, clientes parceiros).
+
+- **Cadastro:** nome (obrigatório), empresa, tipo, WhatsApp, telefone, e-mail, cidade, endereço e informações (especialidade, valores combinados, documentos que a pessoa pede). Avisa se o WhatsApp ou o e-mail já existir em outro parceiro.
+- **Busca e filtro** por nome, número, texto das informações e tipo.
+- **WhatsApp** e **E-mail**: abrem a conversa direto com o parceiro. Ficam desligados quando o contato não foi preenchido.
+- **📤 Enviar documentos** (projetos, plantas, orçamentos, fotos, qualquer arquivo): escolha os arquivos, ajuste a mensagem e envie.
+  - **No celular:** abre o menu de compartilhar com os arquivos já anexados (WhatsApp, e-mail, etc.).
+  - **No computador:** baixa os arquivos e abre a conversa do WhatsApp ou o e-mail; é só arrastar os arquivos baixados para a mensagem. (O WhatsApp e o e-mail não permitem que um site anexe arquivos sozinho.)
+  - Para vários parceiros: marque os cartões e use **Enviar para os marcados**. O e-mail vai em cópia oculta, para um não ver o contato do outro.
+- Os arquivos **não ficam guardados** no painel; só o contato e a data do último envio.
+- Para ativar: rode de novo o `servicos/supabase.sql` no SQL Editor do projeto age-servicos (cria a tabela `parceiros`, visível só para o dono).
+
 ## 📊 Fechamento mensal dos chamados (Supermercados BH)
 Aba **✅ Executados → 📊 Fechamento mensal**: cada chamado concluído no mês com data, chamado, loja, serviço realizado, OS,
 situação no portal e **valor**; total do mês, o que falta finalizar e o que está sem valor. **📋 Colar do portal**: cole as
