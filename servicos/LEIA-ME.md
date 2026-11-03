@@ -369,6 +369,17 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
 - **Memória:** cidade, e-mail, telefone, endereço, cliente e empresa que você já digitou aparecem como sugestão nos campos parecidos (toque no campo para ver).
 - Senhas e chaves nunca são guardadas. Rascunho e memória ficam só neste aparelho (não passam para outro celular ou computador).
 
+## 👔 Sócios e 💵 Caixa (sem misturar valores)
+
+- Aba **👔 Sócios**: cadastre cada sócio com o **CPF**, a **parte dele (%)** nos serviços fechados e as **outras contas que contam para ele** (ex.: a esposa: “Nome; CPF”). Pix para qualquer uma dessas contas conta como repasse **ao sócio**.
+- **➕ Serviço fechado:** data, cliente, valor, % (vazio = o do sócio) e, se quiser, a **nota de serviço** ligada. O app calcula a parte dele.
+- **Repasses:** por **📥 Comprovante Pix** (foto ou PDF: o app lê valor, data, hora e ID, e você confere), por **🏦 Extrato do banco** (os Pix ao sócio e à conta ligada vêm marcados como repasse) ou **✍ à mão**. Também há o tipo **“sócio pagou pela empresa”** (quando o sócio paga algo da empresa com o dinheiro dele): ele **soma a favor do sócio**.
+- Cartão do sócio: **serviços fechados · parte do sócio · já repassado · falta repassar** (ou “repassado a mais”).
+- **Repasse a sócio não é pagamento da equipe e não entra no “Resultado por obra”.** Ele aparece só em **💼 Notas e resultado → 💵 Caixa**, em linha separada.
+- **💵 Caixa** (por período): **entrou** (notas recebidas) · **equipe** (por pessoa, com data, hora e valor) · **material e despesas pagas** · **sobra da empresa** · **repassado a sócios** · **saldo do caixa**. Notas ainda a receber ficam fora do caixa.
+- **Comprovante depois do extrato:** se você lançou os Pix pelo extrato e depois manda o comprovante do mesmo Pix (mesmo valor, até 4 dias), o app **completa o lançamento** (hora, ID e foto) em vez de duplicar.
+- Para ativar, rode de novo o `servicos/supabase.sql` no projeto age-servicos (cria `socios`, `socio_servicos` e `socio_repasses`).
+
 ## 🧾 Compras: ler várias notas de uma vez e recusar as repetidas
 
 - Em **🧾 Compras → 📷 Nota / cupom** dá para escolher **uma ou mais fotos/PDF/XML** de uma vez (até 20). O app abre uma nota por vez: "Depois desta: mais N nota(s)".
