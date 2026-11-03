@@ -654,7 +654,7 @@
       (op.imagem ? '<img alt="Nota" src="' + URL.createObjectURL(op.imagem) + '" style="max-height:160px;max-width:100%;display:block;margin-bottom:6px;border-radius:6px">' : "") +
       (op.erro ? '<div class="aviso erro">Não consegui ler a nota. Preencha à mão.</div>' : "") +
       (!c0 && op.imagem && !op.erro && !d.valor && !(d.itens || []).length ? '<div class="aviso">✍️ Parece nota <b>escrita à mão</b> (ou foto ilegível): o app só lê texto impresso. Preencha a data, o valor e os materiais à mão — a foto fica guardada junto.</div>' : "") +
-      (!op.erro && op.imagem && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ ' + (d.valorSoma ? "O “TOTAL” da foto não bateu com os materiais: usei a <b>soma dos materiais</b>. <b>Confira o valor total</b> antes de salvar." : "Não achei o “TOTAL” com clareza na foto: <b>confira o valor total</b> antes de salvar.") + '</div>' : "") +
+      (!op.erro && op.imagem && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ ' + (d.valorSoma ? "O “TOTAL” da foto não bateu com os materiais: usei a <b>soma dos materiais</b>. <b>Confira o valor total</b> antes de salvar." : "Não achei o “TOTAL” com clareza na foto (a letra de mão confunde o leitor). <b>Digite o valor total</b> da nota" + (d.valor > 0 && !d.valorSoma ? " (o maior valor que li foi " + dinheiro(d.valor) + ", provavelmente não é o total)" : "") + ".") + '</div>' : "") +
       (function () {
         var rp0 = !c0 && repetida({ chave: d.chave, numero_nota: d.numero, cnpj: d.cnpj, fornecedor: d.fornecedor, comprado_em: d.data, valor: d.valor }, null);
         return rp0 ? '<div class="aviso erro" id="cn-rep0">' + textoRepetida(rp0) + "</div>" : "";
@@ -696,7 +696,10 @@
       formulario({ compra: c });
     });
     $("#cn-data", el).value = c0 ? c0.comprado_em : d.data || A.isoLocal(new Date());
-    $("#cn-valor", el).value = num2(c0 ? c0.valor : d.valor);
+    // total que o app só "chutou" (não achou o TOTAL e não é a soma dos materiais, ex.: letra de mão): campo vazio, para nunca salvar um valor errado sem querer
+    var chuteTotal = !c0 && !op.erro && op.imagem && d.valorIncerto && !d.valorSoma && !d.totalFirme && d.valor > 0;
+    $("#cn-valor", el).value = chuteTotal ? "" : num2(c0 ? c0.valor : d.valor);
+    if (chuteTotal) { $("#cn-valor", el).placeholder = "digite o TOTAL da nota"; $("#cn-valor", el).style.outline = "2px solid var(--atencao, #d97706)"; }
     $("#cn-forn", el).value = c0 ? c0.fornecedor || "" : d.fornecedor || "";
     $("#cn-dest", el).value = obra ? rotuloObra(obra) : c0 ? c0.destino || "" : "";
     $("#cn-tipo", el).value = c0 ? c0.tipo_servico || "" : "";

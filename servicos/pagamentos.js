@@ -522,7 +522,7 @@
     var din = filtro.forma === "especie";
     c.innerHTML = '<div class="cab-secao"><h2>💰 Pagamentos da equipe</h2><span>' +
       (din ? '<button class="prim" id="pg-especie">💵 Novo pagamento em dinheiro</button> <button id="pg-add">📥 Comprovante Pix</button>'
-        : '<button class="prim" id="pg-add">📥 Comprovante Pix</button> <button id="pg-especie">💵 Em dinheiro</button>') + ' <button id="pg-colar">📝 Colar texto</button></span></div>' +
+        : '<button class="prim" id="pg-add">📥 Comprovante Pix</button> <button id="pg-especie">💵 Em dinheiro</button>') + ' <button id="pg-colar">📝 Colar texto</button> <button id="pg-extrato">🏦 Ler extrato do banco</button></span></div>' +
       '<div class="filtros" id="pg-formas">' + [["", "Todos"], ["pix", "Pix"], ["especie", "💵 Dinheiro (espécie)"]].map(function (x) {
         return '<button class="' + (filtro.forma === x[0] ? "prim" : "") + '" data-forma="' + x[0] + '">' + x[1] + "</button>";
       }).join("") + "</div>" +
@@ -539,6 +539,7 @@
     });
     $$("[data-forma]", c).forEach(function (b) { b.onclick = function () { filtro.forma = b.dataset.forma; ver(c, P); }; });
     $("#pg-especie").onclick = function () { receber({ arquivos: [], texto: "", especie: true }, P); };
+    $("#pg-extrato").onclick = function () { escolherExtrato(P); };
     $("#pg-add").onclick = function () { $("#pg-arq").value = ""; $("#pg-arq").click(); };
     $("#pg-arq").onchange = function () {
       if (!this.files.length) return;
@@ -740,5 +741,159 @@
     desenhar();
   }
 
-  window.AGE_PAG = { ver: ver, receber: receber, lerPix: lerPix, lerArquivo: textoDoArquivo, extrato: extrato };
+
+  // ---------------- 🏦 extrato do banco (PDF): os Pix enviados viram pagamentos da equipe, as entradas dão baixa nas notas ----------------
+  function escolherExtrato(ctx) {
+    P = ctx;
+    var inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/pdf,.pdf"; inp.style.display = "none";
+    document.body.appendChild(inp);
+    inp.onchange = function () { var f = inp.files[0]; inp.remove(); if (f) importarExtrato(P, f); };
+    inp.click();
+  }
+  function nomeLimpo(n) { return String(n || "").replace(/^[\d.\/\-\s]+(?=[A-Za-zÀ-ú])/, "").replace(/\s+\d{8,}\s*$/, "").replace(/\s+/g, " ").trim(); }
+  function dataBr2(iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? m[3] + "/" + m[2] + "/" + m[1] : String(iso || ""); }
+  function diasEntre(a, b) { return Math.abs((new Date(a + "T12:00:00") - new Date(b + "T12:00:00")) / 864e5); }
+  // funcionário de quem recebeu o Pix: 1º pela chave Pix/CPF cadastrados, 2º pelo nome COMPLETO (nome igual, ou o cadastro é o começo do nome do extrato).
+  // Sobrenome em comum NÃO basta (família com o mesmo sobrenome não vira o mesmo funcionário).
+  function letras(n) { return semAcento(n).replace(/\b(da|de|do|dos|das|e)\b/g, " ").replace(/[^a-z]/g, ""); }
+  function acharNoExtrato(g) {
+    var fs = P.S.func, f, i;
+    for (i = 0; i < g.docs.length; i++) {
+      var d = soDig(g.docs[i]);
+      f = fs.filter(function (x) { return x.pix && (mesmaChave(x.pix, d) || cpfConfere(d, x.pix)); })[0];
+      if (f) return { f: f, por: "CPF/chave Pix" };
+    }
+    var nome = letras(g.nome);
+    f = fs.filter(function (x) { var l = letras(x.nome); return l && (l === nome || (l.length >= 10 && nome.indexOf(l) === 0)); })[0];
+    return f ? { f: f, por: "nome" } : null;
+  }
+  // notas de material em aberto (Compras → "a pagar") que o extrato pagou: o valor do débito é a soma exata de 1 ou mais notas da mesma loja
+  var SEM_TOKEN = /^(ltda|eireli|comercio|comercial|materiais|material|construcao|loja|casa|pedido|nota)$/;
+  function tokens(n) { return semAcento(n).split(/[^a-z]+/).filter(function (w) { return w.length >= 4 && !SEM_TOKEN.test(w); }); }
+  function mesmaLoja(debito, compra) {
+    var dc = soDig(debito.doc), cc = soDig(compra.cnpj);
+    if (dc && cc && dc === cc) return true;
+    var a = tokens(nomeLimpo(debito.nome)), b = tokens(compra.fornecedor || "");
+    if (!a.length || !b.length) return false;
+    var comum = a.filter(function (w) { return b.indexOf(w) >= 0; }).length;
+    return comum >= 1 && comum / Math.min(a.length, b.length) >= 0.5;
+  }
+  function somaExata(cands, alvo, max) {
+    var achou = null, n = Math.min(cands.length, 14);
+    (function ir(i, acc, soma) {
+      if (achou || acc.length > max) return;
+      if (Math.abs(soma - alvo) < 0.005 && acc.length) { achou = acc.slice(); return; }
+      if (i >= n || soma > alvo + 0.005) return;
+      acc.push(cands[i]); ir(i + 1, acc, soma + Number(cands[i].valor)); acc.pop();
+      ir(i + 1, acc, soma);
+    })(0, [], 0);
+    return achou;
+  }
+  function quitacoes(ex, jaUsados) {
+    if (!window.AGE_COMPRAS || !window.AGE_COMPRAS.naoQuitadas) return [];
+    var abertas = window.AGE_COMPRAS.naoQuitadas(P.S), usadas = {}, out = [];
+    ex.saidas.slice().sort(function (a, b) { return a.data < b.data ? -1 : 1; }).forEach(function (s) {
+      if (jaUsados.indexOf(s) >= 0) return;
+      var cands = abertas.filter(function (c) { return !usadas[c.id] && mesmaLoja(s, c) && String(c.comprado_em) <= s.data; });
+      var achou = cands.length ? somaExata(cands, s.valor, 6) : null;
+      if (achou) { achou.forEach(function (c) { usadas[c.id] = 1; }); out.push({ s: s, compras: achou }); }
+    });
+    return out;
+  }
+  function importarExtrato(ctx, f) {
+    P = ctx;
+    if (!window.AGE_FAT || !window.AGE_FAT.lerExtrato) { A.avisar("Leitor de extrato indisponível. Atualize o app.", "erro"); return; }
+    var j = A.janela('<div id="ex-st" class="peq">📖 Lendo o extrato...</div><div id="ex-res"></div>', { titulo: "🏦 Extrato do banco", larga: true, fixa: true, semRascunho: true });
+    var el = j.el;
+    window.AGE_FAT.lerExtrato(P, f).then(function (ex) {
+      if (!ex) { $("#ex-st", el).innerHTML = '<div class="aviso erro">Não consegui ler as colunas deste extrato. Use o PDF do extrato do app do banco (Itaú, Nubank, Inter...).</div>'; return; }
+      // quem recebeu os Pix: agrupa pelo nome (sem número de CNPJ grudado)
+      var grupos = {}, ordem = [];
+      ex.saidas.filter(function (s) { return /pix/i.test(s.desc) && s.valor > 0 && s.data; }).forEach(function (s) {
+        var nome = nomeLimpo(s.nome), k = semAcento(nome).replace(/[^a-z ]/g, "").trim();
+        if (!k) return;
+        if (!grupos[k]) { grupos[k] = { k: k, nome: nome, docs: [], itens: [] }; ordem.push(k); }
+        if (s.doc && grupos[k].docs.indexOf(s.doc) < 0) grupos[k].docs.push(s.doc);
+        grupos[k].itens.push(s);
+      });
+      var G = ordem.map(function (k) { return grupos[k]; });
+      var proprios = [soDig((A.CFG.EMPRESA || {}).documento), ex.titular].filter(Boolean);
+      G = G.filter(function (g) { return !g.docs.some(function (d) { return proprios.indexOf(soDig(d)) >= 0; }); });   // Pix para a própria empresa não é pagamento
+      G.forEach(function (g) {
+        g.total = g.itens.reduce(function (s, x) { return s + x.valor; }, 0);
+        var ach = acharNoExtrato(g);
+        g.f = ach ? ach.f : null; g.por = ach ? ach.por : "";
+        g.itens.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
+        var ja = g.f ? (P.S.pag || []).filter(function (x) { return x.funcionario_id === g.f.id; }) : [];
+        g.itens.forEach(function (s, i) {
+          s.ja = ja.some(function (x) { return Math.abs(Number(x.valor) - s.valor) < 0.01 && diasEntre(String(x.pago_em).slice(0, 10), s.data) <= 4; });
+          var rep = g.itens.slice(0, i).filter(function (y) { return y.data === s.data && Math.abs(y.valor - s.valor) < 0.01; }).length;
+          s.chave = "extrato|" + s.data + "|" + s.valor.toFixed(2) + "|" + soDig(g.docs[0] || g.k) + "|" + rep;
+        });
+        g.usar = !!g.f;
+        g.novos = g.itens.filter(function (s) { return !s.ja; }).length;
+      });
+      G.sort(function (a, b) { return (b.f ? 1 : 0) - (a.f ? 1 : 0) || b.itens.length - a.itens.length || b.total - a.total; });
+      var entradas = ex.creditos.length;
+      var Q = quitacoes(ex, []);
+      var per = ex.saidas.concat(ex.creditos).map(function (x) { return x.data; }).filter(Boolean).sort();
+      $("#ex-st", el).innerHTML = "🏦 <b>" + esc(f.name || "extrato") + "</b>" + (per.length ? " · " + dataBr2(per[0]) + " a " + dataBr2(per[per.length - 1]) : "") + " · <b>" + ex.saidas.length + "</b> saída(s) (" + G.reduce(function (s, g) { return s + g.itens.length; }, 0) + " Pix enviados para " + G.length + " pessoas/empresas) · <b>" + entradas + "</b> entrada(s)";
+      var tipos = Object.keys(TIPOS).map(function (k) { return '<option value="' + k + '">' + esc(TIPOS[k]) + "</option>"; }).join("");
+      $("#ex-res", el).innerHTML =
+        '<div class="aviso">Marque <b>só quem é da equipe</b>. O que for loja, posto, padaria ou fornecedor deixe desmarcado. Pagamentos que já estão lançados (mesmo valor, até 4 dias de diferença) ficam de fora.</div>' +
+        '<div class="duas"><div><label for="ex-tipo">Tipo dos pagamentos</label><select id="ex-tipo">' + tipos + '</select></div>' +
+        '<div><label for="ex-area">Área dos funcionários novos</label><select id="ex-area"><option value="ambos">Elétrica e pintura</option><option value="eletrica">Elétrica</option><option value="pintura">Pintura</option></select></div></div>' +
+        '<div id="ex-lista">' + G.map(function (g, i) {
+          var opcoes = '<option value="">➕ Criar funcionário “' + esc(g.nome) + '”</option>' + P.S.func.map(function (x) { return '<option value="' + x.id + '">' + esc(x.nome) + "</option>"; }).join("");
+          return '<div class="cartao" data-g="' + i + '"><label class="marca-linha" style="font-weight:600"><input type="checkbox" class="ex-uso"' + (g.usar ? " checked" : "") + '> ' + esc(g.nome) + "</label>" +
+            '<div class="peq mudo">' + g.itens.length + " Pix · " + dinheiro(g.total) + (g.novos !== g.itens.length ? " · " + (g.itens.length - g.novos) + " já lançado(s)" : "") + (g.docs.length ? " · " + esc(g.docs.join(" / ")) : "") + (g.f ? " · reconhecido por " + esc(g.por) : "") + "</div>" +
+            '<div class="peq" style="margin:4px 0">' + g.itens.map(function (s) { return '<span style="' + (s.ja ? "text-decoration:line-through;opacity:.6" : "") + '">' + s.data.slice(8) + "/" + s.data.slice(5, 7) + " " + dinheiro(s.valor) + "</span>"; }).join(" · ") + "</div>" +
+            '<label class="peq">Funcionário</label><select class="ex-func">' + opcoes + "</select></div>";
+        }).join("") + "</div>" +
+        (Q.length ? '<h3 style="margin:14px 0 4px">🧾 Notas de material que este extrato pagou</h3><div class="peq mudo">O valor pago é a soma exata de notas que estavam <b>a pagar</b> na mesma loja. Marcadas, elas passam a <b>pagas</b>, na data do extrato.</div>' +
+          Q.map(function (q, i) { return '<div class="cartao" data-q="' + i + '"><label class="marca-linha" style="font-weight:600"><input type="checkbox" class="ex-q" checked> ' + dataBr2(q.s.data) + " · " + esc(nomeLimpo(q.s.nome)) + " · " + dinheiro(q.s.valor) + "</label>" +
+            '<div class="peq">= ' + q.compras.map(function (c) { return "nota " + dataBr2(String(c.comprado_em).slice(0, 10)) + " " + dinheiro(c.valor); }).join(" + ") + "</div></div>"; }).join("") : "") +
+        '<div class="acoes"><button class="prim" id="ex-ok">✔ Lançar o que está marcado</button>' +
+        (entradas ? '<button id="ex-notas">💼 Dar baixa nas notas pelas ' + entradas + " entrada(s)</button>" : "") + '<button id="ex-fim">Fechar</button></div><div id="ex-msg" class="peq"></div>';
+      $$(".ex-func", el).forEach(function (s, i) { s.value = G[i].f ? G[i].f.id : ""; });
+      $("#ex-fim", el).onclick = function () { j.fechar(); };
+      if ($("#ex-notas", el)) $("#ex-notas", el).onclick = function () { j.fechar(); window.AGE_FAT.baixaPelasEntradas(P, f, function () { if (P.rota) P.rota(); }); };
+      $("#ex-ok", el).onclick = function () {
+        var b = this, sel = [];
+        $$("[data-g]", el).forEach(function (d) {
+          var g = G[Number(d.dataset.g)];
+          if ($(".ex-uso", d).checked) sel.push({ g: g, fid: $(".ex-func", d).value });
+        });
+        var qs = []; $$("[data-q]", el).forEach(function (d) { if ($(".ex-q", d).checked) qs.push(Q[Number(d.dataset.q)]); });
+        if (!sel.length && !qs.length) { A.avisar("Marque quem é da equipe ou as notas pagas.", "erro"); return; }
+        var tipo = $("#ex-tipo", el).value, area = $("#ex-area", el).value, total = 0, n = 0, quitadas = 0;
+        A.ocupado(b, true, "Lançando...");
+        qs.reduce(function (pr, q) {
+          return pr.then(function () {
+            return q.compras.reduce(function (p2, c) { return p2.then(function () { return window.AGE_COMPRAS.quitar(c.id, P, q.s.data + "T12:00:00").then(function () { quitadas++; }); }); }, Promise.resolve());
+          });
+        }, Promise.resolve()).then(function () { return sel.reduce(function (pr, x) {
+          return pr.then(function () {
+            var quando = x.fid ? Promise.resolve(P.S.func.filter(function (y) { return y.id === x.fid; })[0]) :
+              P.q(P.sb.from("funcionarios").insert({ nome: x.g.nome.toLowerCase().replace(/(^|\s)\S/g, function (c) { return c.toUpperCase(); }), area: area, pix: x.g.docs[0] || null }).select().single()).then(function (nf) { P.S.func.push(nf); return nf; });
+            return quando.then(function (fn) {
+              var rows = x.g.itens.filter(function (s) { return !s.ja; }).map(function (s) {
+                return { funcionario_id: fn.id, valor: s.valor, pago_em: new Date(s.data + "T12:00:00").toISOString(), tipo: tipo, forma: "pix", favorecido: x.g.nome, id_transacao: s.chave, descricao: "Importado do extrato do banco" };
+              });
+              if (!rows.length) return;
+              return P.q(P.sb.from("pagamentos").insert(rows).select()).then(function (novos) {
+                (novos || []).forEach(function (r) { P.S.pag.unshift(r); total += Number(r.valor); n++; });
+              });
+            });
+          });
+        }, Promise.resolve()); }).then(function () {
+          A.avisar("✅ " + (n ? n + " pagamento(s) da equipe: " + dinheiro(total) : "") + (n && quitadas ? " · " : "") + (quitadas ? quitadas + " nota(s) de material marcadas como pagas" : ""), "ok");
+          j.fechar(); if (P.rota) P.rota();
+        }).catch(function (e) { A.ocupado(b, false); $("#ex-msg", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + (n ? " (já foram lançados " + n + ")" : "") + "</div>"; });
+      };
+    }).catch(function (e) { $("#ex-st", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
+  }
+
+  window.AGE_PAG = { ver: ver, receber: receber, lerPix: lerPix, lerArquivo: textoDoArquivo, extrato: extrato, importarExtrato: importarExtrato, escolherExtrato: escolherExtrato,
+    carregarPdfjs: function () { return carregarScript(PDFJS + "pdf.min.js", function () { return !!window.pdfjsLib; }).then(function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js"; }); } };
 })();

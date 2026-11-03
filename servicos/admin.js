@@ -4525,7 +4525,7 @@
   }
 
   function verEquipe(c) {
-    c.innerHTML = '<div class="cab-secao"><h2>Equipe</h2><button class="prim" id="be-novo">+ Novo funcionário</button></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>Equipe</h2><span><button id="be-extrato" title="Lê o extrato do banco (PDF) e lança os Pix enviados como pagamentos da equipe">🏦 Ler extrato do banco</button> <button class="prim" id="be-novo">+ Novo funcionário</button></span></div>' +
       (S.func.length ? S.func.map(function (f) {
         return '<div class="cartao"' + (f.ativo ? "" : ' style="opacity:.6"') + '><div class="linha"><h3>' + esc(f.nome) + "</h3>" +
           '<span class="selo ' + (f.area === "ambos" ? "" : f.area) + '">' + esc(A.AREA[f.area]) + "</span>" + (f.ativo ? "" : '<span class="selo critico">desativado</span>') +
@@ -4537,6 +4537,7 @@
       '<p class="mudo peq">Cada funcionário tem um link próprio e secreto. Se alguém perder o celular ou sair da empresa, use “Editar” → “Gerar novo link” ou desative: o link antigo para de funcionar na hora.</p>' +
       htmlCandidatos();
     $("#be-novo").onclick = function () { editarFunc(null); };
+    if ($("#be-extrato")) $("#be-extrato").onclick = function () { window.AGE_PAG.escolherExtrato(P); };
     ligarCandidatos(c);
     $$("[data-copiar]", c).forEach(function (b) { b.onclick = function () { copiar(linkFunc(porId(S.func, b.dataset.copiar))); }; });
     $$("[data-editar]", c).forEach(function (b) { b.onclick = function () { editarFunc(b.dataset.editar); }; });
