@@ -373,6 +373,7 @@ Aba **🤝 Parceiros**: guarda os contatos e as informações de quem trabalha c
   - **No celular:** abre o menu de compartilhar com os arquivos já anexados (WhatsApp, e-mail, etc.).
   - **No computador:** baixa os arquivos e abre a conversa do WhatsApp ou o e-mail; é só arrastar os arquivos baixados para a mensagem. (O WhatsApp e o e-mail não permitem que um site anexe arquivos sozinho.)
   - Para vários parceiros: marque os cartões e use **Enviar para os marcados**. O e-mail vai em cópia oculta, para um não ver o contato do outro.
+- **✏️ Editar funções** (Eletricista, Pintor...): acrescente, renomeie ou tire funções. Renomear muda também nos parceiros que têm a função. Uma função nova digitada no cadastro entra sozinha na lista. Também há o botão **✏️ Editar lista de funções** dentro do cadastro.
 - Os arquivos **não ficam guardados** no painel; só o contato e a data do último envio.
 - Para ativar: rode de novo o `servicos/supabase.sql` no SQL Editor do projeto age-servicos (cria a tabela `parceiros`, visível só para o dono).
 

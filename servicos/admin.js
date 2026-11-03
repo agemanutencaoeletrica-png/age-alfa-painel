@@ -520,7 +520,8 @@
       q(sb.from("orcamentos_loja").select("*").order("data", { ascending: false }).limit(2000)).catch(function () { return null; }),
       q(sb.from("propostas").select("*").order("data", { ascending: false }).limit(1000)).catch(function () { return null; }),
       q(sb.from("areas_orcamento").select("*").order("ordem").order("nome")).catch(function () { return null; }),
-      q(sb.from("parceiros").select("*").order("nome")).catch(function () { return null; })
+      q(sb.from("parceiros").select("*").order("nome")).catch(function () { return null; }),
+      q(sb.from("parceiros_tipos").select("*").order("ordem").order("nome")).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -539,7 +540,7 @@
       S.semHist = !r[18]; S.precosHist = r[18] || [];   // 📈 histórico de preços das lojas
       S.semOrcLoja = !r[19]; S.orcLoja = r[19] || [];   // 🏪 orçamentos das lojas (cada um separado)
       S.semPropostas = !r[20]; S.propostas = r[20] || [];   // 📑 propostas prontas (orçamentos técnicos guardados)
-      S.semParceiros = !r[22]; S.parceiros = r[22] || [];   // 🤝 parceiros (contatos para mandar documentos e projetos)
+      S.semParceiros = !r[22]; S.parceiros = r[22] || []; S.tiposParc = r[23] || null;   // 🤝 parceiros (contatos para mandar documentos e projetos)
       S.semAreas = !r[21]; S.areasOrc = r[21] || null; montarAreas();   // áreas de serviço do orçamento (sem a tabela: Manutenção, TI e Câmeras padrão)
     });
   }

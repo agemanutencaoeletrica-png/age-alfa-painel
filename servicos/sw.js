@@ -1,7 +1,7 @@
 // Service worker do app de serviços da AGE (só vale dentro da pasta servicos/).
 // Sempre busca a versão nova na internet; se estiver sem sinal, abre a última
 // versão guardada. Dados do Supabase e fotos NUNCA ficam guardados aqui.
-var CACHE = "age-servicos-v109";
+var CACHE = "age-servicos-v110";
 var BASICOS = ["./index.html", "./funcionario.html", "./estilo.css", "./comum.js", "./corretor.js", "./admin.js", "./funcionario.js", "./geo.js", "./lojas-doc.js", "./prefeitura.js", "./pagamentos.js", "./fornecedores.js", "./compras.js", "./fechamento.js", "./faturamento.js", "./prospeccao.js", "./precos-base.js", "./materiais-base.js", "./leitor-texto.js", "./precos.js", "./orclojas.js", "./propostas.js", "./parceiros.js", "./config.js",
   "./icone.svg", "./icone-192.png", "./icone-512.png", "./manifest.webmanifest", "./manifest-funcionario.webmanifest"];
 

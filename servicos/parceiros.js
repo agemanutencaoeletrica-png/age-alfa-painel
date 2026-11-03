@@ -29,13 +29,14 @@
   // ---------------- tela ----------------
   function ver(c, ctx) {
     P = ctx;
-    c.innerHTML = '<div class="cab-secao"><h2>🤝 Parceiros</h2><span><button class="prim" id="pa-novo">+ Novo parceiro</button> <button id="pa-env" title="Manda os mesmos documentos para os parceiros marcados">📤 Enviar para os marcados</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>🤝 Parceiros</h2><span><button class="prim" id="pa-novo">+ Novo parceiro</button> <button id="pa-tipos" title="Acrescentar, renomear ou tirar funções (Eletricista, Pintor...)">✏️ Editar funções</button> <button id="pa-env" title="Manda os mesmos documentos para os parceiros marcados">📤 Enviar para os marcados</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Guarde aqui os contatos e as informações de quem trabalha com você. Em cada parceiro: <b>📲 WhatsApp</b>, <b>✉ E-mail</b> e <b>📤 Enviar documentos</b> (projetos, plantas, orçamentos, fotos).</p>' +
       (P.S.semParceiros ? '<div class="aviso">Para guardar os parceiros, rode no Supabase o <b>supabase.sql</b> atualizado (tabela <b>parceiros</b>).</div>' : "") +
       '<div class="filtros"><input type="search" id="pa-busca" placeholder="🔍 Buscar nome, empresa, cidade ou telefone" value="' + esc(filtro.busca) + '"><select id="pa-tipo" aria-label="Tipo"></select></div><div id="pa-res"></div>';
     $("#pa-busca", c).oninput = function () { filtro.busca = this.value; listar(); };
     $("#pa-tipo", c).onchange = function () { filtro.tipo = this.value; listar(); };
     $("#pa-novo", c).onclick = function () { editar({ ativo: true }); };
+    $("#pa-tipos", c).onclick = function () { editarTipos(listar); };
     $("#pa-env", c).onclick = function () {
       var ps = lista().filter(function (p) { return marcados[p.id]; });
       if (!ps.length) { A.avisar("Marque os parceiros (caixinha à esquerda) que vão receber.", "erro"); return; }
@@ -44,7 +45,7 @@
     listar();
   }
   function tiposUsados() {
-    var t = TIPOS.slice();
+    var t = P && P.S.tiposParc ? P.S.tiposParc.map(function (x) { return x.nome; }) : TIPOS.slice();
     lista().forEach(function (p) { if (p.tipo && t.indexOf(p.tipo) < 0) t.push(p.tipo); });
     return t;
   }
@@ -81,12 +82,70 @@
     });
   }
 
+  // ---------------- funções (Eletricista, Pintor...) ----------------
+  // função nova digitada no cadastro entra sozinha na lista (se a tabela existir)
+  function guardarTipo(t) {
+    t = String(t || "").trim();
+    if (!t || !P.S.tiposParc) return;
+    if (P.S.tiposParc.some(function (x) { return semAcento(x.nome) === semAcento(t); })) return;
+    P.q(P.sb.from("parceiros_tipos").insert({ nome: t, ordem: 100 + P.S.tiposParc.length }).select().single())
+      .then(function (n) { P.S.tiposParc.push(n); }).catch(function () { /* o parceiro já foi salvo; a função continua valendo nele */ });
+  }
+  // ✏️ acrescentar, renomear (muda também nos parceiros) e tirar funções
+  function editarTipos(depois) {
+    var sem = !P.S.tiposParc;
+    var L = (P.S.tiposParc || TIPOS.map(function (n, i) { return { id: null, nome: n, ordem: i + 1 }; })).map(function (x) { return { id: x.id || null, orig: x.nome, nome: x.nome, novo: false }; });
+    var tirados = [];
+    var j = A.janela((sem ? '<div class="aviso">Para acrescentar, renomear ou tirar funções, rode no Supabase o <b>supabase.sql</b> atualizado (tabela <b>parceiros_tipos</b>).</div>' : "") +
+      '<p class="peq mudo" style="margin-top:0">Se você mudar o nome de uma função, os parceiros que têm essa função mudam junto. Se tirar uma, os parceiros continuam com o que está escrito neles.</p>' +
+      '<div id="ft-lista"></div><div class="acoes"><button class="peq" id="ft-mais"' + (sem ? " disabled" : "") + '>➕ Acrescentar função</button></div>' +
+      '<div class="acoes"><button class="prim" id="ft-salvar"' + (sem ? " disabled" : "") + '>💾 Salvar funções</button><button id="ft-cancelar">Cancelar</button></div>', { titulo: "✏️ Funções dos parceiros" });
+    function desenhar() {
+      $("#ft-lista", j.el).innerHTML = L.map(function (x, n) {
+        return '<div class="linha" data-ft="' + n + '" style="gap:6px;margin-bottom:6px"><input class="ft-nome" maxlength="60" style="flex:1" placeholder="Nome da função"' + (sem ? " disabled" : "") +
+          '><button class="peq perigo" data-ft-tirar aria-label="Tirar a função"' + (sem ? " disabled" : "") + ">🗑</button></div>";
+      }).join("") || '<p class="peq mudo">Nenhuma função. Toque em ➕ Acrescentar função.</p>';
+      $$("[data-ft]", j.el).forEach(function (d) {
+        var x = L[Number(d.dataset.ft)];
+        $(".ft-nome", d).value = x.nome;
+        $(".ft-nome", d).oninput = function () { x.nome = this.value; };
+        $("[data-ft-tirar]", d).onclick = function () { L.splice(Number(d.dataset.ft), 1); if (x.id) tirados.push(x); desenhar(); };
+      });
+    }
+    desenhar();
+    $("#ft-cancelar", j.el).onclick = function () { j.fechar(); };
+    $("#ft-mais", j.el).onclick = function () { L.push({ id: null, orig: "", nome: "", novo: true }); desenhar(); var u = $$(".ft-nome", j.el); u[u.length - 1].focus(); };
+    $("#ft-salvar", j.el).onclick = function () {
+      var b = this, nomes = L.map(function (x) { return String(x.nome).trim(); });
+      if (nomes.some(function (n) { return !n; })) { A.avisar("Escreva o nome de cada função ou tire a linha vazia.", "erro"); return; }
+      var sa = nomes.map(semAcento);
+      if (sa.some(function (n, i) { return sa.indexOf(n) !== i; })) { A.avisar("Há duas funções com o mesmo nome.", "erro"); return; }
+      A.ocupado(b, true, "Salvando...");
+      var ops = [];
+      tirados.forEach(function (x) { ops.push(P.q(P.sb.from("parceiros_tipos").delete().eq("id", x.id))); });
+      L.forEach(function (x, n) {
+        var nome = String(x.nome).trim();
+        if (x.novo) ops.push(P.q(P.sb.from("parceiros_tipos").insert({ nome: nome, ordem: n + 1 })));
+        else if (x.id) {
+          ops.push(P.q(P.sb.from("parceiros_tipos").update({ nome: nome, ordem: n + 1 }).eq("id", x.id)));
+          if (nome !== x.orig) {
+            ops.push(P.q(P.sb.from("parceiros").update({ tipo: nome }).eq("tipo", x.orig)));
+            lista().forEach(function (p) { if (p.tipo === x.orig) p.tipo = nome; });
+          }
+        }
+      });
+      Promise.all(ops).then(function () { return P.q(P.sb.from("parceiros_tipos").select("*").order("ordem").order("nome")); }).then(function (rs) {
+        P.S.tiposParc = rs || []; j.fechar(); A.avisar("✏️ Funções salvas", "ok"); if (depois) depois();
+      }).catch(function (e) { A.ocupado(b, false); P.falhou(e); });
+    };
+  }
+
   // ---------------- cadastro ----------------
   function editar(p) {
     var novo = !p.id;
     var j = A.janela('<datalist id="pa-dl">' + tiposUsados().map(function (t) { return '<option value="' + esc(t) + '">'; }).join("") + "</datalist>" +
       '<label for="pa-nome">Nome *</label><input id="pa-nome" maxlength="160" autocomplete="off">' +
-      '<div class="duas"><div><label for="pa-emp">Empresa</label><input id="pa-emp" maxlength="160"></div><div><label for="pa-tp">Tipo (o que faz)</label><input id="pa-tp" list="pa-dl" maxlength="60" placeholder="Ex.: Eletricista"></div></div>' +
+      '<div class="duas"><div><label for="pa-emp">Empresa</label><input id="pa-emp" maxlength="160"></div><div><label for="pa-tp">Tipo (o que faz)</label><input id="pa-tp" list="pa-dl" maxlength="60" placeholder="Ex.: Eletricista"><button type="button" class="peq" id="pa-tp-edit" style="margin-top:4px">✏️ Editar lista de funções</button></div></div>' +
       '<div class="duas"><div><label for="pa-zap">WhatsApp (com DDD)</label><input id="pa-zap" type="tel" maxlength="40" placeholder="(31) 99999-9999"></div><div><label for="pa-tel">Telefone</label><input id="pa-tel" type="tel" maxlength="40"></div></div>' +
       '<div class="duas"><div><label for="pa-mail">E-mail</label><input id="pa-mail" type="email" maxlength="200"></div><div><label for="pa-cid">Cidade</label><input id="pa-cid" maxlength="100"></div></div>' +
       '<label for="pa-end">Endereço</label><input id="pa-end" maxlength="300">' +
@@ -99,6 +158,9 @@
     $("#pa-tel", el).value = p.telefone || ""; $("#pa-mail", el).value = p.email || ""; $("#pa-cid", el).value = p.cidade || ""; $("#pa-end", el).value = p.endereco || "";
     $("#pa-obs", el).value = p.obs || ""; $("#pa-ativo", el).checked = p.ativo !== false;
     $("#pa-cancelar", el).onclick = function () { j.fechar(); };
+    $("#pa-tp-edit", el).onclick = function () {
+      editarTipos(function () { $("#pa-dl", el).innerHTML = tiposUsados().map(function (t) { return '<option value="' + esc(t) + '">'; }).join(""); });
+    };
     if ($("#pa-apagar", el)) $("#pa-apagar", el).onclick = function () {
       if (!A.confirmar("Excluir o parceiro “" + p.nome + "”? Os documentos que você já mandou a ele não são afetados.")) return;
       var b = this; A.ocupado(b, true, "Excluindo...");
@@ -119,7 +181,7 @@
       if (igual && !A.confirmar("Já existe o parceiro “" + igual.nome + "” com este WhatsApp ou e-mail. Salvar mesmo assim?")) return;
       var b = this; A.ocupado(b, true, "Salvando...");
       var pr = novo ? P.q(P.sb.from("parceiros").insert(d).select().single()) : P.q(P.sb.from("parceiros").update(d).eq("id", p.id).select().single());
-      pr.then(function (n) { P.trocar(P.S.parceiros, n); P.S.parceiros.sort(function (x, y) { return semAcento(x.nome).localeCompare(semAcento(y.nome), "pt-BR"); }); j.fechar(); listar(); A.avisar("🤝 Parceiro salvo", "ok"); })
+      pr.then(function (n) { guardarTipo(n.tipo); P.trocar(P.S.parceiros, n); P.S.parceiros.sort(function (x, y) { return semAcento(x.nome).localeCompare(semAcento(y.nome), "pt-BR"); }); j.fechar(); listar(); A.avisar("🤝 Parceiro salvo", "ok"); })
         .catch(function (e) { A.ocupado(b, false); P.falhou(e); });
     };
     setTimeout(function () { $("#pa-nome", el).focus(); }, 50);
