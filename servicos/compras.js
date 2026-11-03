@@ -435,7 +435,9 @@
     // nome da loja sem LTDA/ME/EIRELI... ("LIDER TINTAS" = "Lider Tintas LTDA")
     var nm = function (v) { return semAcento(v).replace(/[^a-z0-9]+/g, " ").replace(/\b(ltda|me|epp|eireli|sa|s a|comercio de|com)\b/g, " ").replace(/\s+/g, " ").trim(); };
     var mesmaLoja = function (a, b2) { a = nm(a); b2 = nm(b2); return a === b2 || (a.length >= 5 && b2.length >= 5 && (a.indexOf(b2) >= 0 || b2.indexOf(a) >= 0)); };
-    var c1 = x.chave && outras.filter(function (c) { return c.chave === x.chave; })[0];
+    var c1 = x.arquivo_hash && outras.filter(function (c) { return c.arquivo_hash && c.arquivo_hash === x.arquivo_hash; })[0];
+    if (c1) return { certa: true, c: c1, motivo: "é a mesma foto/arquivo" };
+    c1 = x.chave && outras.filter(function (c) { return c.chave === x.chave; })[0];
     if (c1) return { certa: true, c: c1, motivo: "mesma chave de acesso da nota" };
     c1 = x.numero_nota && x.cnpj && outras.filter(function (c) { return c.numero_nota === x.numero_nota && dg(c.cnpj) === dg(x.cnpj); })[0];
     if (c1) return { certa: true, c: c1, motivo: "mesmo número de nota da mesma loja" };
@@ -561,6 +563,13 @@
   }
 
   // ---------------- receber notas (Compartilhar, arquivos) ----------------
+  // impressão digital (SHA-256) do arquivo: a mesma foto/arquivo escolhido duas vezes é recusado
+  function hashArq(f) {
+    if (!(window.crypto && crypto.subtle && f && f.arrayBuffer)) return Promise.resolve(null);
+    return f.arrayBuffer().then(function (b) { return crypto.subtle.digest("SHA-256", b); }).then(function (h) {
+      return Array.prototype.map.call(new Uint8Array(h), function (x) { return x.toString(16).padStart(2, "0"); }).join("");
+    }).catch(function () { return null; });
+  }
   function receber(rc, ctx) {
     P = ctx;
     if (P.S.semCompras) { A.avisar("Rode de novo o supabase.sql no Supabase para usar as compras.", "erro"); return; }
@@ -574,21 +583,41 @@
     }
     var fila = (rc.arquivos || []).slice(0, 20);
     if ((rc.arquivos || []).length > 20) A.avisar("Vou ler as 20 primeiras notas; as outras mande depois.", "");
+    if (fila.length && !rc.semHash) {
+      // recusa o que se repete: o mesmo arquivo duas vezes na seleção, ou um que já foi lançado
+      Promise.all(fila.map(hashArq)).then(function (hs) {
+        var vistos = {}, novos = [], nov = [], rep = 0, jaLanc = [];
+        fila.forEach(function (f, i) {
+          var h = hs[i];
+          if (h && vistos[h]) { rep++; return; }
+          var ja = h && (P.S.compras || []).filter(function (c) { return c.arquivo_hash === h; })[0];
+          if (ja) { jaLanc.push(ja); return; }
+          if (h) vistos[h] = 1;
+          novos.push(f); nov.push(h);
+        });
+        if (rep) A.avisar("⛔ " + rep + " foto(s) repetida(s) na seleção: ignorei.", "erro");
+        if (jaLanc.length) A.avisar("⛔ " + jaLanc.length + " nota(s) já lançada(s): " + jaLanc.map(function (c) { return (c.fornecedor || "loja") + " " + dinheiro(c.valor) + " (" + A.dataSimples(c.comprado_em) + ")"; }).join("; ") + ". Ignorei.", "erro");
+        if (!novos.length) return;
+        receber(Object.assign({}, rc, { arquivos: novos, hashes: nov, semHash: true }), ctx);
+      });
+      return;
+    }
     if (!fila.length) { var dt = rc.texto ? lerNota(rc.texto) : {}; completarLoja(dt).then(function () { formulario({ texto: dt, bruto: rc.texto || "", tipo: rc.tipo }); }); return; }
     var j = A.janela('<div class="peq" id="cn-st">📖 Lendo a nota... (a 1ª vez demora um pouco)</div>', { titulo: "🧾 Nota" });
     var lidas = [];
+    var hashes = rc.hashes || [];
     fila.reduce(function (pr, f, i) {
       return pr.then(function () {
         $("#cn-st", j.el).textContent = "📖 Lendo a nota " + (i + 1) + " de " + fila.length + "...";
         return lerUmaNota(f, function (t) { $("#cn-st", j.el).textContent = t; }).then(function (x) {
           $("#cn-st", j.el).textContent = "🏪 Conferindo os dados da loja...";
-          return completarLoja(x.dados).then(function () { lidas.push(x); });
+          return completarLoja(x.dados).then(function () { x.hash = hashes[i] || null; lidas.push(x); });
         },
-          function () { lidas.push({ dados: {}, imagem: /^image\//.test(f.type) ? f : null, erro: true }); });
+          function () { lidas.push({ dados: {}, imagem: /^image\//.test(f.type) ? f : null, erro: true, hash: hashes[i] || null }); });
       });
     }, Promise.resolve()).then(function () {
       j.fechar();
-      var proxima = function () { var x = lidas.shift(); if (x) formulario({ texto: x.dados, imagem: x.imagem, bruto: x.bruto, erro: x.erro, tipo: rc.tipo, depois: proxima, falta: lidas.length }); };
+      var proxima = function () { var x = lidas.shift(); if (x) formulario({ texto: x.dados, imagem: x.imagem, bruto: x.bruto, erro: x.erro, tipo: rc.tipo, depois: proxima, falta: lidas.length, hash: x.hash }); };
       proxima();
     });
   }
@@ -654,7 +683,7 @@
       (op.imagem ? '<img alt="Nota" src="' + URL.createObjectURL(op.imagem) + '" style="max-height:160px;max-width:100%;display:block;margin-bottom:6px;border-radius:6px">' : "") +
       (op.erro ? '<div class="aviso erro">Não consegui ler a nota. Preencha à mão.</div>' : "") +
       (!c0 && op.imagem && !op.erro && !d.valor && !(d.itens || []).length ? '<div class="aviso">✍️ Parece nota <b>escrita à mão</b> (ou foto ilegível): o app só lê texto impresso. Preencha a data, o valor e os materiais à mão — a foto fica guardada junto.</div>' : "") +
-      (!op.erro && op.imagem && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ ' + (d.valorSoma ? "O “TOTAL” da foto não bateu com os materiais: usei a <b>soma dos materiais</b>. <b>Confira o valor total</b> antes de salvar." : "Não achei o “TOTAL” com clareza na foto: <b>confira o valor total</b> antes de salvar.") + '</div>' : "") +
+      (!op.erro && op.imagem && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ ' + (d.valorSoma ? "O “TOTAL” da foto não bateu com os materiais: usei a <b>soma dos materiais</b>. <b>Confira o valor total</b> antes de salvar." : "Não achei o “TOTAL” com clareza na foto (a letra de mão confunde o leitor). <b>Digite o valor total</b> da nota" + (d.valor > 0 && !d.valorSoma ? " (o maior valor que li foi " + dinheiro(d.valor) + ", provavelmente não é o total)" : "") + ".") + '</div>' : "") +
       (function () {
         var rp0 = !c0 && repetida({ chave: d.chave, numero_nota: d.numero, cnpj: d.cnpj, fornecedor: d.fornecedor, comprado_em: d.data, valor: d.valor }, null);
         return rp0 ? '<div class="aviso erro" id="cn-rep0">' + textoRepetida(rp0) + "</div>" : "";
@@ -696,7 +725,10 @@
       formulario({ compra: c });
     });
     $("#cn-data", el).value = c0 ? c0.comprado_em : d.data || A.isoLocal(new Date());
-    $("#cn-valor", el).value = num2(c0 ? c0.valor : d.valor);
+    // total que o app só "chutou" (não achou o TOTAL e não é a soma dos materiais, ex.: letra de mão): campo vazio, para nunca salvar um valor errado sem querer
+    var chuteTotal = !c0 && !op.erro && op.imagem && d.valorIncerto && !d.valorSoma && !d.totalFirme && d.valor > 0;
+    $("#cn-valor", el).value = chuteTotal ? "" : num2(c0 ? c0.valor : d.valor);
+    if (chuteTotal) { $("#cn-valor", el).placeholder = "digite o TOTAL da nota"; $("#cn-valor", el).style.outline = "2px solid var(--atencao, #d97706)"; }
     $("#cn-forn", el).value = c0 ? c0.fornecedor || "" : d.fornecedor || "";
     $("#cn-dest", el).value = obra ? rotuloObra(obra) : c0 ? c0.destino || "" : "";
     $("#cn-tipo", el).value = c0 ? c0.tipo_servico || "" : "";
@@ -908,6 +940,7 @@
       if (loja && loja.cnpj) dados.cnpj = F.fmtCnpj(loja.cnpj);
       else if (!c0 && d.cnpj) dados.cnpj = d.cnpj;
       if (!c0 && d.chave) dados.chave = d.chave;
+      if (!c0 && op.hash) dados.arquivo_hash = op.hash;
       if (!c0 && d.numero) dados.numero_nota = d.numero;
       // não lança nota repetida (a "provável" passa se você confirmar tocando em salvar de novo)
       var rp = repetida(c0 ? Object.assign({}, c0, dados) : dados, c0);
@@ -923,7 +956,12 @@
       }).catch(function () { return null; });   // sem a foto, o lançamento ainda é salvo
       pNota.then(function (cam) {
         if (cam) dados.nota = cam;
-        return P.q(c0 ? P.sb.from("compras").update(dados).eq("id", c0.id).select().single() : P.sb.from("compras").insert(dados).select().single());
+        var grava = function (d2) { return P.q(c0 ? P.sb.from("compras").update(d2).eq("id", c0.id).select().single() : P.sb.from("compras").insert(d2).select().single()); };
+        // banco ainda sem a coluna arquivo_hash (SQL não rodado): salva sem ela, só não recusa a mesma foto depois
+        return grava(dados).catch(function (e) {
+          if (!/arquivo_hash/i.test(String((e && e.message) || e))) throw e;
+          var d3 = Object.assign({}, dados); delete d3.arquivo_hash; return grava(d3);
+        });
       }).then(function (n) {
         // guarda os dados da loja (CNPJ, telefone, WhatsApp, e-mail, endereço) para as próximas notas
         return loja && n.fornecedor ? F.salvar(P, loja, n.fornecedor).then(function () { return n; }) : n;

@@ -369,6 +369,24 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
 - **Memória:** cidade, e-mail, telefone, endereço, cliente e empresa que você já digitou aparecem como sugestão nos campos parecidos (toque no campo para ver).
 - Senhas e chaves nunca são guardadas. Rascunho e memória ficam só neste aparelho (não passam para outro celular ou computador).
 
+## 🧾 Compras: ler várias notas de uma vez e recusar as repetidas
+
+- Em **🧾 Compras → 📷 Nota / cupom** dá para escolher **uma ou mais fotos/PDF/XML** de uma vez (até 20). O app abre uma nota por vez: "Depois desta: mais N nota(s)".
+- **Repetidas são recusadas:** o mesmo arquivo escolhido duas vezes na seleção é ignorado, e uma foto/arquivo que **já foi lançado** antes é recusado (o aviso diz a loja, o valor e a data da compra que já existe). Além disso, continua valendo a recusa por chave de acesso, número da nota ou mesma loja, valor e data.
+- **Nota manuscrita** (letra de mão): o leitor do app não consegue ler o total e a data. Nesse caso o **Valor total** fica **vazio e destacado**: digite o total escrito na nota e confira a data. A foto continua guardada com a compra.
+- Para ativar a recusa da mesma foto em notas futuras, rode de novo o `servicos/supabase.sql` no projeto age-servicos (cria a coluna `arquivo_hash`). Sem isso as compras continuam sendo salvas, só não há recusa da mesma foto depois.
+
+## 🏦 Extrato do banco (PDF): pagamentos da equipe e baixa das notas
+
+- Em **💰 Pagamentos** ou **Equipe**, toque em **🏦 Ler extrato do banco** e escolha o **PDF do extrato** (do app do banco; testado com o Itaú).
+- O app lê todas as páginas e mostra **quem recebeu cada Pix enviado**, com data, valor e CPF/CNPJ. Quem já é funcionário (pelo CPF/chave Pix cadastrados ou pelo nome completo) vem **marcado**; o resto vem desmarcado. **Marque só quem é da equipe**: loja, posto, padaria e fornecedor ficam de fora.
+- Para quem ainda não está na Equipe, o app **cadastra o funcionário** (com o CPF como chave Pix, para reconhecer os próximos comprovantes). Escolha o tipo dos pagamentos (diária, adiantamento...) e a área dos novos.
+- Cada Pix vira um **pagamento com a data do extrato**. Pagamentos que você já lançou pelo comprovante (mesmo valor, até 4 dias de diferença) são **pulados**, e importar o mesmo extrato de novo **não duplica**. O Pix para a própria empresa é ignorado.
+- Sobrenome igual não basta para juntar pessoas: parentes com o mesmo sobrenome continuam separados.
+- As **entradas** do mesmo extrato (Pix recebidos de clientes) dão **baixa nas notas** de **💼 Notas e resultado**: toque em **💼 Dar baixa nas notas pelas entradas** (é a mesma tela de 💰 Recebi um depósito).
+- **Notas de material pagas:** se um débito do extrato for **exatamente a soma de notas que estavam “a pagar”** na mesma loja (em 🧾 Compras, sem o “Já pago”), o app mostra **“🧾 Notas de material que este extrato pagou”**. Marcadas, elas passam a **pagas**, na data do extrato. Exemplo: Pix de R$ 1.491,30 ao Depósito do Braga = nota de R$ 685,80 + nota de R$ 805,50. Para isso, lance as notas em Compras com o valor total e **sem** marcar “Já pago”.
+- Confira sempre a lista antes de lançar.
+
 ## 🗑 Lixeira (recuperar o que foi apagado)
 
 - Quando você apaga um **orçamento, parceiro, prospecção, fornecedor, pagamento, compra, nota/receita ou modelo de laudo**, o item **não some**: uma cópia vai para a aba **🗑 Lixeira** e fica lá por **30 dias**.

@@ -559,7 +559,7 @@
       var mesmaL = linhas.filter(function (l) { return Math.abs(l.y - p.y) < 3.5; })[0];
       if (mesmaL) return { l: mesmaL, cont: false };
       // texto em 2 linhas centralizado na data (Itaú: metade acima, metade abaixo): vai para a data mais perto
-      var H1 = headDe(p.y), perto = linhas.filter(function (l) { return l.H === H1 && Math.abs(l.y - p.y) < 10; }).sort(function (q, r) { return Math.abs(q.y - p.y) - Math.abs(r.y - p.y); })[0];
+      var H1 = headDe(p.y), perto = linhas.filter(function (l) { return l.H === H1 && Math.abs(l.y - p.y) < 16; }).sort(function (q, r) { return Math.abs(q.y - p.y) - Math.abs(r.y - p.y); })[0];
       if (perto) return { l: perto, cont: true };
       var acima = linhas.filter(function (l) { return l.y > p.y && l.y - p.y < 45 && l.H === H1; }).sort(function (q, r) { return q.y - r.y; })[0];
       return acima ? { l: acima, cont: true } : null;
@@ -574,7 +574,7 @@
       if (k === "doc") l.doc.push(p.s); else if (k === "nome") l.nome.push(p.s); else if (k === "desc" || (k === "data" && !x.cont)) l.desc.push(p.s);
     });
     var iso = function (t) { var m = t.match(/^(\d{2})\/(\d{2})(?:\/(\d{2,4}))?$/); if (!m) return null; var a = m[3] ? (m[3].length === 2 ? "20" + m[3] : m[3]) : String(new Date().getFullYear()); return a + "-" + m[2] + "-" + m[1]; };
-    var out = { creditos: [], debitos: 0, ignorados: 0 };
+    var out = { creditos: [], debitos: 0, ignorados: 0, saidas: [] };
     linhas.forEach(function (l) {
       var ns = l.nums.sort(function (a, b) { return a.x - b.x; }), saldoAntes = l.H.saldo ? l.H.saldo.x + 5 : 1e9;
       var v = ns.length > 1 ? ns[0] : ns.length === 1 && ns[0].x + ns[0].w <= saldoAntes ? ns[0] : null;
@@ -584,7 +584,7 @@
       if (md) { l.doc.push(md[0]); l.nome = [nomeTxt.replace(md[0], " ")]; }
       var desc = l.desc.join(" ").replace(/\s+/g, " ").trim();
       if (!(l.valor > 0) || /^saldo|saldo\s+(anterior|em\s+conta|do\s+dia|final)/i.test(desc)) return;
-      if (l.neg) { out.debitos++; return; }
+      if (l.neg) { out.debitos++; out.saidas.push({ data: iso(l.data), desc: desc, nome: l.nome.join(" ").replace(/\s+/g, " ").trim(), doc: dig(l.doc.join("")), valor: l.valor }); return; }
       if (/rendimento|rend\s+pago|aplic|resgate|juros|^est\b|estorno|devolu/i.test(desc)) { out.ignorados++; return; }   // não é pagamento de cliente
       out.creditos.push({ data: iso(l.data), desc: desc, nome: l.nome.join(" ").replace(/\s+/g, " ").trim(), doc: dig(l.doc.join("")), valor: l.valor });
     });
@@ -1267,5 +1267,18 @@
     if (fs.length) loteDepositos(fs, depois);
   }
   window.AGE_FAT = { ver: ver, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, notasCompartilhadas: notasCompartilhadas, depositosCompartilhados: depositosCompartilhados, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
+    // 🏦 extrato do banco em PDF: entradas (créditos) e saídas (débitos) com data, descrição, nome, CPF/CNPJ e valor
+    lerExtrato: function (ctx, f) {
+      P = ctx;
+      return window.AGE_PAG.carregarPdfjs().then(function () { return pecasTodas(f); }).then(function (pecas) {
+        var ex = extratoDoPdf(pecas); if (!ex) return ex;
+        // CNPJ/CPF do titular da conta: o primeiro que aparece no alto da primeira página (antes da tabela)
+        var top = pecas.filter(function (p) { return /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2}/.test(p.s); }).sort(function (a, b) { return b.y - a.y; })[0];
+        var m = top && top.s.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2}/);
+        ex.titular = m ? dig(m[0]) : "";
+        return ex;
+      });
+    },
+    baixaPelasEntradas: function (ctx, f, depois) { P = ctx; loteDepositos([f], depois); },
     datalist: function (ctx, id) { P = ctx; return datalist(id); }, aReceber: function (S) { return (S.receitas || []).filter(function (n) { return !n.recebido; }); } };
 })();
