@@ -6,7 +6,8 @@
   "use strict";
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var P = null;
-  var filtro = { periodo: "4sem", func: "", de: "", ate: "", forma: "" };
+  var filtro = { periodo: "4sem", func: "", de: "", ate: "", forma: "", agrupar: "semana" };
+  var AGRUPAR = { semana: "Por semana", quinzena: "Por quinzena", mes: "Por mês" };
   var TIPOS = { diaria: "Diária", salario: "Salário", adiantamento: "Adiantamento", vale: "Vale", reembolso: "Reembolso (material/combustível)", outro: "Outro" };
   var MESES = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
   var TESS = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/";
@@ -535,6 +536,29 @@
     });
     return ordem.sort().reverse().map(function (k) { return { inicio: k, pags: sem[k] }; });
   }
+  // agrupa por semana, quinzena (1–15 e 16–fim) ou mês, do mais novo para o mais antigo
+  function porGrupo(ps, modo) {
+    if (modo !== "quinzena" && modo !== "mes") modo = "semana";
+    var g = {}, ordem = [];
+    ps.forEach(function (p) {
+      var d = new Date(p.pago_em), de = modo === "semana" ? inicioSemana(d) : faixa(modo, d).de, k = A.isoLocal(de);
+      if (!g[k]) { g[k] = { chave: k, de: de, pags: [], rotulo: modo === "semana" ? rotuloSemana(k) : rotuloFaixa(modo, faixa(modo, d)) }; ordem.push(k); }
+      g[k].pags.push(p);
+    });
+    return ordem.sort().reverse().map(function (k) { return g[k]; });
+  }
+  // resumo em texto de um funcionário (para mandar no WhatsApp)
+  function textoFunc(f, ps, modo) {
+    var meus = ps.filter(function (p) { return p.funcionario_id === f.id; }), t = "*" + ((A.CFG.EMPRESA || {}).nome || "AGE") + " — Pagamentos de " + f.nome + "*\n";
+    var pago = meus.filter(function (p) { return p.tipo !== "reembolso"; }), d = Number(f.diaria) || 0;
+    t += "\n*Total recebido: " + dinheiro(soma(pago)) + "*" + (d ? " (diária " + dinheiro(d) + ")" : "") + "\n";
+    porGrupo(meus, modo).forEach(function (s) {
+      var pg = s.pags.filter(function (p) { return p.tipo !== "reembolso"; }), nd = d ? soma(pg.filter(function (p) { return p.tipo === "diaria"; })) / d : 0;
+      t += "\n📅 " + s.rotulo + " — " + dinheiro(soma(pg)) + (nd ? " · " + String(Math.round(nd * 10) / 10).replace(".", ",") + " diária(s)" : "") + "\n";
+      s.pags.sort(function (a, b) { return new Date(a.pago_em) - new Date(b.pago_em); }).forEach(function (p) { var dt = new Date(p.pago_em); t += A.data(dt).slice(0, 5) + " " + A.hora(dt) + " · " + (TIPOS[p.tipo] || "") + " · " + (ehPix(p) ? "Pix" : "Dinheiro") + " · " + dinheiro(p.valor) + "\n"; });
+    });
+    return t + "\nSe algum valor estiver diferente do que você recebeu, fale comigo.";
+  }
   function totaisPorFunc(ps) {
     var t = {};
     ps.forEach(function (p) { var k = p.funcionario_id || "-"; t[k] = (t[k] || 0) + Number(p.valor); });
@@ -543,7 +567,7 @@
   function ehPix(p) { return p.forma !== "especie"; }
   function funcDe(id) { return (P.S.func || []).filter(function (f) { return f.id === id; })[0] || null; }
   // link pessoal do funcionário para ele conferir o que já recebeu (página meus-pagamentos.html)
-  function linkPagamentos(f) { return new URL("meus-pagamentos.html", location.href).href.split("#")[0].split("?")[0] + "#t=" + f.token; }
+  function linkPagamentos(f, modo) { return new URL("meus-pagamentos.html", location.href).href.split("#")[0].split("?")[0] + "#t=" + f.token + (modo && modo !== "semana" ? "&v=" + modo : ""); }
   // "diária R$ 150,00 · 3,5 diárias pagas" (só quando o valor da diária foi informado na Equipe)
   function diariasTxt(id, ps, html) {
     var f = funcDe(id), d = f ? Number(f.diaria) || 0 : 0; if (!d) return "";
@@ -574,12 +598,13 @@
       '<p class="mudo peq" style="margin-top:-4px">No celular: no app do banco, abra o comprovante, toque em <b>Compartilhar → AGE Painel</b>. Ou toque em 📥 e escolha a imagem/PDF.</p>' +
       '<div class="filtros"><select id="pg-per" aria-label="Período"><option value="semana">Esta semana</option><option value="passada">Semana passada</option><option value="4sem">Últimas 4 semanas</option>' +
       '<option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="tudo">Tudo</option><option value="datas">Escolher datas</option></select>' +
+      '<select id="pg-agr" aria-label="Agrupar">' + Object.keys(AGRUPAR).map(function (k) { return '<option value="' + k + '">' + AGRUPAR[k] + "</option>"; }).join("") + '</select>' +
       '<select id="pg-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + P.S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
       '<input type="date" id="pg-de" aria-label="De" class="' + (filtro.periodo === "datas" ? "" : "oculto") + '"><input type="date" id="pg-ate" aria-label="Até" class="' + (filtro.periodo === "datas" ? "" : "oculto") + '"></div>' +
       '<div id="pg-res"></div>';
-    $("#pg-per").value = filtro.periodo; $("#pg-func").value = filtro.func; $("#pg-de").value = filtro.de; $("#pg-ate").value = filtro.ate;
-    ["#pg-per", "#pg-func", "#pg-de", "#pg-ate"].forEach(function (id) {
-      $(id).onchange = function () { filtro.periodo = $("#pg-per").value; filtro.func = $("#pg-func").value; filtro.de = $("#pg-de").value; filtro.ate = $("#pg-ate").value; ver(c, P); };
+    $("#pg-per").value = filtro.periodo; $("#pg-func").value = filtro.func; $("#pg-agr").value = filtro.agrupar; $("#pg-de").value = filtro.de; $("#pg-ate").value = filtro.ate;
+    ["#pg-per", "#pg-agr", "#pg-func", "#pg-de", "#pg-ate"].forEach(function (id) {
+      $(id).onchange = function () { filtro.agrupar = $("#pg-agr").value; filtro.periodo = $("#pg-per").value; filtro.func = $("#pg-func").value; filtro.de = $("#pg-de").value; filtro.ate = $("#pg-ate").value; ver(c, P); };
     });
     $$("[data-forma]", c).forEach(function (b) { b.onclick = function () { filtro.forma = b.dataset.forma; ver(c, P); }; });
     $("#pg-especie").onclick = function () { receber({ arquivos: [], texto: "", especie: true }, P); };
@@ -604,8 +629,8 @@
         (funcDe(x.func) && funcDe(x.func).token ? '<button class="peq" data-pg-link="' + x.func + '" title="Copia o link de pagamentos deste funcionário">🔗 Link</button>' : "") + "</td></tr>"; }).join("") +
       "</tbody></table></div>" +
       '<div class="acoes"><button id="pg-csv">⬇ Planilha (CSV)</button><button id="pg-comp">📤 Compartilhar relatório</button></div></div>' +
-      porSemana(ps).map(function (s) {
-        return '<div class="cab-secao" style="margin-top:14px"><h2>📅 ' + esc(rotuloSemana(s.inicio)) + '</h2><span><b>' + dinheiro(soma(s.pags)) + "</b></span></div>" +
+      porGrupo(ps, filtro.agrupar).map(function (s) {
+        return '<div class="cab-secao" style="margin-top:14px"><h2>📅 ' + esc(s.rotulo) + '</h2><span><b>' + dinheiro(soma(s.pags)) + "</b></span></div>" +
           '<div class="peq mudo" style="margin:-6px 0 6px">' + totaisPorFunc(s.pags).map(function (x) { return esc(P.nomeFunc(x.func) || "—") + ": <b>" + dinheiro(x.total) + "</b>"; }).join(" · ") + "</div>" +
           '<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Horário</th><th>Funcionário</th><th>Forma</th><th>Tipo</th><th class="num">Valor</th><th></th></tr></thead><tbody>' +
           s.pags.map(function (p) {
@@ -617,11 +642,26 @@
       }).join("");
     $$("[data-pg-link]", r).forEach(function (b) {
       b.onclick = function () {
-        var f = funcDe(b.dataset.pgLink), link = linkPagamentos(f), msg = "Olá, " + String(f.nome).split(" ")[0] + "! Aqui você confere os pagamentos que já fizemos para você:\n" + link;
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(function () { A.avisar("Link copiado. Cole no WhatsApp do " + String(f.nome).split(" ")[0], "ok"); }, function () { window.prompt("Copie o link:", link); });
-        else window.prompt("Copie o link:", link);
-        if (f.telefone && A.linkZap) b.insertAdjacentHTML("afterend", ' <a class="botao zap peq" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msg)) + '">📲 WhatsApp</a>');
-        b.disabled = true;
+        var f = funcDe(b.dataset.pgLink), nome1 = String(f.nome).split(" ")[0];
+        var jj = A.janela('<p>Como enviar para <b>' + esc(f.nome) + '</b>?</p>' +
+          '<label for="pl-modo">Mostrar os valores</label><select id="pl-modo">' + Object.keys(AGRUPAR).map(function (k) { return '<option value="' + k + '">' + AGRUPAR[k] + "</option>"; }).join("") + "</select>" +
+          '<p class="mudo peq" style="margin:4px 0 0"><b>Link</b>: o funcionário abre no celular e vê tudo, sempre atualizado. <b>Resumo</b>: texto com os valores do período que está na tela (' + esc($("#pg-per").selectedOptions[0].textContent) + ").</p>" +
+          '<div class="acoes"><button class="prim" id="pl-link">🔗 Copiar link</button>' + (f.telefone ? '<a class="botao zap" id="pl-zl" target="_blank" rel="noopener">📲 Link no WhatsApp</a>' : "") + "</div>" +
+          '<div class="acoes"><button id="pl-txt">📋 Copiar resumo</button>' + (f.telefone ? '<a class="botao zap" id="pl-zt" target="_blank" rel="noopener">📲 Resumo no WhatsApp</a>' : "") + "</div>", { titulo: "Enviar pagamentos" }), el = jj.el;
+        $("#pl-modo", el).value = filtro.agrupar;
+        function link() { return linkPagamentos(f, $("#pl-modo", el).value); }
+        function texto() { return textoFunc(f, ps, $("#pl-modo", el).value); }
+        function copiarTxt(t, aviso) {
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { A.avisar(aviso, "ok"); }, function () { window.prompt("Copie:", t); });
+          else window.prompt("Copie:", t);
+        }
+        function zaps() {
+          if ($("#pl-zl", el)) $("#pl-zl", el).href = A.linkZap(f.telefone, "Olá, " + nome1 + "! Aqui você confere os pagamentos que já fizemos para você:\n" + link());
+          if ($("#pl-zt", el)) $("#pl-zt", el).href = A.linkZap(f.telefone, texto());
+        }
+        $("#pl-modo", el).onchange = zaps; zaps();
+        $("#pl-link", el).onclick = function () { copiarTxt(link(), "Link copiado"); };
+        $("#pl-txt", el).onclick = function () { copiarTxt(texto(), "Resumo copiado"); };
       };
     });
     $("#pg-csv").onclick = function () { baixarCsv(ps); };
@@ -667,8 +707,8 @@
     var pr = periodo();
     if (filtro.periodo !== "tudo") t += A.data(pr.de) + " a " + A.data(new Date(pr.ate.getTime() - 864e5)) + "\n";
     t += "\n*Total: " + dinheiro(soma(ps)) + "*\n" + totaisPorFunc(ps).map(function (x) { return "• " + (P.nomeFunc(x.func) || "—") + ": " + dinheiro(x.total) + diariasTxt(x.func, ps, false); }).join("\n") + "\n";
-    porSemana(ps).forEach(function (s) {
-      t += "\n📅 " + rotuloSemana(s.inicio) + " — " + dinheiro(soma(s.pags)) + "\n";
+    porGrupo(ps, filtro.agrupar).forEach(function (s) {
+      t += "\n📅 " + s.rotulo + " — " + dinheiro(soma(s.pags)) + "\n";
       s.pags.forEach(function (p) { var d = new Date(p.pago_em); t += A.data(d).slice(0, 5) + " " + A.hora(d) + " · " + (P.nomeFunc(p.funcionario_id) || "—") + " · " + (ehPix(p) ? "Pix" : "Dinheiro") + " · " + (TIPOS[p.tipo] || "") + " · " + dinheiro(p.valor) + "\n"; });
     });
     return t;

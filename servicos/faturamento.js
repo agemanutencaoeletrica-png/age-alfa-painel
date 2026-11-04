@@ -27,7 +27,9 @@
     IV: { aliq: [4.5, 9, 10.2, 14, 22, 33], ded: [0, 8100, 12420, 39780, 183780, 828000], iss: [44.5, 40, 40, 40, 39, 0] },
     V: { aliq: [15.5, 18, 19.5, 20.5, 23, 30.5], ded: [0, 4500, 9900, 17100, 62100, 540000], iss: null }
   };
-  function cfgSN() { try { var o = JSON.parse(localStorage.getItem(CHAVE_SN) || "{}") || {}; return { anexo: TAB_SN[o.anexo] ? o.anexo : "", rbt12: Number(o.rbt12) || 0 }; } catch (e) { return { anexo: "", rbt12: 0 }; } }
+  // começa com os dados do PGDAS-D de 10/2026 da AGE (Anexo III, RBT12 R$ 314.350,00); o RBT12 muda todo mês: atualize em ⚙ Simples
+  var SN_INICIAL = { anexo: "III", rbt12: 314350 };
+  function cfgSN() { try { var bruto = localStorage.getItem(CHAVE_SN), o = (bruto === null ? SN_INICIAL : JSON.parse(bruto || "{}")) || {}; return { anexo: TAB_SN[o.anexo] ? o.anexo : "", rbt12: Number(o.rbt12) || 0 }; } catch (e) { return { anexo: "", rbt12: 0 }; } }
   function salvarSN(o) { try { localStorage.setItem(CHAVE_SN, JSON.stringify(o)); } catch (e) { /* sem armazenamento */ } }
   // alíquota efetiva do DAS, faixa e a parte do ISS (null quando a tabela não separa)
   function aliqSN(c) {
