@@ -18,7 +18,7 @@
 
   // ---------------- leitura do comprovante ----------------
   var ROT_DEST = /^(destino|destinat[aá]rio|para|recebedor|favorecido|quem recebeu|dados do recebedor|dados de quem recebeu|pago para|transferido para|enviado para)\b[:\s-]*/i;
-  var ROT_FIM = /^(origem|pagador|quem pagou|dados do pagador|de)\b/i;
+  var ROT_FIM = /^(origem|pagador|quem pagou|dados do pagador)\b|^de\s*:?\s*$/i;   // "De" sozinho é o rótulo; "de Paula" é continuação do nome
   var NAO_NOME = /cpf|cnpj|institui|banco|ag[eê]ncia|conta|chave|tipo|valor|data|hor[aá]rio|autentica|transa|identifica|comprovante|pix|\d{3}|\*{2}|•/i;
   function limpar(n) { return String(n || "").replace(/\s+/g, " ").replace(/[^A-Za-zÀ-ú.' ]/g, "").trim().slice(0, 120); }
   function pareceNome(x) { return !NAO_NOME.test(x) && /^[A-Za-zÀ-ú][A-Za-zÀ-ú.' ]*\s+[A-Za-zÀ-ú.' ]+$/.test(x.trim()); }
@@ -26,6 +26,7 @@
   function comContinuacao(ls, k, nome) {
     var prox = ls[k + 1];
     if (prox && /^[A-ZÀ-Ú][A-ZÀ-Ú' ]{1,40}$/.test(prox) && !NAO_NOME.test(prox) && !ROT_FIM.test(prox) && nome === nome.toUpperCase()) return nome + " " + prox;
+    if (prox && /^(de|da|do|dos|das|e)\s+[A-Za-zÀ-ú]+(\s+[A-Za-zÀ-ú]+)?$/i.test(prox) && !NAO_NOME.test(prox) && !/^de$/i.test(prox)) return nome + " " + prox;   // "Mateus Henrique Silva" + "de Paula"
     return nome;
   }
   function favorecido(ls) {
@@ -48,13 +49,21 @@
     }
     return "";
   }
+  // Pix pago por outra pessoa (ex.: o Antonio, pelo PicPay dele): anota "Pago por ..." na descrição, para não se perder quem bancou
+  function comPagador(it) {
+    if (it.pagador && !/^age\b/i.test(it.pagador) && !it.descricao) it.descricao = "Pago por " + it.pagador;
+    return it;
+  }
   // texto do comprovante -> { valor, data (aaaa-mm-dd), hora (hh:mm), favorecido, id }
   function lerPix(texto) {
-    var t = String(texto || "").replace(/\r/g, ""), ls = t.split("\n").map(function (x) { return x.trim(); }).filter(Boolean), r = {};
+    // alguns PDFs (PicPay) trocam ":" e "-" por um símbolo especial da fonte (caractere privado): vira ":" para ler a hora (15:26:51)
+    var t = String(texto || "").replace(/\r/g, "").replace(/[\uE000-\uF8FF]/g, ":"), ls = t.split("\n").map(function (x) { return x.trim(); }).filter(Boolean), r = {};
     var mv = t.match(/valor[^\n\d]{0,40}?R\s?[$S5]?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i) || t.match(/R\s?[$S5]\s*(\d{1,3}(?:\.\d{3})*,\d{2})/) || t.match(/\b(\d{1,3}(?:\.\d{3})*,\d{2})\b/);
     if (mv) r.valor = A.lerNumero(mv[1]);
     var md = t.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[^\d\n]{1,8}(\d{2})[:h](\d{2}))?/);
-    var mm = semAcento(t).match(/(\d{1,2})\s*(?:de\s+)?(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*(?:de\s+)?(\d{4})(?:[^\d\n]{1,10}(\d{2})[:h](\d{2}))?/);
+    var mm = semAcento(t).match(/(\d{1,2})\s*[\/-]?\s*(?:de\s+)?(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*[\/-]?\s*(?:de\s+)?(\d{4})(?:[^\d\n]{1,10}(\d{2})[:h](\d{2}))?/);
+    var hc = !md && mm && !mm[4] && semAcento(t).match(/(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*[\/-]?\s*(?:de\s+)?\d{4}\s*[-\u2013,]?\s*([01]\d|2[0-3])([0-5]\d)([0-5]\d)\b/);   // PicPay: "28/out/2026 - 152651"
+    if (hc) { mm[4] = hc[1]; mm[5] = hc[2]; }
     if (md) { r.data = md[3] + "-" + md[2] + "-" + md[1]; if (md[4]) r.hora = md[4] + ":" + md[5]; }
     else if (mm) { r.data = mm[3] + "-" + dois(MESES[mm[2]]) + "-" + dois(mm[1]); if (mm[4]) r.hora = mm[4] + ":" + mm[5]; }
     if (!r.hora) { var mh = t.match(/\b([01]\d|2[0-3])[:h]([0-5]\d)(?::[0-5]\d)?\b/); if (mh) r.hora = mh[1] + ":" + mh[2]; }
@@ -72,16 +81,28 @@
       }
     }
     // chave Pix e CPF de quem recebeu (parte "para"): é por eles que o app acha o funcionário
-    var mc = t.match(/chave(?:\s+pix)?\s*[:-]?\s*([^\s][^\n]*)/i);
-    if (mc) r.chave = mc[1].trim().slice(0, 120);
+    for (var ic = 0; ic < ls.length; ic++) {
+      if (!/^chave\b/i.test(ls[ic])) continue;
+      var vc = ls[ic].replace(/^chave(\s+pix)?(\s+d[oea]s?\s+(recebedor|destinat[a\u00e1]rio|favorecido|destino))?\s*[:-]?\s*/i, "").trim();
+      if (!vc && ls[ic + 1]) vc = ls[ic + 1].trim();
+      if (vc) { r.chave = (/^:\d/.test(vc) ? "+" + vc.slice(1) : vc).slice(0, 120); break; }   // o "+" do telefone pode vir como símbolo da fonte
+    }
     var noDestino = false;
     ls.forEach(function (x) {
       if (ROT_DEST.test(x)) noDestino = true; else if (ROT_FIM.test(x)) noDestino = false;
       // CPF mascarado ("***.832.066-**"): guarda só os dígitos que aparecem
+      var mmask = noDestino && !r.cpf && x.match(/^[*\u2022]{3}\.(\d{3})\.(\d{3})/);
+      if (mmask) r.cpf = mmask[1] + mmask[2];
       var mcpf = noDestino && x.match(/cpf\b(.*)$/i);
       if (mcpf && !r.cpf) { var vis = mcpf[1].replace(/^[^\d*•"]*/, "").replace(/\D/g, ""); if (vis.length >= 5) r.cpf = vis; }
     });
     r.favorecido = favorecido(ls);
+    // quem pagou (quando o comprovante mostra): "De" / "Quem pagou" / "Origem" + nome
+    for (var ip = 0; ip < ls.length; ip++) {
+      if (!/^(de|quem pagou|origem|pagador|dados do pagador)\b[:\s-]*$/i.test(ls[ip])) continue;
+      for (var kp = ip + 1; kp < Math.min(ls.length, ip + 4); kp++) { if (pareceNome(ls[kp])) { r.pagador = limpar(comContinuacao(ls, kp, ls[kp])); break; } }
+      if (r.pagador) break;
+    }
     return r;
   }
   // nome do comprovante -> funcionário da equipe (primeiro nome igual ou dois nomes em comum)
@@ -355,13 +376,13 @@
       return pr.then(function () {
         progresso = function (n) { status("📖 Lendo o comprovante " + (i + 1) + " de " + fila.length + "... " + n + "%"); };
         status("📖 Lendo o comprovante " + (i + 1) + " de " + fila.length + "... (a 1ª vez demora um pouco)");
-        return textoDoArquivo(f).then(function (r) { itens.push(Object.assign(lerPix(r.texto), { imagem: r.imagem, texto: r.texto })); },
+        return textoDoArquivo(f).then(function (r) { itens.push(comPagador(Object.assign(lerPix(r.texto), { imagem: r.imagem, texto: r.texto }))); },
           function (e) { itens.push({ erro: A.msgErro(e), nome: f.name, imagem: /^image\//.test(f.type) ? f : null }); });
       }).then(function () { feitos++; });
     }, Promise.resolve());
     pLer.then(function () {
       // texto sem arquivo (comprovante compartilhado como texto ou colado)
-      if (rc.texto && !fila.length) itens.push(Object.assign(lerPix(rc.texto), { texto: rc.texto }));
+      if (rc.texto && !fila.length) itens.push(comPagador(Object.assign(lerPix(rc.texto), { texto: rc.texto })));
       if (rc.especie) { var ag = new Date(); itens.push({ forma: "especie", data: A.isoLocal(ag), hora: dois(ag.getHours()) + ":" + dois(ag.getMinutes()) }); }
       progresso = null;
       status(rc.especie ? "Preencha o pagamento feito em dinheiro." : itens.length ? "Confira os dados lidos e corrija o que precisar." : "Nada para ler.");
@@ -456,6 +477,7 @@
               var up = { pago_em: novo.pago_em, forma: novo.forma };
               if (novo.id_transacao) up.id_transacao = novo.id_transacao;
               if (novo.comprovante) up.comprovante = novo.comprovante;
+              if (novo.descricao) up.descricao = novo.descricao;   // ex.: "Pago por ..."
               if (novo.tipo && novo.tipo !== "diaria") up.tipo = novo.tipo;
               return P.q(P.sb.from("pagamentos").update(up).eq("id", doExtrato.id).select().single()).then(function (n) { P.trocar(P.S.pag, n); });
             }
