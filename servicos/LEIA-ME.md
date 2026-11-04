@@ -483,3 +483,8 @@ Só você vê, no editor: imposto embutido e líquido. Os itens guardam o valor 
 - **Equipe → Editar**: campo **Valor da diária (R$)**. Em **Pagamentos**, cada funcionário mostra "diária R$ X · N diária(s) paga(s)" (soma dos pagamentos do tipo Diária ÷ valor da diária) e o mesmo aparece no relatório compartilhado.
 - **Pagamentos → botão 🔗 Link** na linha do funcionário: copia o link pessoal `meus-pagamentos.html#t=…` (e mostra 📲 WhatsApp com a mensagem pronta). A página abre no celular dele e mostra só os pagamentos dele (por semana, total, diárias pagas), sempre atualizada. Se gerar novo link do funcionário (Equipe → 🔄), o link de pagamentos antigo também para de funcionar.
 - Rode o `supabase.sql` (coluna `funcionarios.diaria` e função `func_pagamentos`).
+
+## 📅 Pagamentos por semana, quinzena ou mês (e como enviar ao funcionário)
+- Em **Pagamentos** há o seletor **Por semana / Por quinzena / Por mês**: a lista, os totais de cada período e o relatório compartilhado seguem a sua escolha.
+- O botão **🔗 Link** abre **Enviar pagamentos**: escolha semana, quinzena ou mês e envie o **link** (página do funcionário, sempre atualizada, com botões Semana/Quinzena/Mês) ou o **resumo em texto** (copiar ou WhatsApp) com os valores do período filtrado na tela.
+- O Simples já começa com o **PGDAS-D de 10/2026** (Anexo III, RBT12 R$ 314.350,00 → alíquota efetiva 8,22%; confere com o DAS: R$ 2.800 → R$ 230,23 e R$ 22.800 com ISS retido → R$ 1.274,81). O RBT12 muda todo mês: atualize em Notas e resultado → ⚙ Simples.

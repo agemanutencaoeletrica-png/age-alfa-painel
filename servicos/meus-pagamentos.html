@@ -29,29 +29,47 @@
   if (!token) { erro("Link incompleto. Peça o link de pagamentos ao responsável."); return; }
   var sb;
   try { sb = A.cliente({ auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }); } catch (e) { erro(e.message); return; }
-  var ini = function (d) { var x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+  var vm = /[#&]v=(semana|quinzena|mes)\b/.exec(location.hash || ""), modo = vm ? vm[1] : "semana";
+  var MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  function dm(d) { return A.data(d).slice(0, 5); }
+  // chave e rótulo do grupo (semana segunda–domingo, quinzena 1–15 / 16–fim, mês)
+  function grupo(d, m) {
+    d = new Date(d); var y = d.getFullYear(), mo = d.getMonth(), dia = d.getDate();
+    if (m === "mes") return { k: y * 100 + mo, r: MESES[mo] + " de " + y };
+    if (m === "quinzena") {
+      var a = dia <= 15, ini = new Date(y, mo, a ? 1 : 16), fim = new Date(y, mo, a ? 15 : new Date(y, mo + 1, 0).getDate());
+      return { k: y * 1000 + mo * 10 + (a ? 1 : 2), r: (a ? "1ª" : "2ª") + " quinzena · " + dm(ini) + " a " + dm(fim) + "/" + y };
+    }
+    var s = new Date(y, mo, dia); s.setDate(s.getDate() - ((s.getDay() + 6) % 7)); var e = new Date(s); e.setDate(e.getDate() + 6);
+    return { k: s.getTime(), r: "Semana · " + dm(s) + " a " + A.data(e) };
+  }
+  function soma(l) { return l.reduce(function (t, p) { return t + (p.tipo === "reembolso" ? 0 : Number(p.valor) || 0); }, 0); }
   sb.rpc("func_pagamentos", { p_token: token }).then(function (r) {
     if (r.error) { erro(/inv[aá]lido/i.test(r.error.message) ? "Link inválido ou desativado. Peça um novo link ao responsável." : "Não foi possível carregar agora. Tente de novo em instantes."); return; }
-    var d = r.data || {}, ps = d.pagamentos || [], tot = 0, semanas = {}, ordem = [];
-    ps.forEach(function (p) {
-      var v = Number(p.valor) || 0; if (p.tipo !== "reembolso") tot += v;
-      var k = ini(p.pago_em).getTime(); if (!semanas[k]) { semanas[k] = []; ordem.push(k); } semanas[k].push(p);
-    });
-    ordem.sort(function (a, b) { return b - a; });
-    var reemb = ps.filter(function (p) { return p.tipo === "reembolso"; }).reduce(function (t, p) { return t + Number(p.valor); }, 0);
-    var diaria = Number(d.diaria) || 0, nDia = ps.filter(function (p) { return p.tipo === "diaria"; }).reduce(function (t, p) { return t + Number(p.valor); }, 0);
-    var html = '<main><h1>💰 Meus pagamentos</h1><p class="mudo">' + esc(d.nome || "") + " · " + esc((A.CFG.EMPRESA || {}).nome || "AGE") + "</p>" +
-      '<div class="cartao"><div class="linha"><span>Total recebido</span><span class="dir tot">' + A.dinheiro(tot) + "</span></div>" +
-      (diaria ? '<div class="peq mudo">Valor da diária: <b>' + A.dinheiro(diaria) + "</b>" + (nDia ? " · diárias pagas: <b>" + String(Math.round(nDia / diaria * 10) / 10).replace(".", ",") + "</b>" : "") + "</div>" : "") +
-      (reemb ? '<div class="peq mudo">Reembolsos de material/combustível (não entram no total): ' + A.dinheiro(reemb) + "</div>" : "") + "</div>";
-    if (!ps.length) html += '<div class="cartao vazio">Nenhum pagamento registrado ainda.</div>';
-    ordem.forEach(function (k) {
-      var s = semanas[k], f = new Date(k), fim = new Date(k); fim.setDate(fim.getDate() + 6);
-      html += '<h3 style="margin-top:14px">📅 ' + A.data(f).slice(0, 5) + " a " + A.data(fim) + ' <span class="dir">' + A.dinheiro(s.reduce(function (t, p) { return t + (p.tipo === "reembolso" ? 0 : Number(p.valor)); }, 0)) + "</span></h3>" +
-        '<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Tipo</th><th class="v">Valor</th></tr></thead><tbody>' +
-        s.map(function (p) { var dt = new Date(p.pago_em); return "<tr><td>" + esc(A.data(dt)) + " " + esc(A.hora(dt)) + "</td><td>" + esc(TIPOS[p.tipo] || p.tipo || "") + (p.forma === "especie" ? " · 💵" : " · Pix") + (p.descricao ? '<div class="mudo peq">' + esc(p.descricao) + "</div>" : "") + '</td><td class="v"><b>' + A.dinheiro(p.valor) + "</b></td></tr>"; }).join("") + "</tbody></table></div>";
-    });
-    app.innerHTML = html + '<p class="mudo peq" style="margin-top:16px">Se algum valor estiver diferente do que você recebeu, fale com o responsável.</p></main>';
+    var d = r.data || {}, ps = d.pagamentos || [], diaria = Number(d.diaria) || 0;
+    function nd(l) { return diaria ? soma(l.filter(function (p) { return p.tipo === "diaria"; })) / diaria : 0; }
+    function fd(n) { return String(Math.round(n * 10) / 10).replace(".", ","); }
+    function desenhar() {
+      var gs = {}, ordem = [];
+      ps.forEach(function (p) { var g = grupo(p.pago_em, modo); if (!gs[g.k]) { gs[g.k] = { r: g.r, l: [] }; ordem.push(g.k); } gs[g.k].l.push(p); });
+      ordem.sort(function (a, b) { return b - a; });
+      var reemb = ps.filter(function (p) { return p.tipo === "reembolso"; }).reduce(function (t, p) { return t + Number(p.valor); }, 0);
+      var html = '<main><h1>💰 Meus pagamentos</h1><p class="mudo">' + esc(d.nome || "") + " · " + esc((A.CFG.EMPRESA || {}).nome || "AGE") + "</p>" +
+        '<div class="cartao"><div class="linha"><span>Total recebido</span><span class="dir tot">' + A.dinheiro(soma(ps)) + "</span></div>" +
+        (diaria ? '<div class="peq mudo">Valor da diária: <b>' + A.dinheiro(diaria) + "</b> · diárias pagas: <b>" + fd(nd(ps)) + "</b></div>" : "") +
+        (reemb ? '<div class="peq mudo">Reembolsos de material/combustível (não entram no total): ' + A.dinheiro(reemb) + "</div>" : "") + "</div>" +
+        '<div class="filtros" style="margin-top:10px">' + [["semana", "Semana"], ["quinzena", "Quinzena"], ["mes", "Mês"]].map(function (x) { return '<button class="' + (modo === x[0] ? "prim" : "") + '" data-v="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>";
+      if (!ps.length) html += '<div class="cartao vazio">Nenhum pagamento registrado ainda.</div>';
+      ordem.forEach(function (k) {
+        var g = gs[k];
+        html += '<h3 style="margin-top:14px">📅 ' + esc(g.r) + ' <span class="dir">' + A.dinheiro(soma(g.l)) + "</span></h3>" + (diaria && nd(g.l) ? '<div class="peq mudo" style="margin:-4px 0 4px">' + fd(nd(g.l)) + " diária(s)</div>" : "") +
+          '<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Tipo</th><th class="v">Valor</th></tr></thead><tbody>' +
+          g.l.map(function (p) { var dt = new Date(p.pago_em); return "<tr><td>" + esc(A.data(dt)) + " " + esc(A.hora(dt)) + "</td><td>" + esc(TIPOS[p.tipo] || p.tipo || "") + (p.forma === "especie" ? " · 💵" : " · Pix") + (p.descricao ? '<div class="mudo peq">' + esc(p.descricao) + "</div>" : "") + '</td><td class="v"><b>' + A.dinheiro(p.valor) + "</b></td></tr>"; }).join("") + "</tbody></table></div>";
+      });
+      app.innerHTML = html + '<p class="mudo peq" style="margin-top:16px">Se algum valor estiver diferente do que você recebeu, fale com o responsável.</p></main>';
+      Array.prototype.forEach.call(app.querySelectorAll("[data-v]"), function (b) { b.onclick = function () { modo = b.dataset.v; desenhar(); }; });
+    }
+    desenhar();
   }, function () { erro("Sem internet. Tente de novo."); });
 })();
 </script>
