@@ -400,6 +400,26 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
 - **Comprovante depois do extrato:** se você lançou os Pix pelo extrato e depois manda o comprovante do mesmo Pix (mesmo valor, até 4 dias), o app **completa o lançamento** (hora, ID e foto) em vez de duplicar.
 - Para ativar, rode de novo o `servicos/supabase.sql` no projeto age-servicos (cria `socios`, `socio_servicos` e `socio_repasses`).
 
+## 🏛 Imposto de cada nota: quanto vai para o governo
+
+- Em **💼 Notas e resultado**, toque em **⚙ Simples** e informe o **anexo** do Simples Nacional (pergunte ao contador) e o **faturamento dos últimos 12 meses (RBT12)**, que aparece no PGDAS-D. O app mostra a faixa e a **alíquota efetiva**.
+- Ao abrir ou lançar uma nota, o quadro **🏛 Para o governo** mostra: **ISS retido pelo cliente** (valor e %, que o cliente paga à prefeitura), **retenções federais** (IR, INSS, PIS, COFINS, CSLL), o **DAS estimado** do Simples (que você paga no mês seguinte) e o **total para o governo** dessa nota.
+- Quando o cliente **retém o ISS**, o app **tira a parte do ISS do DAS** (o contador faz isso no PGDAS-D; sem isso o ISS seria pago duas vezes). No Anexo V o app não separa o ISS: confira no PGDAS-D.
+- O campo **Imposto da empresa** já vem preenchido com o DAS estimado quando está vazio; se você digitar outro valor, o app respeita. **🧮 Calcular nas notas sem imposto** preenche todas as notas antigas de uma vez.
+- **É uma estimativa.** O valor oficial do DAS é o do PGDAS-D: confirme com o contador. O RBT12 muda todo mês: atualize em ⚙ Simples.
+
+## 🧮 Honorário do contador (separado, só para controle)
+
+- Em **💼 Notas e resultado → 🧮 Contador**: o app soma, por mês, o **valor fixo** (começa em R$ 600,00) mais a **porcentagem do contador sobre cada nota emitida no mês**. Em **⚙ Contador** você informa o fixo, a **porcentagem** e se ela é sobre o valor **bruto** ou **líquido** da nota.
+- Mostra o mês escolhido nota a nota (valor e porcentagem de cada uma), o **total do contador no mês**, uma tabela **mês a mês** dos últimos 12 meses e **📤 Enviar resumo**.
+- Fica **à parte**: não entra no imposto da nota, no "Ficou para a empresa" nem no resultado das obras. Recebimento avulso (serviço sem nota) não conta.
+- A configuração fica neste aparelho (como o ⚙ Simples).
+
+## 📊 Código de barras da NF-e (DANFE)
+
+- Em **🧾 Compras → 📷 Nota / cupom**, para foto de **DANFE** (nota fiscal de produto), o app agora **lê o código de barras** e tira dele a **chave de acesso de 44 números** (já conferindo o dígito verificador). Com a chave vêm certos o **nº da nota**, o **CNPJ da loja** e a **recusa de nota repetida**. Aparece o aviso "✔ Chave de acesso lida pelo código de barras".
+- Se o app **não conseguir ler o TOTAL** da nota (foto torta, letra de mão), ele **não salva só com a soma dos itens lidos**: pede para você digitar o valor total.
+
 ## 🧾 Compras: ler várias notas de uma vez e recusar as repetidas
 
 - Em **🧾 Compras → 📷 Nota / cupom** dá para escolher **uma ou mais fotos/PDF/XML** de uma vez (até 20). O app abre uma nota por vez: "Depois desta: mais N nota(s)".
