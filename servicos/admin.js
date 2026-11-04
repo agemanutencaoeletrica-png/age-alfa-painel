@@ -2575,7 +2575,7 @@
       ('<button class="prim" id="eo2-compartilhar">📤 Enviar PDF (WhatsApp, e-mail...)</button>') +
       '<button id="eo2-pdf">📄 Baixar PDF</button></div>' +
       '<div class="acoes" style="margin-top:8px"><button class="zap" id="eo2-zap">📲 WhatsApp do cliente</button><button id="eo2-email-b">✉ E-mail do cliente</button>' +
-      '<button id="eo2-imprimir">🖨 Imprimir</button>' + (!soMateriais(M) ? '<button id="eo2-gmat">🧱 Gerar orçamento de materiais</button>' : "") + '<button id="eo2-dup">📋 Usar como modelo</button>' + (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
+      '<button id="eo2-imprimir">🖨 Imprimir</button>' + (!soMateriais(M) ? '<button id="eo2-nfse" title="Monta os dados da nota fiscal para copiar no emissor">🧾 Preparar nota fiscal</button>' : "") + '' + (!soMateriais(M) ? '<button id="eo2-gmat">🧱 Gerar orçamento de materiais</button>' : "") + '<button id="eo2-dup">📋 Usar como modelo</button>' + (M.id ? '<button class="perigo" id="eo2-apagar">Apagar</button>' : "") + "</div>",
       { titulo: M.numero ? nomeOrc(M) + " nº " + String(M.numero).padStart(4, "0") : soMateriais(M) ? "Novo orçamento de materiais" : "Novo orçamento", larga: true, fixa: true,
         // fechou a janela: grava na hora o que ainda não foi para o servidor
         aoFechar: function () { document.removeEventListener("visibilitychange", aoSumir); salvarJa(); } });
@@ -3078,6 +3078,15 @@
       var b = this; A.ocupado(b, true, "Salvando...");
       salvar().then(function (n) { A.ocupado(b, false); A.avisar("Orçamento nº " + String(n.numero).padStart(4, "0") + " salvo", "ok"); mostrarAuto("✅ Salvo às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })); })
         .catch(function (e) { A.ocupado(b, false); falhou(e); mostrarAuto("⚠ Não salvou: " + A.msgErro(e)); });
+    };
+    if ($("#eo2-nfse", el)) $("#eo2-nfse", el).onclick = function () {
+      lerCampos();
+      if (!window.AGE_NFSE) { A.avisar("O assistente de nota não carregou: atualize a página (Ctrl+Shift+R).", "erro"); return; }
+      var t = calcOrc(M), linhas = M.itens.filter(function (i) { return String(i.descricao || "").trim() && (i.tipo !== "material" || t.mc); }).map(function (i) {
+        return "- " + String(i.descricao).trim() + " (" + A.numero(i.qtd, 3) + " " + (i.un || "un") + ")"; });
+      if (!(t.total > 0)) { A.avisar("O orçamento está sem valor: preencha os itens antes de preparar a nota.", "erro"); return; }
+      window.AGE_NFSE.abrir(P, { cliente: M.cliente, documento: M.documento, endereco: M.endereco, municipio: M.impostos && M.impostos.municipio || "", iss: M.impostos && M.impostos.iss || 0,
+        valor: t.total, descricao: "Serviços de " + (CAT_ORC[M.categoria] || "manutenção").toLowerCase() + " conforme orçamento" + (M.numero ? " nº " + String(M.numero).padStart(4, "0") : "") + ":\n" + linhas.join("\n") });
     };
     $("#eo2-imprimir", el).onclick = function () {
       var w = window.open("", "_blank");
