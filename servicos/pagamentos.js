@@ -22,7 +22,7 @@
   var ROT_FIM = /^(origem|pagador|quem pagou|dados do pagador)\b|^de\s*:?\s*$/i;   // "De" sozinho é o rótulo; "de Paula" é continuação do nome
   var NAO_NOME = /cpf|cnpj|institui|banco|ag[eê]ncia|conta|chave|tipo|valor|data|hor[aá]rio|autentica|transa|identifica|comprovante|pix|\d{3}|\*{2}|•/i;
   function limpar(n) { return String(n || "").replace(/\s+/g, " ").replace(/[^A-Za-zÀ-ú.' ]/g, "").trim().slice(0, 120); }
-  function pareceNome(x) { return !NAO_NOME.test(x) && /^[A-Za-zÀ-ú][A-Za-zÀ-ú.' ]*\s+[A-Za-zÀ-ú.' ]+$/.test(x.trim()); }
+  function pareceNome(x) { return !NAO_NOME.test(x) && /[A-ZÀ-Ú]/.test(x) && /^[A-Za-zÀ-ú][A-Za-zÀ-ú.' ]*\s+[A-Za-zÀ-ú.' ]+$/.test(x.trim()); }   // sem maiúscula nenhuma = rótulo mal lido ("do nu ebedor"), não é nome
   // nome que o comprovante quebrou em 2 linhas ("MATEUS HENRIQUE SILVA DE" / "PAULA")
   function comContinuacao(ls, k, nome) {
     var prox = ls[k + 1];
@@ -61,7 +61,12 @@
     var t = String(texto || "").replace(/\r/g, "").replace(/[\uE000-\uF8FF]/g, ":"), ls = t.split("\n").map(function (x) { return x.trim(); }).filter(Boolean), r = {};
     var mv = t.match(/valor[^\n\d]{0,40}?R\s?[$S5]?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i) || t.match(/R\s?[$S5]\s*(\d{1,3}(?:\.\d{3})*,\d{2})/) || t.match(/\b(\d{1,3}(?:\.\d{3})*,\d{2})\b/);
     if (mv) r.valor = A.lerNumero(mv[1]);
-    var md = t.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[^\d\n]{1,8}(\d{2})[:h](\d{2}))?/);
+    // primeira data dd/mm/aaaa que existe de verdade e é recente (leitura de foto erra dígitos: não aceita 45/13/2026)
+    var md = null, reD = /(\d{2})\/(\d{2})\/(\d{4})(?:[^\d\n]{1,8}(\d{2})[:h](\d{2}))?/g, mx, ano = new Date().getFullYear();
+    while ((mx = reD.exec(t))) {
+      var dd = +mx[1], mo = +mx[2], aa = +mx[3];
+      if (dd >= 1 && dd <= 31 && mo >= 1 && mo <= 12 && aa >= ano - 3 && aa <= ano + 1) { md = mx; break; }
+    }
     var mm = semAcento(t).match(/(\d{1,2})\s*[\/-]?\s*(?:de\s+)?(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*[\/-]?\s*(?:de\s+)?(\d{4})(?:[^\d\n]{1,10}(\d{2})[:h](\d{2}))?/);
     var hc = !md && mm && !mm[4] && semAcento(t).match(/(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*[\/-]?\s*(?:de\s+)?\d{4}\s*[-\u2013,]?\s*([01]\d|2[0-3])([0-5]\d)([0-5]\d)\b/);   // PicPay: "28/out/2026 - 152651"
     if (hc) { mm[4] = hc[1]; mm[5] = hc[2]; }
@@ -404,7 +409,7 @@
         var nota = it.nota ? P.porId(P.S.compras, it.nota) : null;
         var dup = it.quita ? null : duplicado(it);
         return '<div class="cartao" data-it="' + i + '">' +
-          (it.imagem ? '<img alt="Comprovante" src="' + URL.createObjectURL(it.imagem) + '" style="max-height:140px;max-width:100%;display:block;margin-bottom:6px;border-radius:6px">' : "") +
+          (it.imagem ? '<img alt="Comprovante" data-zoom="' + i + '" title="Toque para ampliar" src="' + URL.createObjectURL(it.imagem) + '" style="max-height:70vh;max-width:100%;display:block;margin:0 auto 6px;border-radius:6px;cursor:zoom-in"><div class="peq mudo" style="text-align:center;margin-bottom:6px">🔍 Toque na imagem para ampliar e conferir</div>' : "") +
           (it.erro ? '<div class="aviso erro">Não consegui ler “' + esc(it.nome || "") + "”: " + esc(it.erro) + ". Preencha à mão.</div>" : "") +
           (dup ? '<div class="aviso erro">⚠️ Parece já registrado: ' + esc(P.nomeFunc(dup.funcionario_id) || dup.favorecido || "") + " · " + dinheiro(dup.valor) + " · " + esc(A.dataHora(dup.pago_em)) + ". Desmarque se for repetido.</div>" : "") +
           (nota ? '<div class="aviso" style="border-left:4px solid var(--critico)">🧾 Bate com a nota não quitada de <b>' + esc(nota.fornecedor || "loja") + "</b> · " + dinheiro(nota.valor) +
@@ -416,7 +421,7 @@
           '<div class="duas"><div><label>Funcionário</label><select data-k="funcionario_id"><option value="">— escolha —</option>' +
           P.S.func.map(function (x) { return '<option value="' + x.id + '"' + (x.id === it.funcionario_id ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join("") + "</select></div>" +
           '<div><label>Valor (R$)</label><input data-k="valor" inputmode="decimal" value="' + (it.valor ? Number(it.valor).toFixed(2).replace(".", ",") : "") + '"></div></div>' +
-          '<div class="duas"><div><label>Data</label><input type="date" data-k="data" value="' + esc(it.data || A.isoLocal(new Date())) + '"></div>' +
+          '<div class="duas"><div><label>Data</label><input type="date" data-k="data" value="' + esc(it.data || "") + '">' + (it.data ? "" : '<div class="peq" style="color:var(--critico)">⚠ Não consegui ler a data: confira na imagem e digite.</div>') + '</div>' +
           '<div><label>Horário</label><input type="time" data-k="hora" value="' + esc(it.hora || "") + '"></div></div>' +
           '<div class="duas"><div><label>Forma</label><select data-k="forma"><option value="pix"' + (it.forma !== "especie" ? " selected" : "") + '>Pix</option><option value="especie"' + (it.forma === "especie" ? " selected" : "") + ">💵 Dinheiro (espécie)</option></select></div><div></div></div>" +
           '<div class="duas"><div><label>Tipo</label><select data-k="tipo">' + Object.keys(TIPOS).map(function (k) { return '<option value="' + k + '"' + ((it.tipo || "diaria") === k ? " selected" : "") + ">" + TIPOS[k] + "</option>"; }).join("") + "</select></div>" +
@@ -424,7 +429,11 @@
           (window.AGE_FAT && !P.S.semReceitas ? '<label>Obra / cliente (entra no resultado da obra)</label><input data-k="obra" list="pg-dl-obras" maxlength="200" placeholder="Ex.: DEVA IVECO (contagem) — deixe vazio se for de várias" value="' + esc(it.obra || "") + '">' : "") + "</div>";
       }).join("");
       $$("[data-it]", el).forEach(function (card) {
-        var it = itens[Number(card.dataset.it)];
+        var it = itens[Number(card.dataset.it)], zm = $("[data-zoom]", card);
+        if (zm) zm.onclick = function () {
+          var jz = A.janela('<div style="text-align:center"><img alt="Comprovante" src="' + zm.src + '" style="width:100%;max-width:900px;height:auto"></div><p class="mudo peq">Compare a data, o valor, o nome e o ID com os campos do lançamento.</p>', { titulo: "🔍 Comprovante ampliado", larga: true, semRascunho: true });
+          return jz;
+        };
         $$("[data-k]", card).forEach(function (inp) {
           inp.onchange = inp.oninput = function () {
             var k = inp.dataset.k;
