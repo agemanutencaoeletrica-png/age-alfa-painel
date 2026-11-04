@@ -4680,6 +4680,7 @@
     var j = A.janela('<label for="ef-nome">Nome *</label><input id="ef-nome" maxlength="120">' +
       '<label for="ef-tel">WhatsApp (com DDD)</label><input id="ef-tel" type="tel" maxlength="40" placeholder="(11) 91234-5678">' +
       '<label for="ef-pix">Chave Pix (para o app reconhecer os comprovantes)</label><input id="ef-pix" maxlength="120" placeholder="Telefone, CPF, e-mail ou chave aleatória">' +
+      '<label for="ef-diaria">Valor da diária (R$)</label><input id="ef-diaria" inputmode="decimal" placeholder="Ex.: 150,00">' +
       '<label for="ef-area">Área</label><select id="ef-area"><option value="eletrica">Elétrica</option><option value="pintura">Pintura</option><option value="ambos">Elétrica e pintura</option></select>' +
       (f ? '<label class="marca-linha"><input type="checkbox" id="ef-ativo"> Ativo (pode usar o link)</label>' : "") +
       '<div class="acoes"><button class="prim" id="ef-salvar">Salvar</button>' +
@@ -4687,6 +4688,7 @@
       { titulo: f ? "Editar funcionário" : "Novo funcionário" });
     var el = j.el;
     $("#ef-nome", el).value = f ? f.nome : ""; $("#ef-tel", el).value = f ? f.telefone || "" : ""; $("#ef-area", el).value = f ? f.area : "eletrica"; $("#ef-pix", el).value = f ? f.pix || "" : "";
+    $("#ef-diaria", el).value = f && f.diaria ? Number(f.diaria).toFixed(2).replace(".", ",") : "";
     if (f) $("#ef-ativo", el).checked = f.ativo;
     $("#ef-salvar", el).onclick = function () {
       var nome = val(el, "#ef-nome");
@@ -4694,9 +4696,17 @@
       var b = this; A.ocupado(b, true, "Salvando...");
       var dados = { nome: nome, telefone: nulo(val(el, "#ef-tel")), area: $("#ef-area", el).value };
       if (val(el, "#ef-pix") || (f && f.pix)) dados.pix = nulo(val(el, "#ef-pix"));
+      var dia = A.lerNumero($("#ef-diaria", el).value) || 0;
+      if (!S.semDiaria && (dia > 0 || (f && f.diaria))) dados.diaria = dia > 0 ? Math.round(dia * 100) / 100 : null;
       if (f) dados.ativo = $("#ef-ativo", el).checked;
-      var p = f ? sb.from("funcionarios").update(dados).eq("id", f.id).select().single() : sb.from("funcionarios").insert(dados).select().single();
-      q(p).then(function (n) {
+      function gravarF(d) { return q(f ? sb.from("funcionarios").update(d).eq("id", f.id).select().single() : sb.from("funcionarios").insert(d).select().single()); }
+      gravarF(dados).catch(function (e) {
+        // banco ainda sem a coluna da diária: grava o resto e avisa para rodar o SQL
+        if (!("diaria" in dados) || !/diaria/.test(A.msgErro(e) + " " + (e && e.message))) throw e;
+        S.semDiaria = true; delete dados.diaria;
+        A.avisar("A diária não foi gravada: rode o supabase.sql no Supabase (coluna diaria dos funcionários).", "erro");
+        return gravarF(dados);
+      }).then(function (n) {
         trocar(S.func, n);
         S.func.sort(function (a, b2) { return a.nome.localeCompare(b2.nome); });
         j.fechar(); rota();

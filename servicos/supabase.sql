@@ -310,6 +310,7 @@ create table if not exists public.pagamentos (
 );
 alter table public.pagamentos add column if not exists forma text not null default 'pix';
 alter table public.funcionarios add column if not exists pix text;   -- chave Pix: o app reconhece os comprovantes
+alter table public.funcionarios add column if not exists diaria numeric(10,2);   -- valor combinado da diária
 create unique index if not exists pagamentos_trans_idx on public.pagamentos (id_transacao) where id_transacao is not null;
 create index if not exists pagamentos_func_idx on public.pagamentos (funcionario_id, pago_em);
 
@@ -1138,11 +1139,23 @@ begin
 end $$;
 grant execute on function public.enviar_candidatura(text, text, text, text[], text, text[], text, text, boolean) to anon, authenticated;
 
+-- Pagamentos do próprio funcionário (link pessoal …/meus-pagamentos.html#t=TOKEN): só devolve o que é dele
+create or replace function public.func_pagamentos(p_token text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare f public.funcionarios;
+begin
+  f := public._func_por_token(p_token);
+  return jsonb_build_object('nome', f.nome, 'diaria', f.diaria,
+    'pagamentos', coalesce((select jsonb_agg(jsonb_build_object('pago_em', x.pago_em, 'valor', x.valor, 'tipo', x.tipo, 'forma', x.forma, 'descricao', x.descricao) order by x.pago_em desc)
+                            from (select * from public.pagamentos where funcionario_id = f.id order by pago_em desc limit 500) x), '[]'::jsonb));
+end $$;
+
 revoke execute on function public._func_por_token(text) from public, anon, authenticated;
 revoke execute on function public._tocar_atualizado_em() from public, anon, authenticated;
 grant execute on function public.eh_admin() to anon, authenticated;
 grant execute on function public.token_valido(text) to anon, authenticated;
 grant execute on function public.func_dados(text) to anon, authenticated;
+grant execute on function public.func_pagamentos(text) to anon, authenticated;
 grant execute on function public.registrar_ponto(text, text, text, uuid, double precision, double precision,
                                                 double precision, timestamptz, text) to anon, authenticated;
 grant execute on function public.enviar_relatorio(text, uuid, text, text, jsonb, text[], boolean, text, text, text[], boolean) to anon, authenticated;
