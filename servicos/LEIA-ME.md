@@ -369,6 +369,14 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
 - **Memória:** cidade, e-mail, telefone, endereço, cliente e empresa que você já digitou aparecem como sugestão nos campos parecidos (toque no campo para ver).
 - Senhas e chaves nunca são guardadas. Rascunho e memória ficam só neste aparelho (não passam para outro celular ou computador).
 
+## 💰 Comprovantes Pix que o app lê (Itaú, Neon, PicPay e outros)
+
+- Em **💰 Pagamentos → 📥 Comprovante Pix**, escolha **uma ou várias** fotos ou PDFs. O app lê **valor, data, hora, código do Pix, chave Pix, nome de quem recebeu e CPF/CNPJ parcial**, e acha o funcionário pela chave Pix, pelo CPF ou pelo nome.
+- **PicPay (PDF):** lê a data escrita ("28/out/2026"), a hora ("15:26:51"), a chave Pix na linha de baixo e o nome em duas linhas ("Mateus Henrique Silva" / "de Paula").
+- **Quem pagou:** quando o comprovante mostra o pagador e ele **não é a AGE** (ex.: o Antonio pagando pelo PicPay dele), o app anota **"Pago por ..."** na observação.
+- **Pix para loja ou marketplace** (que não é funcionário) vem **sem funcionário**: você escolhe quem é, ou desmarca "Salvar este".
+- **Já lançado pelo extrato?** O comprovante do mesmo Pix (mesmo valor, até 4 dias) **completa** aquele lançamento (hora, código e foto) em vez de duplicar. O mesmo código de Pix nunca entra duas vezes.
+
 ## 📐 Proposta de projeto (SPDA, aterramento, unifilar) para mandar ao cliente
 
 - Em **Orçamentos → 📐 Proposta de projeto**: monta a **proposta técnico-comercial em PDF** com os dados da AGE (nome, CNPJ, telefone, e-mail e endereço do `config.js`).
