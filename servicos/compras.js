@@ -491,11 +491,68 @@
     else if (!d.valor || d.valorIncerto) { d.valor = Math.round(somaItens(d) * 100) / 100; d.valorIncerto = true; }
     return d;
   }
+  // ---------- código de barras da DANFE (NF-e): a chave de acesso de 44 números, lida das barras, é mais segura que ler os números impressos ----------
+  var ZXING = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js", zxingPronto = null;
+  function carregarZxing() {
+    if (window.ZXing) return Promise.resolve();
+    if (!zxingPronto) zxingPronto = new Promise(function (ok, falha) {
+      var sc = document.createElement("script"); sc.src = ZXING;
+      sc.onload = function () { window.ZXing ? ok() : falha(new Error("zxing")); };
+      sc.onerror = function () { zxingPronto = null; sc.remove(); falha(new Error("sem internet")); };
+      document.head.appendChild(sc);
+    });
+    return zxingPronto;
+  }
+  // tenta a foto inteira e recortes do alto (onde fica o código), com pequenos giros (foto torta); para na primeira chave de 44 números que confere
+  function lerBarras(f) {
+    return carregarZxing().then(function () {
+      return new Promise(function (ok, falha) {
+        var img = new Image(), url = URL.createObjectURL(f);
+        img.onload = function () { URL.revokeObjectURL(url); ok(img); };
+        img.onerror = function () { URL.revokeObjectURL(url); falha(new Error("imagem")); };
+        img.src = url;
+      });
+    }).then(function (img) {
+      var Z = window.ZXing, hints = new Map();
+      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.CODE_128]); hints.set(Z.DecodeHintType.TRY_HARDER, true);
+      var rd = new Z.MultiFormatReader(); rd.setHints(hints);
+      var W = img.naturalWidth, H = img.naturalHeight;
+      var regioes = [[0.55, 0, 0.45, 0.14], [0.5, 0, 0.5, 0.2], [0.4, 0, 0.6, 0.25], [0, 0, 1, 0.35], [0, 0, 1, 1], [0, 0.65, 1, 0.35]];
+      var graus = [0, -2, 2, -4, 4, -6, 6, -1, 1, -3, 3];
+      var fila = [];
+      regioes.forEach(function (rg) { graus.forEach(function (g) { fila.push([rg, g]); }); });
+      return new Promise(function (ok) {
+        (function passo(i) {
+          if (i >= fila.length) { ok(null); return; }
+          var rg = fila[i][0], g = fila[i][1], sw = Math.round(rg[2] * W), sh = Math.round(rg[3] * H), sx = Math.round(rg[0] * W), sy = Math.round(rg[1] * H);
+          var esc = Math.min(2, 1800 / sw), cw = Math.round(sw * esc), ch = Math.round(sh * esc), rad = g * Math.PI / 180;
+          var d = Math.ceil(Math.abs(cw * Math.cos(rad)) + Math.abs(ch * Math.sin(rad))), e = Math.ceil(Math.abs(cw * Math.sin(rad)) + Math.abs(ch * Math.cos(rad)));
+          var cv = document.createElement("canvas"); cv.width = d; cv.height = e;
+          var cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, d, e); cx.translate(d / 2, e / 2); cx.rotate(rad); cx.drawImage(img, sx, sy, sw, sh, -cw / 2, -ch / 2, cw, ch);
+          try {
+            var x = rd.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cv)))).getText();
+            if (/^\d{44}$/.test(x) && chaveValida(x)) { ok(x); return; }
+          } catch (er) { /* não achou neste recorte: próximo */ }
+          setTimeout(function () { passo(i + 1); }, 0);   // solta o navegador entre as tentativas
+        })(0);
+      });
+    });
+  }
+  // acrescenta ao texto lido da foto a chave decodificada das barras, no formato impresso na DANFE (grupos de 4)
+  function comBarras(f, r, status) {
+    if (!/^image\//.test(f.type) || r.xml || !/danfe|chave\s+de\s+acesso|documento\s+auxiliar|nota\s+fiscal\s+eletr/i.test(r.texto || "")) return Promise.resolve(r);
+    if (status) status("🔎 Lendo o código de barras...");
+    return lerBarras(f).then(function (cb) {
+      if (cb) { r.texto = r.texto + "\nCHAVE DE ACESSO " + cb.replace(/(\d{4})(?=\d)/g, "$1 "); r.chaveBarras = cb; }
+      return r;
+    }, function () { return r; });
+  }
   function lerUmaNota(f, status) {
-    return window.AGE_PAG.lerArquivo(f).then(function (r) {
+    return window.AGE_PAG.lerArquivo(f).then(function (r0) { return comBarras(f, r0, status); }).then(function (r) {
       var d = r.xml ? lerXml(r.texto) : null;
       if (d) return { dados: d, imagem: null, bruto: "" };
       d = lerNota(r.texto);
+      if (r.chaveBarras && d.chave === r.chaveBarras) d.porBarras = true;
       d = comTabela(d, r.tabela);
       if (!/^image\//.test(f.type) || fecha(d)) { if (!fecha(d)) corrigeTotal(d); return { dados: d, imagem: r.imagem || f, bruto: r.texto }; }
       // a soma dos materiais não fecha com o total: lê a tabela de novo de outros jeitos e fica com a leitura que fecha
@@ -683,6 +740,7 @@
       (op.imagem ? '<img alt="Nota" src="' + URL.createObjectURL(op.imagem) + '" style="max-height:160px;max-width:100%;display:block;margin-bottom:6px;border-radius:6px">' : "") +
       (op.erro ? '<div class="aviso erro">Não consegui ler a nota. Preencha à mão.</div>' : "") +
       (!c0 && op.imagem && !op.erro && !d.valor && !(d.itens || []).length ? '<div class="aviso">✍️ Parece nota <b>escrita à mão</b> (ou foto ilegível): o app só lê texto impresso. Preencha a data, o valor e os materiais à mão — a foto fica guardada junto.</div>' : "") +
+      (!c0 && d.porBarras ? '<div class="peq" style="color:var(--bom)">✔ Chave de acesso lida pelo <b>código de barras</b> (dígito verificador conferido): nº da nota e CNPJ da loja vêm dela.</div>' : "") +
       (!op.erro && op.imagem && (d.valorIncerto || !d.valor) ? '<div class="aviso">⚠️ ' + (d.valorSoma ? "O “TOTAL” da foto não bateu com os materiais: usei a <b>soma dos materiais</b>. <b>Confira o valor total</b> antes de salvar." : "Não achei o “TOTAL” com clareza na foto (a letra de mão confunde o leitor). <b>Digite o valor total</b> da nota" + (d.valor > 0 && !d.valorSoma ? " (o maior valor que li foi " + dinheiro(d.valor) + ", provavelmente não é o total)" : "") + ".") + '</div>' : "") +
       (function () {
         var rp0 = !c0 && repetida({ chave: d.chave, numero_nota: d.numero, cnpj: d.cnpj, fornecedor: d.fornecedor, comprado_em: d.data, valor: d.valor }, null);
@@ -729,6 +787,7 @@
     var chuteTotal = !c0 && !op.erro && op.imagem && d.valorIncerto && !d.valorSoma && !d.totalFirme && d.valor > 0;
     $("#cn-valor", el).value = chuteTotal ? "" : num2(c0 ? c0.valor : d.valor);
     if (chuteTotal) { $("#cn-valor", el).placeholder = "digite o TOTAL da nota"; $("#cn-valor", el).style.outline = "2px solid var(--atencao, #d97706)"; }
+    var exigirTotal = chuteTotal || (!c0 && op.imagem && !op.erro && !d.valor);   // sem total lido: não deixa salvar com a soma de 1 ou 2 itens lidos
     $("#cn-forn", el).value = c0 ? c0.fornecedor || "" : d.fornecedor || "";
     $("#cn-dest", el).value = obra ? rotuloObra(obra) : c0 ? c0.destino || "" : "";
     $("#cn-tipo", el).value = c0 ? c0.tipo_servico || "" : "";
@@ -921,7 +980,7 @@
       });
       var soma = itens.reduce(function (t, x) { return t + (x.valor || 0); }, 0), valor = A.lerNumero($("#cn-valor", el).value) || soma;
       var pago = $("#cn-pago", el).checked;
-      var erro = !(valor > 0) ? "Informe o valor total" + (tipo === "despesa" ? "." : " (ou o valor dos materiais).") : !$("#cn-data", el).value ? "Informe a data." :
+      var erro = !(valor > 0) ? "Informe o valor total" + (tipo === "despesa" ? "." : " (ou o valor dos materiais).") : (exigirTotal && !A.lerNumero($("#cn-valor", el).value)) ? "Digite o VALOR TOTAL da nota (o app não conseguiu ler o total e não vou salvar só com a soma dos itens lidos)." : !$("#cn-data", el).value ? "Informe a data." :
         area === "dividir" && !itens.some(function (x) { return x.valor; }) ? "Para dividir entre elétrica e pintura, informe o valor de cada material." : "";
       if (erro) { $("#cn-erro", el).innerHTML = '<div class="aviso erro">' + erro + "</div>"; return; }
       // lançamento à mão pela metade: confirma antes de gravar (um clique no Salvar sem querer não grava a nota incompleta)

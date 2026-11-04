@@ -19,6 +19,32 @@
   // retenções que o tomador desconta na nota (ele paga ao governo) e o imposto que a AGE paga (DAS / Simples Nacional)
   var RET = [["iss", "ISS retido"], ["inss", "INSS"], ["ir", "IR"], ["pis", "PIS"], ["cofins", "COFINS"], ["csll", "CSLL"], ["outras", "Outras retenções"]];
   var CHAVE_ALIQ = "age_aliq_imposto";
+  // ---------- 🏛 Simples Nacional: DAS estimado de cada nota ----------
+  // Tabelas das faixas do Simples (alíquota nominal, parcela a deduzir e quanto da alíquota é ISS) para serviços. É uma ESTIMATIVA: o valor oficial sai do PGDAS-D.
+  var CHAVE_SN = "age_simples_v1", LIM_SN = [180000, 360000, 720000, 1800000, 3600000, 4800000];
+  var TAB_SN = {
+    III: { aliq: [6, 11.2, 13.5, 16, 21, 33], ded: [0, 9360, 17640, 35640, 125640, 648000], iss: [33.5, 32, 32.5, 32.5, 33.5, 0] },
+    IV: { aliq: [4.5, 9, 10.2, 14, 22, 33], ded: [0, 8100, 12420, 39780, 183780, 828000], iss: [44.5, 40, 40, 40, 39, 0] },
+    V: { aliq: [15.5, 18, 19.5, 20.5, 23, 30.5], ded: [0, 4500, 9900, 17100, 62100, 540000], iss: null }
+  };
+  function cfgSN() { try { var o = JSON.parse(localStorage.getItem(CHAVE_SN) || "{}") || {}; return { anexo: TAB_SN[o.anexo] ? o.anexo : "", rbt12: Number(o.rbt12) || 0 }; } catch (e) { return { anexo: "", rbt12: 0 }; } }
+  function salvarSN(o) { try { localStorage.setItem(CHAVE_SN, JSON.stringify(o)); } catch (e) { /* sem armazenamento */ } }
+  // alíquota efetiva do DAS, faixa e a parte do ISS (null quando a tabela não separa)
+  function aliqSN(c) {
+    c = c || cfgSN();
+    if (!c.anexo || !(c.rbt12 > 0)) return null;
+    var t = TAB_SN[c.anexo], f = LIM_SN.findIndex(function (l) { return c.rbt12 <= l; });
+    if (f < 0) return { fora: true };
+    var ef = (c.rbt12 * t.aliq[f] / 100 - t.ded[f]) / c.rbt12 * 100;
+    return { anexo: c.anexo, faixa: f + 1, nominal: t.aliq[f], efetiva: Math.round(ef * 10000) / 10000, issParte: t.iss ? t.iss[f] : null };
+  }
+  // DAS estimado de uma nota: sobre o bruto; com ISS retido pelo cliente, tira a parte do ISS do DAS (o contador faz isso no PGDAS-D)
+  function dasEstimado(bruto, issRetido) {
+    var a = aliqSN(); if (!a || a.fora || !(bruto > 0)) return null;
+    var pct = a.efetiva, sem = false;
+    if (issRetido > 0 && a.issParte != null) { pct = a.efetiva * (1 - a.issParte / 100); sem = true; }
+    return { pct: Math.round(pct * 10000) / 10000, valor: Math.round(bruto * pct) / 100, semIss: sem, info: a, issNaoSeparado: issRetido > 0 && a.issParte == null };
+  }
   function aliqGuardada() { try { return localStorage.getItem(CHAVE_ALIQ) || ""; } catch (e) { return ""; } }
   // valor (coluna) = líquido recebido; notas antigas sem bruto: bruto = líquido
   // "ISS 2,7%" / "ISS + INSS": o que foi retido na nota
@@ -241,12 +267,12 @@
         (P.S.erroReceitas ? '<div class="peq mudo" style="margin-top:6px">Erro do banco: ' + esc(P.S.erroReceitas) + "</div>" : "") + "</div>";
       return;
     }
-    c.innerHTML = '<div class="cab-secao"><h2>💼 Notas e resultado</h2><span><button class="prim" id="ft-arq-b">📷 Nota de serviço</button> <button id="ft-dep">💰 Recebi um depósito</button> <button id="ft-mao">➕ Lançar à mão</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>💼 Notas e resultado</h2><span><button class="prim" id="ft-arq-b">📷 Nota de serviço</button> <button id="ft-dep">💰 Recebi um depósito</button> <button id="ft-sn" title="Anexo e faturamento dos últimos 12 meses: o app calcula o DAS de cada nota">⚙ Simples</button> <button id="ft-mao">➕ Lançar à mão</button></span></div>' +
       '<input type="file" id="ft-arq" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml,.zip,application/zip" multiple class="oculto">' +
       '<p class="mudo peq" style="margin-top:-4px">Lance a nota fiscal de serviço que você emitiu (foto, PDF ou XML da prefeitura). Em <b>Resultado por obra</b>: o que entrou menos material, mão de obra e despesas avulsas.</p>' +
-      '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"], ["caixa", "💵 Caixa"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
+      '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"], ["caixa", "💵 Caixa"], ["contador", "🧮 Contador"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
       '<div class="filtros"><select id="ft-per" aria-label="Período"><option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="ano">Este ano</option><option value="tudo">Tudo</option></select>' +
-      (filtro.aba !== "resultado" && filtro.aba !== "caixa" ? '<select id="ft-sit" aria-label="Situação"><option value="">Todas</option><option value="areceber">⏳ A receber</option><option value="recebido">✅ Recebidas</option></select>' : "") +
+      (filtro.aba !== "resultado" && filtro.aba !== "caixa" && filtro.aba !== "contador" ? '<select id="ft-sit" aria-label="Situação"><option value="">Todas</option><option value="areceber">⏳ A receber</option><option value="recebido">✅ Recebidas</option></select>' : "") +
       '<input type="search" id="ft-busca" placeholder="Buscar cliente, obra, nº da nota..."></div>' + htmlRasc() + '<div id="ft-res"></div>';
     if ($("#ft-rasc-ok")) {
       $("#ft-rasc-ok").onclick = function () { var r = lerRasc(); if (r) continuarRasc(r, function () { ver(c, P); }); };
@@ -268,13 +294,54 @@
       }).catch(function (e) { A.avisar(A.msgErro(e), "erro"); });
     };
     $("#ft-mao").onclick = function () { formulario({}, function () { ver(c, P); }); };
+    $("#ft-sn").onclick = function () { configSimples(function () { ver(c, P); }); };
     $("#ft-dep").onclick = function () { deposito(function () { ver(c, P); }); };
     if (P.atualizarAbas) P.atualizarAbas();
     desenhar();
     function desenhar() {
       var r = $("#ft-res"), m = function () { ver(c, P); };
-      if (filtro.aba === "caixa") caixa(r); else if (filtro.aba === "resultado") resultado(r, m); else if (filtro.aba === "empresas") empresas(r, m, c); else notas(r, m);
+      if (filtro.aba === "contador") contador(r); else if (filtro.aba === "caixa") caixa(r); else if (filtro.aba === "resultado") resultado(r, m); else if (filtro.aba === "empresas") empresas(r, m, c); else notas(r, m);
     }
+  }
+  // ⚙ Simples Nacional: anexo e faturamento dos últimos 12 meses (RBT12); com isso o app calcula o DAS estimado de cada nota
+  function configSimples(depois) {
+    var c0 = cfgSN(), h = new Date(), ini = new Date(h.getFullYear() - 1, h.getMonth(), 1);
+    var sug = Math.round((P.S.receitas || []).filter(function (n) { return n.emitida_em >= A.isoLocal(ini) && !n.avulso; }).reduce(function (t, n) { return t + contas(n).bruto; }, 0) * 100) / 100;
+    var j = A.janela('<p class="peq mudo" style="margin-top:0">O DAS do Simples depende do <b>anexo</b> da sua atividade e do <b>faturamento dos últimos 12 meses (RBT12)</b>. Pergunte ao contador o anexo; o RBT12 aparece no PGDAS-D. É uma <b>estimativa</b>: o valor oficial é o do PGDAS-D.</p>' +
+      '<label for="sn-anexo">Anexo do Simples</label><select id="sn-anexo"><option value="">— escolha —</option><option value="III">Anexo III</option><option value="IV">Anexo IV (construção civil; INSS patronal fora do DAS)</option><option value="V">Anexo V</option></select>' +
+      '<label for="sn-rbt">Faturamento dos últimos 12 meses — RBT12 (R$)</label><input id="sn-rbt" inputmode="decimal" placeholder="Ex.: 480000,00">' +
+      '<div class="peq mudo">Pelas notas lançadas aqui nos últimos 12 meses: <b>' + dinheiro(sug) + '</b> <button type="button" class="peq" id="sn-usar">Usar este valor</button><br>Se a AGE faturou mais fora deste painel, use o do PGDAS-D.</div>' +
+      '<div id="sn-res" class="aviso" style="margin-top:8px"></div>' +
+      '<div class="acoes"><button class="prim" id="sn-salvar">💾 Salvar</button><button id="sn-calc" title="Preenche o imposto da empresa das notas que estão sem esse valor">🧮 Calcular nas notas sem imposto</button><button id="sn-fim">Fechar</button></div><div id="sn-msg" class="peq"></div>',
+      { titulo: "⚙ Simples Nacional", larga: true, fixa: true, semRascunho: true });
+    var el = j.el;
+    $("#sn-anexo", el).value = c0.anexo; $("#sn-rbt", el).value = c0.rbt12 ? String(c0.rbt12).replace(".", ",") : "";
+    function prev() {
+      var a = aliqSN({ anexo: $("#sn-anexo", el).value, rbt12: A.lerNumero($("#sn-rbt", el).value) });
+      $("#sn-res", el).innerHTML = !a ? "Escolha o anexo e informe o RBT12 para ver a alíquota." : a.fora ? "RBT12 acima de R$ 4,8 milhões: fora do limite do Simples." :
+        "<b>Faixa " + a.faixa + "</b> · alíquota nominal " + String(a.nominal).replace(".", ",") + "% · <b>alíquota efetiva " + String(a.efetiva).replace(".", ",") + "%</b> do bruto" + (a.issParte != null ? " (dela, " + String(a.issParte).replace(".", ",") + "% é ISS: sai do DAS quando o cliente retém o ISS)" : "");
+    }
+    $("#sn-anexo", el).onchange = prev; $("#sn-rbt", el).oninput = prev; prev();
+    $("#sn-usar", el).onclick = function () { $("#sn-rbt", el).value = String(sug).replace(".", ","); prev(); };
+    $("#sn-fim", el).onclick = function () { j.fechar(); };
+    function guardar() { salvarSN({ anexo: $("#sn-anexo", el).value, rbt12: A.lerNumero($("#sn-rbt", el).value) || 0 }); }
+    $("#sn-salvar", el).onclick = function () { guardar(); j.fechar(); A.avisar("⚙ Simples salvo", "ok"); if (depois) depois(); };
+    $("#sn-calc", el).onclick = function () {
+      guardar();
+      var b = this, falta = (P.S.receitas || []).filter(function (n) { return !n.avulso && !(Number(n.imposto_empresa) > 0); });
+      if (!aliqSN() || aliqSN().fora) { A.avisar("Escolha o anexo e informe o RBT12.", "erro"); return; }
+      if (!falta.length) { $("#sn-msg", el).textContent = "Todas as notas já têm o imposto da empresa."; return; }
+      if (!A.confirmar("Preencher o DAS estimado em " + falta.length + " nota(s) sem imposto da empresa? Você pode corrigir depois, nota a nota.")) return;
+      A.ocupado(b, true, "Calculando...");
+      falta.reduce(function (pr, n) {
+        return pr.then(function () {
+          var ct = contas(n), d = dasEstimado(ct.bruto, (n.retencoes && Number(n.retencoes.iss)) || 0);
+          if (!d || !(d.valor > 0)) return;
+          return P.q(P.sb.from("receitas").update({ imposto_empresa: d.valor }).eq("id", n.id).select().single()).then(function (x) { P.trocar(P.S.receitas, x); });
+        });
+      }, Promise.resolve()).then(function () { A.avisar("🧮 DAS estimado preenchido em " + falta.length + " nota(s)", "ok"); j.fechar(); if (depois) depois(); })
+        .catch(function (e) { A.ocupado(b, false); P.falhou(e); });
+    };
   }
   function notasFiltradas() {
     var pr = periodo(), b = semAcento(filtro.busca);
@@ -1084,23 +1151,51 @@
       return { bruto: bruto, ret: ret, tr: tr, emp: emp, liq: Math.round((bruto - tr) * 100) / 100, ficou: Math.round((bruto - tr - emp) * 100) / 100 };
     }
     function conta() {
+      sugerirDas();
       var v = ler(), linha = function (r, val, forte) { return '<div class="linha' + (forte ? " forte" : "") + '"><span>' + r + '</span><span class="dir">' + val + "</span></div>"; };
       $("#ft-ret-tot", el).textContent = v.tr ? dinheiro(v.tr) : "";
       $("#ft-conta", el).innerHTML = linha("Valor bruto", dinheiro(v.bruto)) + linha("− Impostos retidos na nota", dinheiro(v.tr)) + linha("= Líquido que a empresa paga", dinheiro(v.liq), true) +
         linha("− Imposto da empresa (DAS / Simples)", dinheiro(v.emp)) +
-        '<div class="linha forte" style="font-size:18px;margin-top:4px"><span>💰 Ficou para a empresa</span><span class="dir" style="color:var(--' + (v.ficou < 0 ? "critico" : "bom") + ')">' + dinheiro(v.ficou) + "</span></div>";
+        '<div class="linha forte" style="font-size:18px;margin-top:4px"><span>💰 Ficou para a empresa</span><span class="dir" style="color:var(--' + (v.ficou < 0 ? "critico" : "bom") + ')">' + dinheiro(v.ficou) + "</span></div>" + governo(v);
+    }
+    // 🏛 quanto desta nota vai para o governo e para quem (ISS retido pelo cliente, retenções federais e o DAS estimado do Simples)
+    function governo(v) {
+      if (!(v.bruto > 0)) return "";
+      var iss = v.ret.iss || 0, fed = Math.round((v.tr - iss) * 100) / 100, das = dasEstimado(v.bruto, iss), pc = function (x) { return String(Math.round(x / v.bruto * 10000) / 100).replace(".", ",") + "%"; };
+      var linha = function (r, val, forte) { return '<div class="linha' + (forte ? " forte" : "") + '"><span>' + r + '</span><span class="dir">' + val + "</span></div>"; };
+      var h = '<div style="margin-top:10px;padding:8px;border:1px dashed var(--borda);border-radius:6px"><b>🏛 Para o governo (estimativa)</b>';
+      h += linha("ISS retido pelo cliente (" + (iss ? pc(iss) : "—") + ")" + (iss ? ' <span class="peq mudo">o cliente paga à prefeitura</span>' : ""), dinheiro(iss));
+      h += linha("IR / INSS / PIS / COFINS / CSLL retidos", dinheiro(fed));
+      var a = aliqSN();
+      if (das) h += linha("DAS (Simples, Anexo " + das.info.anexo + ", alíq. efetiva " + String(das.pct).replace(".", ",") + "%" + (das.semIss ? ", sem a parte do ISS retido" : "") + ")" + ' <span class="peq mudo">você paga no mês seguinte</span>', dinheiro(das.valor));
+      else if (a && a.fora) h += '<div class="peq" style="color:var(--critico)">Faturamento de 12 meses acima do limite do Simples (R$ 4,8 milhões): confira com o contador.</div>';
+      else h += '<div class="peq mudo">Para calcular o DAS, toque em <b>⚙ Simples</b> (anexo e faturamento dos últimos 12 meses).</div>';
+      if (das && das.issNaoSeparado) h += '<div class="peq mudo">No Anexo V o app não separa a parte do ISS: se o ISS foi retido, o DAS real é menor. Confira no PGDAS-D.</div>';
+      var tot = Math.round((iss + fed + (das ? das.valor : 0)) * 100) / 100;
+      h += linha("Total para o governo desta nota", dinheiro(tot) + (tot ? " (" + pc(tot) + ")" : ""), true);
+      h += '<div class="peq mudo">Estimativa pelas tabelas do Simples. O valor oficial do DAS sai do PGDAS-D: confirme com o contador.</div></div>';
+      return h;
     }
     // % do imposto da empresa → valor (o % fica guardado neste aparelho para as próximas notas)
+    // imposto da empresa vazio + Simples configurado: o app já sugere o DAS estimado (some se você digitar outro valor)
+    function sugerirDas() {
+      if (!aliqSN() || $("#ft-emp", el).dataset.manual === "1" || ($("#ft-emp", el).value.trim() && $("#ft-emp", el).dataset.auto !== "1")) return;
+      var v = ler(), d = dasEstimado(v.bruto, v.ret.iss || 0);
+      if (!d) return;
+      $("#ft-emp", el).value = num2(d.valor); $("#ft-emp", el).dataset.auto = "1"; $("#ft-aliq", el).value = A.numero(d.pct);
+    }
     function pelaAliq() { var a = A.lerNumero($("#ft-aliq", el).value), b = A.lerNumero($("#ft-valor", el).value); if (a > 0 && b > 0) $("#ft-emp", el).value = num2(Math.round(b * a) / 100); }
-    $("#ft-aliq", el).oninput = function () { pelaAliq(); conta(); try { localStorage.setItem(CHAVE_ALIQ, this.value.trim()); } catch (e) { /* sem armazenamento */ } };
-    $("#ft-valor", el).oninput = function () { if ($("#ft-aliq", el).value.trim()) pelaAliq(); conta(); };
+    $("#ft-aliq", el).oninput = function () { $("#ft-emp", el).dataset.auto = ""; $("#ft-emp", el).dataset.manual = "1"; pelaAliq(); conta(); try { localStorage.setItem(CHAVE_ALIQ, this.value.trim()); } catch (e) { /* sem armazenamento */ } };
+    $("#ft-valor", el).oninput = function () { if ($("#ft-emp", el).dataset.auto === "1") sugerirDas(); else if ($("#ft-aliq", el).value.trim()) pelaAliq(); conta(); };
     $("#ft-emp", el).oninput = function () {
+      this.dataset.auto = ""; this.dataset.manual = "1";
       var b = A.lerNumero($("#ft-valor", el).value), e = A.lerNumero(this.value);
       $("#ft-aliq", el).value = b > 0 && e > 0 ? A.numero(Math.round(e / b * 10000) / 100) : "";
       conta();
     };
     $$(".ft-r", el).forEach(function (i) { i.oninput = conta; });
     if (!n0 && $("#ft-aliq", el).value.trim()) pelaAliq();
+    sugerirDas(); conta();
     verAvulso();
     // rascunho: volta o que estava preenchido
     if (op.rascunho) {
@@ -1200,6 +1295,57 @@
     return Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return (a.k === "-") - (b.k === "-") || b.entrada - a.entrada || b.gastos - a.gastos; });
   }
   function pct(v) { return v === null ? "—" : (Math.round(v * 10) / 10).toString().replace(".", ",") + "%"; }
+  // 🧮 CONTADOR: honorário fixo do mês + uma porcentagem sobre cada nota emitida no mês. Fica em quadro SEPARADO (só para controle):
+  // não entra no imposto da nota, no "Ficou para a empresa" nem no resultado das obras.
+  var CHAVE_CT = "age_contador_v1";
+  function cfgCT() { try { var o = JSON.parse(localStorage.getItem(CHAVE_CT) || "null"); if (o) return { fixo: Number(o.fixo) || 0, pct: Number(o.pct) || 0, base: o.base === "liquido" ? "liquido" : "bruto" }; } catch (e) { /* sem armazenamento */ } return { fixo: 600, pct: 0, base: "bruto" }; }
+  function salvarCT(o) { try { localStorage.setItem(CHAVE_CT, JSON.stringify(o)); } catch (e) { /* sem armazenamento */ } }
+  function configContador(depois) {
+    var c0 = cfgCT();
+    var j = A.janela('<p class="peq mudo" style="margin-top:0">Honorário do contador: um <b>valor fixo por mês</b> mais uma <b>porcentagem sobre cada nota emitida no mês</b>. Aparece à parte, só para controle.</p>' +
+      '<div class="duas"><div><label for="ct-fixo">Valor fixo por mês (R$)</label><input id="ct-fixo" inputmode="decimal"></div><div><label for="ct-pct">Porcentagem sobre cada nota (%)</label><input id="ct-pct" inputmode="decimal" placeholder="Ex.: 1,5"></div></div>' +
+      '<label for="ct-base">A porcentagem é sobre o valor</label><select id="ct-base"><option value="bruto">bruto da nota (antes das retenções)</option><option value="liquido">líquido da nota (depois das retenções)</option></select>' +
+      '<div class="acoes"><button class="prim" id="ct-salvar">💾 Salvar</button><button id="ct-fim">Cancelar</button></div>', { titulo: "⚙ Contador", larga: true, fixa: true, semRascunho: true });
+    var el = j.el;
+    $("#ct-fixo", el).value = String(c0.fixo).replace(".", ","); $("#ct-pct", el).value = c0.pct ? String(c0.pct).replace(".", ",") : ""; $("#ct-base", el).value = c0.base;
+    $("#ct-fim", el).onclick = function () { j.fechar(); };
+    $("#ct-salvar", el).onclick = function () {
+      var pct = A.lerNumero($("#ct-pct", el).value) || 0;
+      if (pct < 0 || pct > 100) { A.avisar("A porcentagem tem de ficar entre 0 e 100.", "erro"); return; }
+      salvarCT({ fixo: A.lerNumero($("#ct-fixo", el).value) || 0, pct: pct, base: $("#ct-base", el).value });
+      j.fechar(); A.avisar("🧮 Contador salvo", "ok"); if (depois) depois();
+    };
+  }
+  var mesCT = "";
+  function contador(r) {
+    var c = cfgCT(), h = new Date(), meses = [];
+    for (var i = 0; i < 12; i++) { var d = new Date(h.getFullYear(), h.getMonth() - i, 1); meses.push(d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2)); }
+    if (!mesCT || meses.indexOf(mesCT) < 0) mesCT = meses[0];
+    var NM = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"], nomeMes = function (m) { return NM[Number(m.slice(5)) - 1] + "/" + m.slice(0, 4); };
+    var notasMes = function (m) { return (P.S.receitas || []).filter(function (n) { return !n.avulso && String(n.emitida_em).slice(0, 7) === m; }).sort(function (a, b) { return a.emitida_em < b.emitida_em ? -1 : 1; }); };
+    var valorPct = function (n) { var ct = contas(n), base = c.base === "liquido" ? ct.liq : ct.bruto; return Math.round(base * c.pct) / 100; };
+    var calc = function (m) { var ns = notasMes(m), pcs = ns.reduce(function (t, n) { return t + valorPct(n); }, 0); pcs = Math.round(pcs * 100) / 100; return { ns: ns, pcs: pcs, fixo: c.fixo, total: Math.round((c.fixo + pcs) * 100) / 100 }; };
+    var t = calc(mesCT), tile = function (rot, v, cor, ds) { return '<div class="ladrilho" style="border-left:4px solid var(--' + cor + ')"><div class="r">' + rot + '</div><div class="v" style="font-size:1.25em">' + dinheiro(v) + "</div>" + (ds ? '<div class="d">' + ds + "</div>" : "") + "</div>"; };
+    var pctTxt = String(c.pct).replace(".", ",") + "%";
+    r.innerHTML = '<p class="peq mudo">Honorário do contador, <b>separado</b> do imposto e do resultado das obras. Fixo + ' + (c.pct ? pctTxt : "porcentagem") + " sobre cada nota emitida no mês (" + (c.base === "liquido" ? "valor líquido" : "valor bruto") + ").</p>" +
+      '<div class="filtros"><select id="ct-mes" aria-label="Mês">' + meses.map(function (m) { return '<option value="' + m + '">' + nomeMes(m) + "</option>"; }).join("") + '</select><button id="ct-cfg">⚙ Contador</button><button id="ct-env">📤 Enviar resumo</button></div>' +
+      (c.pct ? "" : '<div class="aviso">Informe a <b>porcentagem do contador</b> em <b>⚙ Contador</b>. Enquanto isso, só o valor fixo é somado.</div>') +
+      '<div class="grade">' + tile("Valor fixo do mês", t.fixo, "prim") + tile("% sobre as notas", t.pcs, "atencao", t.ns.length + " nota(s) emitida(s)") + tile("🧮 Total do contador em " + nomeMes(mesCT), t.total, "bom") + "</div>" +
+      (t.ns.length ? '<div class="tabela-caixa"><table><thead><tr><th>Emissão</th><th>Nota</th><th>Cliente</th><th class="num">' + (c.base === "liquido" ? "Líquido" : "Bruto") + '</th><th class="num">' + pctTxt + "</th></tr></thead><tbody>" +
+        t.ns.map(function (n) { var ct = contas(n); return "<tr><td>" + A.dataSimples(n.emitida_em) + "</td><td>" + esc(n.numero_nota || "s/ nº") + "</td><td>" + esc(rotuloDe(n)) + '</td><td class="num">' + dinheiro(c.base === "liquido" ? ct.liq : ct.bruto) + '</td><td class="num">' + dinheiro(valorPct(n)) + "</td></tr>"; }).join("") +
+        '<tr><td colspan="4"><b>Total das porcentagens</b></td><td class="num"><b>' + dinheiro(t.pcs) + '</b></td></tr><tr><td colspan="4"><b>+ valor fixo</b></td><td class="num"><b>' + dinheiro(t.fixo) + '</b></td></tr><tr><td colspan="4"><b>Total do contador no mês</b></td><td class="num"><b>' + dinheiro(t.total) + "</b></td></tr></tbody></table></div>"
+        : '<div class="cartao vazio">Nenhuma nota emitida neste mês: só o valor fixo.</div>') +
+      '<h3 style="margin:14px 0 4px">Mês a mês</h3><div class="tabela-caixa"><table><thead><tr><th>Mês</th><th class="num">Notas</th><th class="num">Fixo</th><th class="num">%</th><th class="num">Total</th></tr></thead><tbody>' +
+      meses.map(function (m) { var x = calc(m); return "<tr><td>" + nomeMes(m) + '</td><td class="num">' + x.ns.length + '</td><td class="num">' + dinheiro(x.fixo) + '</td><td class="num">' + dinheiro(x.pcs) + '</td><td class="num"><b>' + dinheiro(x.total) + "</b></td></tr>"; }).join("") + "</tbody></table></div>";
+    $("#ct-mes", r).value = mesCT;
+    $("#ct-mes", r).onchange = function () { mesCT = this.value; contador(r); };
+    $("#ct-cfg", r).onclick = function () { configContador(function () { contador(r); }); };
+    $("#ct-env", r).onclick = function () {
+      var E = A.CFG.EMPRESA || {};
+      A.compartilhar({ titulo: "Contador " + nomeMes(mesCT), texto: "*" + (E.nome || "AGE") + " - Contador, " + nomeMes(mesCT) + "*\nValor fixo: " + dinheiro(t.fixo) + "\nNotas emitidas no mês: " + t.ns.length + (c.pct ? " (" + pctTxt + " sobre o " + (c.base === "liquido" ? "líquido" : "bruto") + ")" : "") +
+        t.ns.map(function (n) { var ct = contas(n); return "\n- Nota " + (n.numero_nota || "s/ nº") + " " + (n.cliente || "") + ": " + dinheiro(c.base === "liquido" ? ct.liq : ct.bruto) + " -> " + dinheiro(valorPct(n)); }).join("") + "\nTotal das porcentagens: " + dinheiro(t.pcs) + "\n*Total do mês: " + dinheiro(t.total) + "*" });
+    };
+  }
   // 💵 CAIXA do período: o que ENTROU (notas recebidas) e o que SAIU (equipe, material/despesas e repasses a sócios), cada coisa em sua linha.
   // Repasse a sócio fica separado: não é custo de obra e não entra no "Resultado por obra".
   function caixa(r) {
@@ -1308,7 +1454,7 @@
     P = ctx; var fs = arquivosDoCompartilhar(rc);
     if (fs.length) loteDepositos(fs, depois);
   }
-  window.AGE_FAT = { ver: ver, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, notasCompartilhadas: notasCompartilhadas, depositosCompartilhados: depositosCompartilhados, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
+  window.AGE_FAT = { ver: ver, dasPct: function () { var d = dasEstimado(100, 1); return d ? { pct: d.pct, semIss: d.semIss } : null; }, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, notasCompartilhadas: notasCompartilhadas, depositosCompartilhados: depositosCompartilhados, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
     // 🏦 extrato do banco em PDF: entradas (créditos) e saídas (débitos) com data, descrição, nome, CPF/CNPJ e valor
     lerExtrato: function (ctx, f) {
       P = ctx;
