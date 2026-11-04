@@ -584,7 +584,15 @@
       if (md) { l.doc.push(md[0]); l.nome = [nomeTxt.replace(md[0], " ")]; }
       var desc = l.desc.join(" ").replace(/\s+/g, " ").trim();
       if (!(l.valor > 0) || /^saldo|saldo\s+(anterior|em\s+conta|do\s+dia|final)/i.test(desc)) return;
-      if (l.neg) { out.debitos++; out.saidas.push({ data: iso(l.data), desc: desc, nome: l.nome.join(" ").replace(/\s+/g, " ").trim(), doc: dig(l.doc.join("")), valor: l.valor }); return; }
+      if (l.neg) {
+        out.debitos++;
+        var nomeS = l.nome.join(" ").replace(/\s+/g, " ").trim(), descS = desc;
+        // alguns Pix antigos vêm sem a coluna "Razão Social": o nome (cortado, ex. "ANTONIO CARL") fica no fim da descrição ("PIX ENVIADO PIX ENVIADO ANTONIO CARL")
+        var mT = !nomeS && desc.match(/^PIX ENVIADO\s+PIX ENVIADO\s+(.+)$/i);
+        if (mT) { nomeS = mT[1].trim(); descS = "PIX ENVIADO"; }
+        out.saidas.push({ data: iso(l.data), desc: descS, nome: nomeS, doc: dig(l.doc.join("")), valor: l.valor, cortado: !!mT });
+        return;
+      }
       if (/rendimento|rend\s+pago|aplic|resgate|juros|^est\b|estorno|devolu/i.test(desc)) { out.ignorados++; return; }   // não é pagamento de cliente
       out.creditos.push({ data: iso(l.data), desc: desc, nome: l.nome.join(" ").replace(/\s+/g, " ").trim(), doc: dig(l.doc.join("")), valor: l.valor });
     });

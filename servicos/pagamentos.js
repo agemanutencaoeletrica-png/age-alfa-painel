@@ -776,7 +776,7 @@
       if (f) return { f: f, por: "CPF/chave Pix" };
     }
     var nome = letras(g.nome);
-    f = fs.filter(function (x) { var l = letras(x.nome); return l && (l === nome || (l.length >= 10 && nome.indexOf(l) === 0)); })[0];
+    f = fs.filter(function (x) { var l = letras(x.nome); return l && (l === nome || (l.length >= 10 && nome.indexOf(l) === 0) || (g.cortado && nome.length >= 9 && l.indexOf(nome) === 0)); })[0];
     return f ? { f: f, por: "nome" } : null;
   }
   // notas de material em aberto (Compras → "a pagar") que o extrato pagou: o valor do débito é a soma exata de 1 ou mais notas da mesma loja
@@ -821,12 +821,21 @@
       if (!ex) { $("#ex-st", el).innerHTML = '<div class="aviso erro">Não consegui ler as colunas deste extrato. Use o PDF do extrato do app do banco (Itaú, Nubank, Inter...).</div>'; return; }
       // quem recebeu os Pix: agrupa pelo nome (sem número de CNPJ grudado)
       var grupos = {}, ordem = [];
-      ex.saidas.filter(function (s) { return /pix/i.test(s.desc) && s.valor > 0 && s.data; }).forEach(function (s) {
+      ex.saidas.filter(function (s) { return /pix/i.test(s.desc) && s.valor > 0 && s.data && !(s.cortado && /^\d{2}\.\d{3}\.\d{3}\b/.test(s.nome)); }).forEach(function (s) {
         var nome = nomeLimpo(s.nome), k = semAcento(nome).replace(/[^a-z ]/g, "").trim();
         if (!k) return;
-        if (!grupos[k]) { grupos[k] = { k: k, nome: nome, docs: [], itens: [] }; ordem.push(k); }
+        if (!grupos[k]) { grupos[k] = { k: k, nome: nome, docs: [], itens: [], cortado: !!s.cortado }; ordem.push(k); }
         if (s.doc && grupos[k].docs.indexOf(s.doc) < 0) grupos[k].docs.push(s.doc);
         grupos[k].itens.push(s);
+      });
+      // Pix antigo com o CNPJ cortado no lugar do nome ("52.799.167 E"): entra no grupo de quem tem esse CNPJ
+      ex.saidas.filter(function (s) { return /pix/i.test(s.desc) && s.valor > 0 && s.data && s.cortado && /^\d{2}\.\d{3}\.\d{3}\b/.test(s.nome); }).forEach(function (s) {
+        var raiz = soDig(s.nome.match(/^\d{2}\.\d{3}\.\d{3}/)[0]);
+        var alvo = ordem.map(function (k) { return grupos[k]; }).filter(function (g) { return g.docs.some(function (d) { return soDig(d).indexOf(raiz) === 0; }); })[0];
+        if (alvo) { alvo.itens.push(s); return; }
+        var k2 = "cnpj " + raiz;
+        if (!grupos[k2]) { grupos[k2] = { k: k2, nome: "CNPJ " + s.nome.replace(/\s+\S*$/, "") + " (nome cortado no extrato)", docs: [], itens: [], cortado: true }; ordem.push(k2); }
+        grupos[k2].itens.push(s);
       });
       var G = ordem.map(function (k) { return grupos[k]; });
       var proprios = [soDig((A.CFG.EMPRESA || {}).documento), ex.titular].filter(Boolean);
@@ -834,7 +843,7 @@
       G.forEach(function (g) {
         g.total = g.itens.reduce(function (s, x) { return s + x.valor; }, 0);
         // repasse a sócio (ou a conta ligada a ele, ex.: esposa) NÃO é pagamento de funcionário: vai para 👔 Sócios
-        g.socio = window.AGE_SOC ? window.AGE_SOC.achar(g.nome, g.docs) : null;
+        g.socio = window.AGE_SOC ? window.AGE_SOC.achar(g.nome, g.docs, g.cortado) : null;
         var ach = g.socio ? null : acharNoExtrato(g);
         g.f = ach ? ach.f : null; g.por = g.socio ? "sócio" : ach ? ach.por : "";
         g.itens.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
