@@ -1454,7 +1454,7 @@
     P = ctx; var fs = arquivosDoCompartilhar(rc);
     if (fs.length) loteDepositos(fs, depois);
   }
-  window.AGE_FAT = { ver: ver, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, notasCompartilhadas: notasCompartilhadas, depositosCompartilhados: depositosCompartilhados, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
+  window.AGE_FAT = { ver: ver, dasPct: function () { var d = dasEstimado(100, 1); return d ? { pct: d.pct, semIss: d.semIss } : null; }, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, notasCompartilhadas: notasCompartilhadas, depositosCompartilhados: depositosCompartilhados, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
     // 🏦 extrato do banco em PDF: entradas (créditos) e saídas (débitos) com data, descrição, nome, CPF/CNPJ e valor
     lerExtrato: function (ctx, f) {
       P = ctx;

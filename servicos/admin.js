@@ -2419,18 +2419,45 @@
   function modoMat(o) { return MODOS_MAT[o.valores_cliente] ? o.valores_cliente : "itens"; }
   function semValores(o) { return soMateriais(o) && modoMat(o) === "nenhum"; }
   function valoresCliente(o) { return soMateriais(o) ? modoMat(o) === "itens" : o.valores_cliente !== "total"; }
+  // 🏛 impostos embutidos (só o dono vê): modo "sem" = os valores digitados são líquidos e o app soma ISS + DAS em cada valor do cliente;
+  // modo "com" = os valores já têm imposto (total não muda; só mostra quanto é imposto). O cliente nunca vê as linhas de imposto.
+  var CHAVE_ISS = "age_iss_municipios_v1", ISS_BASE = { "BELO HORIZONTE/MG": 2.7, "BETIM/MG": 2.8 };
+  function chaveMun(m) { return semAcento(String(m || "")).toUpperCase().replace(/\s+/g, " ").replace(/\s*\/\s*/, "/").trim(); }
+  function tabIss() { var o = {}; try { o = JSON.parse(localStorage.getItem(CHAVE_ISS) || "{}") || {}; } catch (e) { o = {}; } return Object.assign({}, ISS_BASE, o); }
+  function issDe(m) {
+    var k = chaveMun(m), t = tabIss(); if (!k) return null;
+    if (t[k] !== undefined) return Number(t[k]);
+    var ach = Object.keys(t).filter(function (x) { return x.split("/")[0] === k.split("/")[0] && (!/\//.test(k) || x === k); });   // "Betim" sem a UF
+    return ach.length === 1 ? Number(t[ach[0]]) : null;
+  }
+  function guardarIss(m, v) {
+    var k = chaveMun(m); if (!k || !(v > 0)) return;
+    try { var o = JSON.parse(localStorage.getItem(CHAVE_ISS) || "{}") || {}; o[k] = v; localStorage.setItem(CHAVE_ISS, JSON.stringify(o)); } catch (e) { /* sem armazenamento */ }
+  }
+  function pcBr(v) { return String(Math.round((Number(v) || 0) * 100) / 100).replace(".", ",") + "%"; }
+  function pctImp(im) { return im ? Math.max(0, (Number(im.iss) || 0) + (Number(im.outros) || 0)) : 0; }
+  function fatorImp(o) { var im = o && o.impostos, t = pctImp(im); return im && im.modo === "sem" && t > 0 && t < 100 ? 1 / (1 - t / 100) : 1; }
   function calcOrc(M) {
-    var mat = 0, serv = 0, r2 = function (v) { return Math.round(v * 100) / 100; };
+    var r2 = function (v) { return Math.round(v * 100) / 100; }, f = fatorImp(M), g = function (v) { return f === 1 ? v : r2(v * f); };
+    var mat = 0, serv = 0, matN = 0, servN = 0;
     M.itens.forEach(function (i) {
-      var q = Number(i.qtd) || 0;
-      if (i.tipo === "material") mat += q * (Number(i.valor) || 0);
-      else { serv += q * (Number(i.valor) || 0); if (i.tipo === "ambos") mat += q * (Number(i.valor_mat) || 0); }
+      var q = Number(i.qtd) || 0, v = Number(i.valor) || 0, vm = Number(i.valor_mat) || 0;
+      if (i.tipo === "material") { mat += q * g(v); matN += q * v; }
+      else { serv += q * g(v); servN += q * v; if (i.tipo === "ambos") { mat += q * g(vm); matN += q * vm; } }
     });
-    var mc = matCliente(M), cliente = serv + (mc ? mat : 0), desc = Number(M.desconto) || 0;
-    return { mat: r2(mat), serv: r2(serv), cliente: r2(cliente), mc: mc, total: r2(Math.max(0, cliente - desc)), custo: r2(Math.max(0, mat + serv - desc)) };
+    var mc = matCliente(M), desc = Number(M.desconto) || 0, descC = g(desc);
+    var cliente = serv + (mc ? mat : 0), total = Math.max(0, cliente - descC), custo = Math.max(0, matN + servN - desc);
+    var im = M.impostos, imp = 0;
+    if (f !== 1) imp = total - Math.max(0, servN + (mc ? matN : 0) - desc);
+    else if (im && im.modo === "com") imp = total * pctImp(im) / 100;
+    imp = Math.max(0, imp);
+    return { mat: r2(mc ? mat : matN), serv: r2(serv), cliente: r2(cliente), mc: mc, total: r2(total), custo: r2(custo), liq: r2(Math.max(0, total - imp)), imposto: r2(imp) };
   }
   // valor unitário que o cliente vê (no "material + mão de obra", só a mão de obra, a não ser que os materiais vão para o cliente)
-  function unCliente(i, o) { return (Number(i.valor) || 0) + (i.tipo === "ambos" && matCliente(o) ? Number(i.valor_mat) || 0 : 0); }
+  function unCliente(i, o) {
+    var f = fatorImp(o), g = function (v) { return f === 1 ? v : Math.round(v * f * 100) / 100; };
+    return g(Number(i.valor) || 0) + (i.tipo === "ambos" && matCliente(o) ? g(Number(i.valor_mat) || 0) : 0);
+  }
 
   function opcoesAreas() { return Object.keys(CAT_ORC).map(function (k) { return '<option value="' + esc(k) + '">' + esc(CAT_ORC[k]) + "</option>"; }).join(""); }
   function chaveArea(nome, usadas) {
@@ -2527,6 +2554,12 @@
       (soMateriais(M) ? '<div class="cartao" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
         Object.keys(MODOS_MAT).map(function (k) { return '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-mmodo" value="' + k + '"> ' + MODOS_MAT[k] + "</label>"; }).join("") +
         '<p class="mudo peq" style="margin:4px 0 0">Os valores continuam guardados no app; aqui você escolhe se o cliente vê ou não.</p></div>' : "") +
+      '<details class="cartao" id="eo2-imp" style="margin-top:10px"><summary><b>🏛 Impostos embutidos</b> <span class="selo">só você vê</span> <span class="mudo peq" id="eo2-imp-res"></span></summary>' +
+      '<label for="eo2-imp-modo">Os valores que digitei nos itens...</label><select id="eo2-imp-modo"><option value="">Não embutir imposto</option><option value="sem">estão SEM impostos: o app soma o imposto no valor do cliente</option><option value="com">já estão COM impostos: só mostra quanto é imposto</option></select>' +
+      '<div class="duas"><div><label for="eo2-imp-mun">Município do cliente</label><input id="eo2-imp-mun" maxlength="80" placeholder="Ex.: Belo Horizonte/MG"></div><div><label for="eo2-imp-iss">ISS do município (%)</label><input id="eo2-imp-iss" inputmode="decimal" placeholder="Ex.: 2,70"></div></div>' +
+      '<div class="duas"><div><label for="eo2-imp-out">Outros impostos (%) — DAS do Simples</label><input id="eo2-imp-out" inputmode="decimal" placeholder="0"></div><div><label>&nbsp;</label><button class="peq" id="eo2-imp-das" type="button">🧮 Usar o DAS do Simples</button></div></div>' +
+      '<div id="eo2-imp-msg" class="peq mudo"></div>' +
+      '<p class="mudo peq" style="margin:4px 0 0">O município vem do CNPJ do cliente (botão 🔎 Buscar CNPJ). O cliente recebe só o valor total, sem linha de imposto. Percentuais são estimativa: confirme com o contador.</p></details>' +
       '<div class="cartao" style="margin-top:10px" id="eo2-totais"></div>' +
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
       '<div class="linha" style="margin-top:4px"><select id="eo2-cond" aria-label="Condição de pagamento pronta" style="flex:1 1 100%"><option value="">✍️ Manual: eu escrevo a forma de pagamento</option>' +
@@ -2558,6 +2591,8 @@
       $("#eo2-cat", el).value = M.categoria || ""; $("#eo2-desc", el).value = M.desconto ? reais2(M.desconto) : "";
       $("#eo2-val", el).value = M.validade_dias || 15; $("#eo2-pag", el).value = M.pagamento || ""; $("#eo2-prazo", el).value = M.prazo || "";
       $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
+      var imp0 = M.impostos || {}; $("#eo2-imp-modo", el).value = imp0.modo || ""; $("#eo2-imp-mun", el).value = imp0.municipio || ""; $("#eo2-imp-iss", el).value = imp0.iss ? reais2(imp0.iss) : ""; $("#eo2-imp-out", el).value = imp0.outros ? reais2(imp0.outros) : "";
+      if (imp0.modo) $("#eo2-imp", el).open = true;
       $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente; marcarModoValores();
       $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.checked = r.value === modoMat(M); });
       if ($("#eo2-vist", el)) { $("#eo2-vist", el).value = M.laudo.vistoria || ""; $("#eo2-sol", el).value = M.laudo.solucao || ""; }
@@ -2649,6 +2684,7 @@
         if (!val(el, "#eo2-end") && end) { $("#eo2-end", el).value = end; feitos.push("endereço"); }
         if (!val(el, "#eo2-email") && r.email) { $("#eo2-email", el).value = r.email; feitos.push("e-mail"); }
         if (!val(el, "#eo2-tel") && (r.whatsapp || r.telefone)) { $("#eo2-tel", el).value = r.whatsapp || r.telefone; feitos.push("telefone"); }
+        if (r.cidade) { $("#eo2-imp-mun", el).value = r.cidade + (r.uf ? "/" + r.uf : ""); ligarIss(); }
         m.innerHTML = '<span style="color:var(--bom)">✔ ' + esc(r.razao_social) + (feitos.length ? " — preenchi: " + feitos.join(", ") : " — os campos já estavam preenchidos") + "</span>";
         totais();
       });
@@ -2834,6 +2870,8 @@
       M.pagamento = val(el, "#eo2-pag"); M.prazo = val(el, "#eo2-prazo"); M.observacoes = val(el, "#eo2-obs"); M.status = $("#eo2-st", el).value;
       M.valores_cliente = $("#eo2-vitens", el).checked ? "itens" : "total"; M.materiais_cliente = $("#eo2-mcli", el).checked;
       if (soMateriais(M)) { var rm = $('input[name="eo2-mmodo"]:checked', el); M.valores_cliente = rm ? rm.value : "itens"; M.materiais_cliente = true; }
+      var mImp = $("#eo2-imp-modo", el).value;
+      M.impostos = mImp ? { modo: mImp, municipio: val(el, "#eo2-imp-mun"), iss: A.lerNumero($("#eo2-imp-iss", el).value) || 0, outros: A.lerNumero($("#eo2-imp-out", el).value) || 0 } : null;
       if ($("#eo2-vist", el)) M.laudo = { vistoria: $("#eo2-vist", el).value.trim(), solucao: $("#eo2-sol", el).value.trim() };
     }
     // 💲 forma de pagamento pronta: o app calcula pelos materiais e pela mão de obra do orçamento; "Manual" não mexe no que você escreve
@@ -2864,9 +2902,30 @@
         (soMateriais(M) ? "" : '<div class="linha"><span>👷 Mão de obra / serviços</span><span class="dir">' + A.dinheiro(t.serv) + "</span></div>") +
         (M.desconto ? '<div class="linha"><span>Desconto</span><span class="dir">− ' + A.dinheiro(M.desconto) + "</span></div>" : "") +
         '<div class="linha forte" style="font-size:18px;margin-top:4px"><span>' + (semValores(M) ? "Total (só no app: o cliente recebe a lista sem valores)" : "Total para o cliente") + '</span><span class="dir">' + A.dinheiro(t.total) + "</span></div>" +
-        (!t.mc && t.mat ? '<div class="linha mudo peq"><span>Custo total com os materiais (só no app)</span><span class="dir">' + A.dinheiro(t.custo) + "</span></div>" : "");
+        (!t.mc && t.mat ? '<div class="linha mudo peq"><span>Custo total com os materiais (só no app)</span><span class="dir">' + A.dinheiro(t.custo) + "</span></div>" : "") +
+        (t.imposto > 0 ? '<div class="linha mudo peq" style="margin-top:6px"><span>🏛 Só você vê: imposto embutido (ISS ' + pcBr(M.impostos.iss) + " + outros " + pcBr(M.impostos.outros) + ')</span><span class="dir">' + A.dinheiro(t.imposto) + '</span></div><div class="linha mudo peq"><span>🏛 Líquido para a AGE (sem imposto)</span><span class="dir">' + A.dinheiro(t.liq) + "</span></div>" : "");
+      $("#eo2-imp-res", el).textContent = t.imposto > 0 ? "— imposto " + A.dinheiro(t.imposto) + " · líquido " + A.dinheiro(t.liq) : "";
     }
     $("#eo2-desc", el).oninput = totais;
+    ["#eo2-imp-modo", "#eo2-imp-iss", "#eo2-imp-out"].forEach(function (k) { $(k, el).addEventListener("input", totais); $(k, el).addEventListener("change", totais); });
+    $("#eo2-imp-mun", el).addEventListener("blur", function () { ligarIss(); });
+    $("#eo2-imp-iss", el).addEventListener("blur", function () { var v = A.lerNumero(this.value); this.value = v ? reais2(v) : ""; guardarIss(val(el, "#eo2-imp-mun"), v); });
+    $("#eo2-imp-out", el).addEventListener("blur", function () { var v = A.lerNumero(this.value); this.value = v ? reais2(v) : ""; });
+    $("#eo2-imp-das", el).onclick = function () {
+      var d = window.AGE_FAT && window.AGE_FAT.dasPct && window.AGE_FAT.dasPct(), m = $("#eo2-imp-msg", el);
+      if (!d) { m.innerHTML = '<span style="color:var(--atencao)">Configure o anexo e o RBT12 em Notas e resultado → ⚙ Simples para usar o DAS.</span>'; return; }
+      $("#eo2-imp-out", el).value = reais2(d.pct); if (!$("#eo2-imp-modo", el).value) $("#eo2-imp-modo", el).value = "sem";
+      m.innerHTML = "DAS estimado " + pcBr(d.pct) + (d.semIss ? " (sem a parte do ISS, que o cliente retém)" : ""); totais();
+    };
+    // município → ISS: tabela guardada neste aparelho (começa com BH e Betim, das notas emitidas)
+    function ligarIss() {
+      var mun = val(el, "#eo2-imp-mun"), i = issDe(mun), m = $("#eo2-imp-msg", el);
+      if (!mun) return;
+      $("#eo2-imp", el).open = true;
+      if (i !== null) { if (!A.lerNumero($("#eo2-imp-iss", el).value)) { $("#eo2-imp-iss", el).value = reais2(i); if (!$("#eo2-imp-modo", el).value) $("#eo2-imp-modo", el).value = "sem"; } m.textContent = "ISS de " + mun + ": " + pcBr(i) + " (editável; fica guardado para os próximos orçamentos)."; }
+      else m.innerHTML = '<span style="color:var(--atencao)">Não tenho o ISS de ' + esc(mun) + ': digite o percentual (fica guardado).</span>';
+      totais();
+    }
     $("#eo2-desc", el).addEventListener("blur", function () { var v = A.lerNumero(this.value); this.value = v ? reais2(v) : ""; });
     $("#eo2-cat", el).addEventListener("change", listaPrecos); listaPrecos();
     $("#eo2-areas", el).onclick = function () {
@@ -2959,27 +3018,30 @@
         return x;
       });
       var dados = { obra_id: M.obra_id, relatorio_id: M.relatorio_id, cliente: M.cliente, documento: nulo(M.documento), telefone: nulo(M.telefone), email: nulo(M.email), endereco: nulo(M.endereco), categoria: nulo(M.categoria),
-        itens: itens, desconto: Math.round((M.desconto || 0) * 100) / 100, total: calcOrc({ itens: itens, desconto: M.desconto, materiais_cliente: M.materiais_cliente }).total,
+        itens: itens, desconto: Math.round((M.desconto || 0) * 100) / 100, total: calcOrc({ itens: itens, desconto: M.desconto, materiais_cliente: M.materiais_cliente, impostos: M.impostos }).total,
         pagamento: nulo(M.pagamento), prazo: nulo(M.prazo), validade_dias: M.validade_dias, observacoes: nulo(M.observacoes), status: M.status };
       if (!S.semOpcOrc) { dados.valores_cliente = M.valores_cliente; dados.materiais_cliente = !!M.materiais_cliente; }
       if (S.semDocOrc) delete dados.documento;
+      if (!S.semImpOrc) dados.impostos = M.impostos && M.impostos.modo ? M.impostos : null;
       if (!S.semTipoOrc) dados.tipo = M.tipo || "servico";
       if (!S.semLaudoOrc) dados.laudo = temLaudo(M) ? { vistoria: M.laudo.vistoria, solucao: M.laudo.solucao } : null;
       function gravar(d) { return q(M.id ? sb.from("orcamentos").update(d).eq("id", M.id).select().single() : sb.from("orcamentos").insert(d).select().single()); }
       return gravar(dados).catch(function (e) {
         // banco ainda sem as colunas novas: grava sem elas e avisa uma vez para rodar o SQL
-        var msg = A.msgErro(e) + " " + (e && e.message), opc = /valores_cliente|materiais_cliente/.test(msg), doc = /documento/.test(msg), tp = /'tipo' column|column "?tipo"?/.test(msg), ld = /laudo/.test(msg);
-        if ((!opc || S.semOpcOrc) && (!doc || S.semDocOrc) && (!tp || S.semTipoOrc) && (!ld || S.semLaudoOrc)) throw e;
+        var msg = A.msgErro(e) + " " + (e && e.message), opc = /valores_cliente|materiais_cliente/.test(msg), doc = /documento/.test(msg), tp = /'tipo' column|column "?tipo"?/.test(msg), ld = /laudo/.test(msg), ip = /impostos/.test(msg);
+        if ((!opc || S.semOpcOrc) && (!doc || S.semDocOrc) && (!tp || S.semTipoOrc) && (!ld || S.semLaudoOrc) && (!ip || S.semImpOrc)) throw e;
+        if (ip) { S.semImpOrc = true; delete dados.impostos; }
         if (ld) { S.semLaudoOrc = true; delete dados.laudo; }
         if (tp) { S.semTipoOrc = true; delete dados.tipo; }
         if (opc) { S.semOpcOrc = true; delete dados.valores_cliente; delete dados.materiais_cliente; }
         if (doc) { S.semDocOrc = true; delete dados.documento; }
-        A.avisar("Parte do orçamento (" + [ld ? "laudo técnico" : "", opc ? "opções do que vai ao cliente" : "", doc ? "CPF/CNPJ" : "", tp ? "tipo" : ""].filter(Boolean).join(", ") +
+        A.avisar("Parte do orçamento (" + [ip ? "impostos embutidos" : "", ld ? "laudo técnico" : "", opc ? "opções do que vai ao cliente" : "", doc ? "CPF/CNPJ" : "", tp ? "tipo" : ""].filter(Boolean).join(", ") +
           ") não foi gravada no servidor: rode o supabase.sql no Supabase (colunas novas do orçamento).", "erro");
         return gravar(dados);
       }).then(function (n) {
         if (S.semOpcOrc) { n.valores_cliente = M.valores_cliente; n.materiais_cliente = !!M.materiais_cliente; }
         if (S.semDocOrc) n.documento = M.documento;
+        if (S.semImpOrc) n.impostos = M.impostos;
         if (S.semTipoOrc) n.tipo = M.tipo;
         if (S.semLaudoOrc) n.laudo = temLaudo(M) ? M.laudo : null;
         trocar(S.orc, n);

@@ -472,3 +472,9 @@ páginas de **Ordens de serviço** (valores) e **Finalizados** (data de encerram
 - **Materiais da nota:** o app lê cada material com **quantidade, valor unitário e total** (DANFE, cupom, pré-venda) e confere
   a soma com o total da nota. Digitando à mão, quantidade × unitário dá o total sozinho.
 - **📊 Comparar preços:** cada material com o preço unitário em cada loja e data, o mais barato marcado e a diferença em %.
+
+## 🏛 Impostos embutidos no orçamento (só você vê)
+No editor do orçamento, abra **🏛 Impostos embutidos**. Ao buscar o CNPJ do cliente (🔎 Buscar CNPJ) o app pega o **município** e preenche o **ISS** dele (começa com Belo Horizonte 2,70% e Betim 2,80%, das notas emitidas; município novo: digite o percentual uma vez e ele fica guardado neste aparelho). **🧮 Usar o DAS do Simples** põe o percentual do DAS (precisa do anexo e do RBT12 em Notas e resultado → ⚙ Simples).
+- **Valores SEM impostos**: você digita o valor líquido; o app divide por (1 − imposto%) e cada valor que o cliente vê já vem com o imposto dentro. O total do PDF/WhatsApp/impressão é o total com imposto, **sem nenhuma linha de imposto**.
+- **Valores COM impostos**: o total não muda; o app só mostra para você quanto é imposto e quanto sobra.
+Só você vê, no editor: imposto embutido e líquido. Os itens guardam o valor digitado (líquido). Percentuais são estimativa: confirme com o contador. Rode o `supabase.sql` (coluna `orcamentos.impostos`).

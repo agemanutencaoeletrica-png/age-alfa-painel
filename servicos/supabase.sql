@@ -135,6 +135,7 @@ alter table public.orcamentos alter column materiais_cliente set default false;
 alter table public.orcamentos add column if not exists documento text;          -- CPF ou CNPJ do cliente
 alter table public.orcamentos add column if not exists tipo text not null default 'servico';  -- 'servico' ou 'materiais' (orçamento só de materiais)
 alter table public.orcamentos add column if not exists laudo jsonb;          -- laudo técnico {vistoria, solucao}
+alter table public.orcamentos add column if not exists impostos jsonb;      -- impostos embutidos (só o dono vê): {modo: sem|com, municipio, iss, outros}
 -- modelos de laudo técnico (vistoria e solução) para usar e editar nos orçamentos
 create table if not exists public.modelos_laudo (
   id        uuid primary key default gen_random_uuid(),
