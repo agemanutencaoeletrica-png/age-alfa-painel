@@ -2310,7 +2310,7 @@
     return b.split(/\s+/).every(function (p) { return txt.indexOf(p) >= 0; });
   }
   function verOrcamentos(c) {
-    c.innerHTML = '<div class="cab-secao"><h2>Orçamentos</h2><span><button class="prim" id="bo-novo">+ Novo orçamento</button> <button id="bo-mat">🧱 + Orçamento de materiais</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>Orçamentos</h2><span><button class="prim" id="bo-novo">+ Novo orçamento</button> <button id="bo-mat">🧱 + Orçamento de materiais</button> <button id="bo-proj" title="Proposta técnico-comercial em PDF: SPDA, aterramento, diagrama unifilar...">📐 Proposta de projeto</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-6px">Só você vê esta área. Os funcionários nunca veem valores.</p>' +
       (S.orc.length ? '<div class="filtros">' + [["", "Todos"], ["servico", "🔧 Serviços"], ["materiais", "🧱 Materiais"]].map(function (f) {
         return '<button class="' + (tipoOrcFiltro === f[0] ? "prim" : "") + '" data-orctipo="' + f[0] + '">' + f[1] + "</button>";
@@ -2321,6 +2321,7 @@
         : '<div class="cartao vazio">Nenhum orçamento ainda. Crie um aqui ou a partir do relatório de um funcionário.</div>');
     $("#bo-novo").onclick = function () { editarOrcamento(null, {}); };
     $("#bo-mat").onclick = function () { editarOrcamento(null, { tipo: "materiais" }); };
+    if ($("#bo-proj")) $("#bo-proj").onclick = function () { window.AGE_PROJ.abrir(P); };
     if (!S.orc.length) return;
     $$("[data-orctipo]", c).forEach(function (b) { b.onclick = function () { tipoOrcFiltro = b.dataset.orctipo; verOrcamentos(c); }; });
     function lista() {

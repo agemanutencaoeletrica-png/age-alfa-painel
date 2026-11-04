@@ -369,6 +369,18 @@ Aba **📑 Propostas prontas** do painel: um lugar para **guardar, editar e reus
 - **Memória:** cidade, e-mail, telefone, endereço, cliente e empresa que você já digitou aparecem como sugestão nos campos parecidos (toque no campo para ver).
 - Senhas e chaves nunca são guardadas. Rascunho e memória ficam só neste aparelho (não passam para outro celular ou computador).
 
+## 📐 Proposta de projeto (SPDA, aterramento, unifilar) para mandar ao cliente
+
+- Em **Orçamentos → 📐 Proposta de projeto**: monta a **proposta técnico-comercial em PDF** com os dados da AGE (nome, CNPJ, telefone, e-mail e endereço do `config.js`).
+- Preencha o **contratante**, o **local**, a **data da proposta** (pode mudar), o **valor** e a **condição de pagamento**. Os **9 serviços** (levantamento dimensional, análise de risco, projeto de SPDA, aterramento, memorial, lista de materiais, ART, diagrama unifilar com o nº de quadros e etiquetas) vêm marcados: desmarque os que não entram, ou acrescente outro. As **responsabilidades do contratante** e os **itens não contemplados** vêm prontos e dá para editar.
+- O PDF traz o escopo em tabela, o valor com o **valor por extenso**, a validade, as disposições finais e a assinatura do **responsável técnico** e do contratante.
+- **Responsável técnico (para a ART):** digite o nome e o CREA do engenheiro(a) **uma vez**: o app lembra neste aparelho. A ART só pode ser emitida por profissional habilitado: sem nome e CREA, o PDF sai com a linha em branco para preencher à mão.
+- **📄 Gerar PDF** baixa o arquivo; **📤 Enviar ao cliente** abre o compartilhar com o PDF anexado (no computador, baixa e abre o WhatsApp para você anexar).
+
+## 🏦 Extrato do ano: Pix antigos com nome cortado
+
+- Em extratos antigos, alguns Pix vêm **sem a coluna "Razão Social"** e com o nome cortado na descrição ("PIX ENVIADO ANTONIO CARL", "MARCELO EZAQ", "52.799.167 E"). O app agora **lê esses Pix também** e liga ao funcionário ou sócio pelo começo do nome (ou pelo CNPJ). Confira sempre na lista antes de lançar.
+
 ## 👔 Sócios e 💵 Caixa (sem misturar valores)
 
 - Aba **👔 Sócios**: cadastre cada sócio com o **CPF**, a **parte dele (%)** nos serviços fechados e as **outras contas que contam para ele** (ex.: a esposa: “Nome; CPF”). Pix para qualquer uma dessas contas conta como repasse **ao sócio**.

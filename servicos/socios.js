@@ -28,11 +28,11 @@
     return t;
   }
   // quem recebeu o Pix é este sócio? (CPF dele, de uma conta ligada, ou o nome completo)
-  function achar(nome, docs) {
+  function achar(nome, docs, cortado) {
     var ds = (docs || []).map(dig).filter(function (d) { return d.length >= 11; }), n = letras(nome);
     return lista().filter(function (s) { return s.ativo !== false; }).filter(function (s) {
       var contas = [{ nome: s.nome, doc: s.doc }].concat(s.relacionados || []);
-      return contas.some(function (c) { var cd = dig(c.doc); return (cd.length >= 11 && ds.some(function (d) { return d === cd; })) || (n.length >= 10 && letras(c.nome) === n); });
+      return contas.some(function (c) { var cd = dig(c.doc); return (cd.length >= 11 && ds.some(function (d) { return d === cd; })) || (n.length >= 10 && letras(c.nome) === n) || (cortado && ds.length === 0 && n.length >= 9 && letras(c.nome).indexOf(n) === 0); });
     })[0] || null;
   }
   function paraTexto(rel) { return (rel || []).map(function (x) { return x.nome + (x.doc ? "; " + x.doc : ""); }).join("\n"); }
