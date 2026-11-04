@@ -488,3 +488,10 @@ Só você vê, no editor: imposto embutido e líquido. Os itens guardam o valor 
 - Em **Pagamentos** há o seletor **Por semana / Por quinzena / Por mês**: a lista, os totais de cada período e o relatório compartilhado seguem a sua escolha.
 - O botão **🔗 Link** abre **Enviar pagamentos**: escolha semana, quinzena ou mês e envie o **link** (página do funcionário, sempre atualizada, com botões Semana/Quinzena/Mês) ou o **resumo em texto** (copiar ou WhatsApp) com os valores do período filtrado na tela.
 - O Simples já começa com o **PGDAS-D de 10/2026** (Anexo III, RBT12 R$ 314.350,00 → alíquota efetiva 8,22%; confere com o DAS: R$ 2.800 → R$ 230,23 e R$ 22.800 com ISS retido → R$ 1.274,81). O RBT12 muda todo mês: atualize em Notas e resultado → ⚙ Simples.
+
+## 🧮 A pagar pelo ponto (por hora ou por dia)
+Em **Pagamentos**, o quadro **A pagar pelo ponto** mostra, para cada funcionário com **valor da diária** (Equipe → Editar), no período escolhido: dias e horas do **ponto** (chegada → saída), quanto deveria receber, quanto já foi pago e quanto **falta** (ou "a mais").
+- **Por hora trabalhada**: horas × (diária ÷ 8 h). Ex.: diária R$ 180 → R$ 22,50/h; diária R$ 280 → R$ 35,00/h (cada um usa a própria diária).
+- **Por dia**: dias com ponto × diária inteira.
+- Dias e horas podem ser corrigidos à mão (campos do quadro; ficam guardados neste aparelho). Chegada sem saída não conta horas e aparece em vermelho. Reembolso não entra no "pago".
+- O resumo em texto enviado ao funcionário inclui essa conta quando ela estiver calculada na tela. O ponto lido vai até ~2 meses para trás quando o período é "Tudo".

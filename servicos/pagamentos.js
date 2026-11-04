@@ -566,6 +566,12 @@
       t += "\n📅 " + s.rotulo + " — " + dinheiro(soma(pg)) + (nd ? " · " + String(Math.round(nd * 10) / 10).replace(".", ",") + " diária(s)" : "") + "\n";
       s.pags.sort(function (a, b) { return new Date(a.pago_em) - new Date(b.pago_em); }).forEach(function (p) { var dt = new Date(p.pago_em); t += A.data(dt).slice(0, 5) + " " + A.hora(dt) + " · " + (TIPOS[p.tipo] || "") + " · " + (ehPix(p) ? "Pix" : "Dinheiro") + " · " + dinheiro(p.valor) + "\n"; });
     });
+    var cp = calcPonto[f.id];
+    if (cp) {
+      var fa = Math.round((cp.dev - cp.pago) * 100) / 100;
+      t += "\n🧮 *Conta do período* (" + A.data(cp.de).slice(0, 5) + " a " + A.data(new Date(cp.ate.getTime() - 864e5)).slice(0, 5) + "): " + (cp.modo === "dia" ? cp.dias + " dia(s) × " + dinheiro(d) : fh(cp.horas) + " × " + dinheiro(Math.round(d / JORNADA * 100) / 100) + "/h") +
+        " = " + dinheiro(cp.dev) + " · pago " + dinheiro(cp.pago) + " · " + (fa > 0.005 ? "*falta " + dinheiro(fa) + "*" : fa < -0.005 ? "pago a mais " + dinheiro(-fa) : "*em dia*") + "\n";
+    }
     return t + "\nSe algum valor estiver diferente do que você recebeu, fale comigo.";
   }
   function totaisPorFunc(ps) {
@@ -574,6 +580,65 @@
     return Object.keys(t).map(function (k) { return { func: k, total: t[k] }; }).sort(function (a, b) { return b.total - a.total; });
   }
   function ehPix(p) { return p.forma !== "especie"; }
+  function ps0() { return lista(); }
+  // ---------------- 🧮 a pagar pelo ponto: diária × dias ou (diária ÷ 8 h) × horas ----------------
+  var JORNADA = 8, CHAVE_CALC = "age_pgcalc_v1", calcPonto = {};
+  function lerCalc() { try { return JSON.parse(localStorage.getItem(CHAVE_CALC) || "{}") || {}; } catch (e) { return {}; } }
+  function guardarCalc(o) { try { localStorage.setItem(CHAVE_CALC, JSON.stringify(o)); } catch (e) { /* sem armazenamento */ } }
+  function modoCalc() { try { return localStorage.getItem(CHAVE_CALC + "_modo") === "dia" ? "dia" : "hora"; } catch (e) { return "hora"; } }
+  // pontos de um funcionário -> { dias, horas (decimal), semSaida }: cada chegada → saída conta as horas do dia da chegada
+  function horasDoPonto(pontos) {
+    var dias = {}, inicio = null, semSaida = 0;
+    pontos.slice().sort(function (a, b) { return new Date(a.criado_em) - new Date(b.criado_em); }).forEach(function (pt) {
+      var t = new Date(pt.criado_em).getTime();
+      if (pt.tipo === "chegada" && inicio === null) { inicio = t; var k0 = A.isoLocal(new Date(t)); dias[k0] = dias[k0] || 0; }
+      else if (pt.tipo === "chegada" && inicio !== null) { semSaida++; inicio = t; var k1 = A.isoLocal(new Date(t)); dias[k1] = dias[k1] || 0; }   // chegada sem saída antes dela
+      else if (pt.tipo === "saida" && inicio !== null) { var k = A.isoLocal(new Date(inicio)); dias[k] = (dias[k] || 0) + (t - inicio) / 36e5; inicio = null; }
+    });
+    if (inicio !== null) semSaida++;
+    return { dias: Object.keys(dias).length, horas: Object.keys(dias).reduce(function (t, k) { return t + dias[k]; }, 0), semSaida: semSaida };
+  }
+  function fh(h) { var m = Math.round(h * 60); return Math.floor(m / 60) + "h" + (m % 60 ? dois(m % 60) : ""); }
+  function aPagar(ps) {
+    var box = $("#pg-pagar"); if (!box) return;
+    var fs = (P.S.func || []).filter(function (f) { return Number(f.diaria) > 0 && (!filtro.func || f.id === filtro.func); });
+    if (!fs.length) { box.innerHTML = ""; return; }
+    var pr = periodo(), de = pr.de, ate = pr.ate;
+    if (filtro.periodo === "tudo" || (ate - de) > 400 * 864e5) { de = new Date(Date.now() - 62 * 864e5); ate = new Date(Date.now() + 864e5); }   // ponto: no máximo ~2 meses
+    box.innerHTML = '<div class="cartao"><div class="linha"><h3 style="margin:0">🧮 A pagar pelo ponto</h3><span class="dir mudo peq">carregando...</span></div></div>';
+    var modo = modoCalc(), todos = P.S.pag;
+    Promise.resolve(P.sb.from("pontos").select("funcionario_id,tipo,criado_em").gte("criado_em", de.toISOString()).lt("criado_em", ate.toISOString()).order("criado_em").limit(5000))
+      .then(function (r) { if (r.error) throw r.error; return r.data || []; })
+      .then(function (pts) {
+        var man = lerCalc(), lin = fs.map(function (f) {
+          var mine = pts.filter(function (x) { return x.funcionario_id === f.id; }), h = horasDoPonto(mine), ch = f.id + "|" + A.isoLocal(de) + "|" + A.isoLocal(ate), m = man[ch] || {};
+          var dias = m.dias !== undefined && m.dias !== "" ? Number(m.dias) : h.dias, horas = m.horas !== undefined && m.horas !== "" ? Number(m.horas) : Math.round(h.horas * 100) / 100;
+          var diaria = Number(f.diaria), vh = diaria / JORNADA, dev = modo === "dia" ? dias * diaria : horas * vh;
+          var pago = todos.filter(function (p) { var d = new Date(p.pago_em); return p.funcionario_id === f.id && p.tipo !== "reembolso" && d >= de && d < ate; }).reduce(function (t, p) { return t + Number(p.valor); }, 0);
+          dev = Math.round(dev * 100) / 100; calcPonto[f.id] = { dev: dev, pago: pago, dias: dias, horas: horas, modo: modo, de: de, ate: ate };
+          return { f: f, ch: ch, h: h, dias: dias, horas: horas, vh: vh, dev: dev, pago: pago, edit: m.dias !== undefined || m.horas !== undefined };
+        });
+        box.innerHTML = '<div class="cartao"><div class="linha"><h3 style="margin:0">🧮 A pagar pelo ponto</h3><span class="dir"><select id="pg-calc-modo" aria-label="Como calcular"><option value="hora">Por hora trabalhada (diária ÷ ' + JORNADA + ' h)</option><option value="dia">Por dia (diária inteira)</option></select></span></div>' +
+          '<p class="mudo peq" style="margin:2px 0 6px">Período: ' + esc(A.data(de)) + " a " + esc(A.data(new Date(ate.getTime() - 864e5))) + ". Horas e dias vêm do ponto (chegada → saída); você pode corrigir os números. Reembolso não entra.</p>" +
+          '<div class="tabela-caixa"><table><thead><tr><th>Funcionário</th><th class="num">Dias</th><th class="num">Horas</th><th class="num">A pagar</th><th class="num">Pago</th><th class="num">Falta</th></tr></thead><tbody>' +
+          lin.map(function (x) {
+            var falta = Math.round((x.dev - x.pago) * 100) / 100;
+            return "<tr><td>" + esc(x.f.nome) + '<div class="mudo peq">diária ' + dinheiro(x.f.diaria) + " · hora " + dinheiro(Math.round(x.vh * 100) / 100) + (x.h.semSaida ? ' · <span style="color:var(--critico)">' + x.h.semSaida + " chegada(s) sem saída</span>" : "") + (x.h.dias === 0 && !x.edit ? " · sem ponto no período" : "") + "</div></td>" +
+              '<td class="num"><input data-pc="' + x.ch + '" data-c="dias" inputmode="decimal" value="' + String(x.dias).replace(".", ",") + '" style="width:60px;text-align:right"></td>' +
+              '<td class="num"><input data-pc="' + x.ch + '" data-c="horas" inputmode="decimal" value="' + String(x.horas).replace(".", ",") + '" style="width:70px;text-align:right" title="' + fh(x.horas) + '"></td>' +
+              '<td class="num"><b>' + dinheiro(x.dev) + '</b></td><td class="num">' + dinheiro(x.pago) + '</td><td class="num"><b style="color:' + (falta > 0.005 ? "var(--critico)" : "var(--bom)") + '">' + (falta > 0.005 ? "falta " + dinheiro(falta) : falta < -0.005 ? "a mais " + dinheiro(-falta) : "em dia ✔") + "</b></td></tr>";
+          }).join("") + "</tbody></table></div></div>";
+        $("#pg-calc-modo", box).value = modo;
+        $("#pg-calc-modo", box).onchange = function () { try { localStorage.setItem(CHAVE_CALC + "_modo", this.value); } catch (e) { /* sem armazenamento */ } aPagar(ps); };
+        $$("[data-pc]", box).forEach(function (inp) {
+          inp.onchange = function () {
+            var o = lerCalc(); o[inp.dataset.pc] = o[inp.dataset.pc] || {}; var v = inp.value.trim();
+            if (v === "") delete o[inp.dataset.pc][inp.dataset.c]; else o[inp.dataset.pc][inp.dataset.c] = A.lerNumero(v) || 0;
+            guardarCalc(o); aPagar(ps);
+          };
+        });
+      }).catch(function (e) { box.innerHTML = '<div class="cartao"><div class="aviso">Não consegui ler o ponto agora: ' + esc(A.msgErro ? A.msgErro(e) : e.message) + "</div></div>"; });
+  }
   function funcDe(id) { return (P.S.func || []).filter(function (f) { return f.id === id; })[0] || null; }
   // link pessoal do funcionário para ele conferir o que já recebeu (página meus-pagamentos.html)
   function linkPagamentos(f, modo) { return new URL("meus-pagamentos.html", location.href).href.split("#")[0].split("?")[0] + "#t=" + f.token + (modo && modo !== "semana" ? "&v=" + modo : ""); }
@@ -610,7 +675,7 @@
       '<select id="pg-agr" aria-label="Agrupar">' + Object.keys(AGRUPAR).map(function (k) { return '<option value="' + k + '">' + AGRUPAR[k] + "</option>"; }).join("") + '</select>' +
       '<select id="pg-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + P.S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
       '<input type="date" id="pg-de" aria-label="De" class="' + (filtro.periodo === "datas" ? "" : "oculto") + '"><input type="date" id="pg-ate" aria-label="Até" class="' + (filtro.periodo === "datas" ? "" : "oculto") + '"></div>' +
-      '<div id="pg-res"></div>';
+      '<div id="pg-pagar"></div><div id="pg-res"></div>';
     $("#pg-per").value = filtro.periodo; $("#pg-func").value = filtro.func; $("#pg-agr").value = filtro.agrupar; $("#pg-de").value = filtro.de; $("#pg-ate").value = filtro.ate;
     ["#pg-per", "#pg-agr", "#pg-func", "#pg-de", "#pg-ate"].forEach(function (id) {
       $(id).onchange = function () { filtro.agrupar = $("#pg-agr").value; filtro.periodo = $("#pg-per").value; filtro.func = $("#pg-func").value; filtro.de = $("#pg-de").value; filtro.ate = $("#pg-ate").value; ver(c, P); };
@@ -628,6 +693,7 @@
       var jj = A.janela('<label for="pg-txt">Cole o texto do comprovante</label><textarea id="pg-txt" rows="8"></textarea><div class="acoes"><button class="prim" id="pg-ler">Ler</button></div>', { titulo: "📝 Colar comprovante" });
       $("#pg-ler", jj.el).onclick = function () { var t = $("#pg-txt", jj.el).value; jj.fechar(); if (t.trim()) receber({ arquivos: [], texto: t }, P); };
     };
+    aPagar(ps0());
     var ps = lista(), r = $("#pg-res");
     if (!ps.length) { r.innerHTML = '<div class="cartao vazio">Nenhum pagamento ' + (filtro.forma === "especie" ? "em dinheiro " : filtro.forma === "pix" ? "por Pix " : "") + "neste período.</div>"; return; }
     var tf = totaisPorFunc(ps);
