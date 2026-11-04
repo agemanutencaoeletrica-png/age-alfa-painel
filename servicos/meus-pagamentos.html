@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#14325c">
+<title>Meus pagamentos - AGE</title>
+<link rel="icon" href="icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="estilo.css">
+<style>main { max-width: 560px; } .tot { font-size: 1.5em; font-weight: 800; } td.v, th.v { text-align: right; white-space: nowrap; }</style>
+</head>
+<body>
+<div id="app"><div class="vazio">Carregando...</div></div>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+<script src="comum.js"></script>
+<script>
+// Página do funcionário para conferir o que a AGE já pagou a ele (link pessoal: …/meus-pagamentos.html#t=TOKEN).
+// O servidor só devolve os pagamentos da pessoa dona do link.
+(function () {
+  "use strict";
+  var A = window.AGE, esc = A.esc, app = document.getElementById("app");
+  var TIPOS = { diaria: "Diária", salario: "Salário", adiantamento: "Adiantamento", vale: "Vale", reembolso: "Reembolso", outro: "Outro" };
+  var m = /[#&]t=([A-Za-z0-9_-]+)/.exec(location.hash || ""), token = m ? m[1] : "";
+  function erro(t) { app.innerHTML = '<main><div class="cartao vazio">' + esc(t) + "</div></main>"; }
+  if (!A.configurado()) { A.telaSemConfig(app); return; }
+  if (!token) { erro("Link incompleto. Peça o link de pagamentos ao responsável."); return; }
+  var sb;
+  try { sb = A.cliente({ auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }); } catch (e) { erro(e.message); return; }
+  var ini = function (d) { var x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+  sb.rpc("func_pagamentos", { p_token: token }).then(function (r) {
+    if (r.error) { erro(/inv[aá]lido/i.test(r.error.message) ? "Link inválido ou desativado. Peça um novo link ao responsável." : "Não foi possível carregar agora. Tente de novo em instantes."); return; }
+    var d = r.data || {}, ps = d.pagamentos || [], tot = 0, semanas = {}, ordem = [];
+    ps.forEach(function (p) {
+      var v = Number(p.valor) || 0; if (p.tipo !== "reembolso") tot += v;
+      var k = ini(p.pago_em).getTime(); if (!semanas[k]) { semanas[k] = []; ordem.push(k); } semanas[k].push(p);
+    });
+    ordem.sort(function (a, b) { return b - a; });
+    var reemb = ps.filter(function (p) { return p.tipo === "reembolso"; }).reduce(function (t, p) { return t + Number(p.valor); }, 0);
+    var diaria = Number(d.diaria) || 0, nDia = ps.filter(function (p) { return p.tipo === "diaria"; }).reduce(function (t, p) { return t + Number(p.valor); }, 0);
+    var html = '<main><h1>💰 Meus pagamentos</h1><p class="mudo">' + esc(d.nome || "") + " · " + esc((A.CFG.EMPRESA || {}).nome || "AGE") + "</p>" +
+      '<div class="cartao"><div class="linha"><span>Total recebido</span><span class="dir tot">' + A.dinheiro(tot) + "</span></div>" +
+      (diaria ? '<div class="peq mudo">Valor da diária: <b>' + A.dinheiro(diaria) + "</b>" + (nDia ? " · diárias pagas: <b>" + String(Math.round(nDia / diaria * 10) / 10).replace(".", ",") + "</b>" : "") + "</div>" : "") +
+      (reemb ? '<div class="peq mudo">Reembolsos de material/combustível (não entram no total): ' + A.dinheiro(reemb) + "</div>" : "") + "</div>";
+    if (!ps.length) html += '<div class="cartao vazio">Nenhum pagamento registrado ainda.</div>';
+    ordem.forEach(function (k) {
+      var s = semanas[k], f = new Date(k), fim = new Date(k); fim.setDate(fim.getDate() + 6);
+      html += '<h3 style="margin-top:14px">📅 ' + A.data(f).slice(0, 5) + " a " + A.data(fim) + ' <span class="dir">' + A.dinheiro(s.reduce(function (t, p) { return t + (p.tipo === "reembolso" ? 0 : Number(p.valor)); }, 0)) + "</span></h3>" +
+        '<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Tipo</th><th class="v">Valor</th></tr></thead><tbody>' +
+        s.map(function (p) { var dt = new Date(p.pago_em); return "<tr><td>" + esc(A.data(dt)) + " " + esc(A.hora(dt)) + "</td><td>" + esc(TIPOS[p.tipo] || p.tipo || "") + (p.forma === "especie" ? " · 💵" : " · Pix") + (p.descricao ? '<div class="mudo peq">' + esc(p.descricao) + "</div>" : "") + '</td><td class="v"><b>' + A.dinheiro(p.valor) + "</b></td></tr>"; }).join("") + "</tbody></table></div>";
+    });
+    app.innerHTML = html + '<p class="mudo peq" style="margin-top:16px">Se algum valor estiver diferente do que você recebeu, fale com o responsável.</p></main>';
+  }, function () { erro("Sem internet. Tente de novo."); });
+})();
+</script>
+</body>
+</html>

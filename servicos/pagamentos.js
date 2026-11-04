@@ -541,6 +541,16 @@
     return Object.keys(t).map(function (k) { return { func: k, total: t[k] }; }).sort(function (a, b) { return b.total - a.total; });
   }
   function ehPix(p) { return p.forma !== "especie"; }
+  function funcDe(id) { return (P.S.func || []).filter(function (f) { return f.id === id; })[0] || null; }
+  // link pessoal do funcionário para ele conferir o que já recebeu (página meus-pagamentos.html)
+  function linkPagamentos(f) { return new URL("meus-pagamentos.html", location.href).href.split("#")[0].split("?")[0] + "#t=" + f.token; }
+  // "diária R$ 150,00 · 3,5 diárias pagas" (só quando o valor da diária foi informado na Equipe)
+  function diariasTxt(id, ps, html) {
+    var f = funcDe(id), d = f ? Number(f.diaria) || 0 : 0; if (!d) return "";
+    var pago = ps.filter(function (p) { return (p.funcionario_id || "-") === id && p.tipo === "diaria"; }).reduce(function (t, p) { return t + Number(p.valor); }, 0);
+    var t = "diária " + dinheiro(d) + (pago ? " · " + String(Math.round(pago / d * 10) / 10).replace(".", ",") + " diária(s) paga(s)" : "");
+    return html ? '<div class="mudo peq">' + esc(t) + "</div>" : " (" + t + ")";
+  }
   function soma(ps) { return ps.reduce(function (t, p) { return t + Number(p.valor); }, 0); }
   function fimSemana(ini) { var d = new Date(ini + "T12:00:00"); d.setDate(d.getDate() + 6); return d; }
   function rotuloSemana(ini) { return "Semana de " + A.dataSimples(ini) + " a " + A.data(fimSemana(ini)); }
@@ -589,8 +599,9 @@
     var tf = totaisPorFunc(ps);
     r.innerHTML = '<div class="cartao"><div class="linha"><h3 style="margin:0">Total do período' + (filtro.forma === "especie" ? " · 💵 dinheiro" : filtro.forma === "pix" ? " · Pix" : "") + '</h3><span class="dir" style="font-size:1.3em;font-weight:700">' + dinheiro(soma(ps)) + "</span></div>" +
       '<div class="peq mudo">' + ps.length + " pagamento" + (ps.length > 1 ? "s" : "") + " · Pix: <b>" + dinheiro(soma(ps.filter(ehPix))) + "</b> · 💵 Dinheiro: <b>" + dinheiro(soma(ps.filter(function (p) { return !ehPix(p); }))) + "</b></div>" +
-      '<div class="tabela-caixa" style="margin-top:6px"><table><thead><tr><th>Funcionário</th><th class="num">Pagamentos</th><th class="num">Total</th></tr></thead><tbody>' +
-      tf.map(function (x) { return "<tr><td>" + esc(P.nomeFunc(x.func) || "—") + '</td><td class="num">' + ps.filter(function (p) { return (p.funcionario_id || "-") === x.func; }).length + '</td><td class="num"><b>' + dinheiro(x.total) + "</b></td></tr>"; }).join("") +
+      '<div class="tabela-caixa" style="margin-top:6px"><table><thead><tr><th>Funcionário</th><th class="num">Pagamentos</th><th class="num">Total</th><th></th></tr></thead><tbody>' +
+      tf.map(function (x) { return "<tr><td>" + esc(P.nomeFunc(x.func) || "—") + diariasTxt(x.func, ps, true) + '</td><td class="num">' + ps.filter(function (p) { return (p.funcionario_id || "-") === x.func; }).length + '</td><td class="num"><b>' + dinheiro(x.total) + "</b></td><td>" +
+        (funcDe(x.func) && funcDe(x.func).token ? '<button class="peq" data-pg-link="' + x.func + '" title="Copia o link de pagamentos deste funcionário">🔗 Link</button>' : "") + "</td></tr>"; }).join("") +
       "</tbody></table></div>" +
       '<div class="acoes"><button id="pg-csv">⬇ Planilha (CSV)</button><button id="pg-comp">📤 Compartilhar relatório</button></div></div>' +
       porSemana(ps).map(function (s) {
@@ -604,6 +615,15 @@
               (p.comprovante ? '<button class="peq" data-pg-comp="' + p.id + '">🧾</button> ' : "") + '<button class="peq" data-pg-ed="' + p.id + '">Editar</button></td></tr>';
           }).join("") + "</tbody></table></div>";
       }).join("");
+    $$("[data-pg-link]", r).forEach(function (b) {
+      b.onclick = function () {
+        var f = funcDe(b.dataset.pgLink), link = linkPagamentos(f), msg = "Olá, " + String(f.nome).split(" ")[0] + "! Aqui você confere os pagamentos que já fizemos para você:\n" + link;
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(function () { A.avisar("Link copiado. Cole no WhatsApp do " + String(f.nome).split(" ")[0], "ok"); }, function () { window.prompt("Copie o link:", link); });
+        else window.prompt("Copie o link:", link);
+        if (f.telefone && A.linkZap) b.insertAdjacentHTML("afterend", ' <a class="botao zap peq" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msg)) + '">📲 WhatsApp</a>');
+        b.disabled = true;
+      };
+    });
     $("#pg-csv").onclick = function () { baixarCsv(ps); };
     $("#pg-comp").onclick = function () { A.compartilhar({ titulo: "Pagamentos da equipe", texto: textoRelatorio(ps) }); };
     $$("[data-pg-comp]", r).forEach(function (b) {
@@ -646,7 +666,7 @@
     var t = "*" + ((A.CFG.EMPRESA || {}).nome || "AGE") + " — Pagamentos da equipe*\n";
     var pr = periodo();
     if (filtro.periodo !== "tudo") t += A.data(pr.de) + " a " + A.data(new Date(pr.ate.getTime() - 864e5)) + "\n";
-    t += "\n*Total: " + dinheiro(soma(ps)) + "*\n" + totaisPorFunc(ps).map(function (x) { return "• " + (P.nomeFunc(x.func) || "—") + ": " + dinheiro(x.total); }).join("\n") + "\n";
+    t += "\n*Total: " + dinheiro(soma(ps)) + "*\n" + totaisPorFunc(ps).map(function (x) { return "• " + (P.nomeFunc(x.func) || "—") + ": " + dinheiro(x.total) + diariasTxt(x.func, ps, false); }).join("\n") + "\n";
     porSemana(ps).forEach(function (s) {
       t += "\n📅 " + rotuloSemana(s.inicio) + " — " + dinheiro(soma(s.pags)) + "\n";
       s.pags.forEach(function (p) { var d = new Date(p.pago_em); t += A.data(d).slice(0, 5) + " " + A.hora(d) + " · " + (P.nomeFunc(p.funcionario_id) || "—") + " · " + (ehPix(p) ? "Pix" : "Dinheiro") + " · " + (TIPOS[p.tipo] || "") + " · " + dinheiro(p.valor) + "\n"; });

@@ -478,3 +478,8 @@ No editor do orçamento, abra **🏛 Impostos embutidos**. Ao buscar o CNPJ do c
 - **Valores SEM impostos**: você digita o valor líquido; o app divide por (1 − imposto%) e cada valor que o cliente vê já vem com o imposto dentro. O total do PDF/WhatsApp/impressão é o total com imposto, **sem nenhuma linha de imposto**.
 - **Valores COM impostos**: o total não muda; o app só mostra para você quanto é imposto e quanto sobra.
 Só você vê, no editor: imposto embutido e líquido. Os itens guardam o valor digitado (líquido). Percentuais são estimativa: confirme com o contador. Rode o `supabase.sql` (coluna `orcamentos.impostos`).
+
+## 💰 Diária do funcionário e link de pagamentos
+- **Equipe → Editar**: campo **Valor da diária (R$)**. Em **Pagamentos**, cada funcionário mostra "diária R$ X · N diária(s) paga(s)" (soma dos pagamentos do tipo Diária ÷ valor da diária) e o mesmo aparece no relatório compartilhado.
+- **Pagamentos → botão 🔗 Link** na linha do funcionário: copia o link pessoal `meus-pagamentos.html#t=…` (e mostra 📲 WhatsApp com a mensagem pronta). A página abre no celular dele e mostra só os pagamentos dele (por semana, total, diárias pagas), sempre atualizada. Se gerar novo link do funcionário (Equipe → 🔄), o link de pagamentos antigo também para de funcionar.
+- Rode o `supabase.sql` (coluna `funcionarios.diaria` e função `func_pagamentos`).
