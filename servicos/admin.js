@@ -2309,7 +2309,16 @@
     var txt = semAcento([String(o.numero).padStart(4, "0"), o.cliente, o.documento, soDig(o.documento), o.endereco, o.telefone, catNome(o.categoria)].concat((o.itens || []).map(function (i) { return i.descricao; })).join(" "));
     return b.split(/\s+/).every(function (p) { return txt.indexOf(p) >= 0; });
   }
+  var modoOrc = "lista";   // "lista" (orçamentos) ou "smbh" (chamados do Supermercados BH, separados)
   function verOrcamentos(c) {
+    var troca = '<div class="filtros"><button class="' + (modoOrc !== "smbh" ? "prim" : "") + '" data-ormodo="lista">📄 Orçamentos</button><button class="' + (modoOrc === "smbh" ? "prim" : "") + '" data-ormodo="smbh">🛒 Supermercados BH · chamados por loja</button></div>';
+    if (modoOrc === "smbh" && window.AGE_FECH && window.AGE_FECH.porLoja) {
+      c.innerHTML = troca + '<div id="ob-smbh"></div>';
+      window.AGE_FECH.porLoja($("#ob-smbh"), P);
+      $$("[data-ormodo]", c).forEach(function (b) { b.onclick = function () { modoOrc = b.dataset.ormodo; verOrcamentos(c); }; });
+      return;
+    }
+    modoOrc = "lista";
     c.innerHTML = '<div class="cab-secao"><h2>Orçamentos</h2><span><button class="prim" id="bo-novo">+ Novo orçamento</button> <button id="bo-mat">🧱 + Orçamento de materiais</button> <button id="bo-proj" title="Proposta técnico-comercial em PDF: SPDA, aterramento, diagrama unifilar...">📐 Proposta de projeto</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-6px">Só você vê esta área. Os funcionários nunca veem valores.</p>' +
       (S.orc.length ? '<div class="filtros">' + [["", "Todos"], ["servico", "🔧 Serviços"], ["materiais", "🧱 Materiais"]].map(function (f) {
@@ -2319,6 +2328,8 @@
         '<div class="cartao tabela-caixa"><table><thead><tr><th>Nº</th><th>Cliente</th><th class="esconde-cel">Área</th><th>Situação</th><th class="num">Total</th><th class="esconde-cel">Data</th><th></th></tr></thead><tbody id="bo-lista"></tbody></table></div>' +
         '<div id="bo-nada" class="vazio oculto">Nenhum orçamento com essa busca.</div>'
         : '<div class="cartao vazio">Nenhum orçamento ainda. Crie um aqui ou a partir do relatório de um funcionário.</div>');
+    c.insertAdjacentHTML("afterbegin", troca);
+    $$("[data-ormodo]", c).forEach(function (b) { b.onclick = function () { modoOrc = b.dataset.ormodo; verOrcamentos(c); }; });
     $("#bo-novo").onclick = function () { editarOrcamento(null, {}); };
     $("#bo-mat").onclick = function () { editarOrcamento(null, { tipo: "materiais" }); };
     if ($("#bo-proj")) $("#bo-proj").onclick = function () { window.AGE_PROJ.abrir(P); };

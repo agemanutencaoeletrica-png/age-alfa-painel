@@ -512,3 +512,10 @@ Em **Notas e resultado → 📈 Fluxo de caixa**: o saldo do banco que você inf
 
 ## ✉ E-mail do funcionário
 Em **Equipe → Editar** há o campo **E-mail** (confere o formato e grava em minúsculas). Com e-mail cadastrado, a linha do funcionário mostra o e-mail e o botão **✉ Enviar por e-mail**, que abre o seu e-mail com o link pessoal pronto. Rode o `supabase.sql` (coluna `funcionarios.email`); sem ela o app avisa e grava o resto.
+
+## 🛒 Supermercados BH dentro de Orçamentos (valor de cada chamado por loja)
+Em **Orçamentos → 🛒 Supermercados BH · chamados por loja**: só os chamados do Supermercados BH, **separados dos outros orçamentos**, agrupados **loja por loja** com chamado, data de abertura, serviço, situação (aberto, em andamento, concluído, finalizado no portal) e o **valor de cada chamado**, com subtotal por loja e total geral.
+- **💲 informar** (ou o valor): digita o valor do chamado. Ele é gravado no mesmo lugar do **📊 Fechamento mensal**, então os dois mostram sempre o mesmo valor.
+- Se o chamado tem um orçamento ligado, aparece o nº e o total dele, e **↳ usar R$ …** copia esse total para o valor do chamado.
+- Filtros por mês, situação (em aberto, concluídos, finalizados, sem valor) e busca por loja/chamado/serviço; **📋 Colar do portal** atualiza valores e finalizados; **⬇ Planilha (CSV)** e **📤 Compartilhar por loja**.
+- Não precisa rodar SQL.
