@@ -3085,7 +3085,11 @@
       var t = calcOrc(M), linhas = M.itens.filter(function (i) { return String(i.descricao || "").trim() && (i.tipo !== "material" || t.mc); }).map(function (i) {
         return "- " + String(i.descricao).trim() + " (" + A.numero(i.qtd, 3) + " " + (i.un || "un") + ")"; });
       if (!(t.total > 0)) { A.avisar("O orçamento está sem valor: preencha os itens antes de preparar a nota.", "erro"); return; }
-      window.AGE_NFSE.abrir(P, { cliente: M.cliente, documento: M.documento, endereco: M.endereco, municipio: M.impostos && M.impostos.municipio || "", iss: M.impostos && M.impostos.iss || 0,
+      // município: o do bloco de impostos; senão, o "Cidade/UF" que está no endereço (vem da busca do CNPJ)
+      var mun = M.impostos && M.impostos.municipio || "", cid = !mun && String(M.endereco || "").match(/([A-Za-zÀ-ú][A-Za-zÀ-ú' .]+?)\s*\/\s*([A-Z]{2})\b/);
+      if (cid) mun = cid[1].trim() + "/" + cid[2];
+      var iss0 = M.impostos && M.impostos.iss || (mun ? issDe(mun) || 0 : 0);
+      window.AGE_NFSE.abrir(P, { cliente: M.cliente, documento: M.documento, endereco: M.endereco, municipio: mun, iss: iss0,
         valor: t.total, descricao: "Serviços de " + (CAT_ORC[M.categoria] || "manutenção").toLowerCase() + " conforme orçamento" + (M.numero ? " nº " + String(M.numero).padStart(4, "0") : "") + ":\n" + linhas.join("\n") });
     };
     $("#eo2-imprimir", el).onclick = function () {
