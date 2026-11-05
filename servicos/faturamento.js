@@ -272,7 +272,7 @@
     c.innerHTML = '<div class="cab-secao"><h2>💼 Notas e resultado</h2><span><button class="prim" id="ft-arq-b">📷 Nota de serviço</button> <button id="ft-dep">💰 Recebi um depósito</button> <button id="ft-sn" title="Anexo e faturamento dos últimos 12 meses: o app calcula o DAS de cada nota">⚙ Simples</button> <button id="ft-mao">➕ Lançar à mão</button></span></div>' +
       '<input type="file" id="ft-arq" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml,.zip,application/zip" multiple class="oculto">' +
       '<p class="mudo peq" style="margin-top:-4px">Lance a nota fiscal de serviço que você emitiu (foto, PDF ou XML da prefeitura). Em <b>Resultado por obra</b>: o que entrou menos material, mão de obra e despesas avulsas.</p>' +
-      '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"], ["caixa", "💵 Caixa"], ["contador", "🧮 Contador"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
+      '<div class="filtros">' + [["notas", "🧾 Notas de serviço"], ["empresas", "🏢 Por empresa"], ["resultado", "📊 Resultado por obra"], ["caixa", "💵 Caixa"], ["contador", "🧮 Contador"], ["fluxo", "📈 Fluxo de caixa"]].map(function (x) { return '<button class="' + (filtro.aba === x[0] ? "prim" : "") + '" data-ftaba="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>" +
       '<div class="filtros"><select id="ft-per" aria-label="Período"><option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="ano">Este ano</option><option value="tudo">Tudo</option></select>' +
       (filtro.aba !== "resultado" && filtro.aba !== "caixa" && filtro.aba !== "contador" ? '<select id="ft-sit" aria-label="Situação"><option value="">Todas</option><option value="areceber">⏳ A receber</option><option value="recebido">✅ Recebidas</option></select>' : "") +
       '<input type="search" id="ft-busca" placeholder="Buscar cliente, obra, nº da nota..."></div>' + htmlRasc() + '<div id="ft-res"></div>';
@@ -302,7 +302,7 @@
     desenhar();
     function desenhar() {
       var r = $("#ft-res"), m = function () { ver(c, P); };
-      if (filtro.aba === "contador") contador(r); else if (filtro.aba === "caixa") caixa(r); else if (filtro.aba === "resultado") resultado(r, m); else if (filtro.aba === "empresas") empresas(r, m, c); else notas(r, m);
+      if (filtro.aba === "fluxo") { if (window.AGE_FLUXO) window.AGE_FLUXO.ver(r, P); else r.innerHTML = '<div class="aviso">Atualize a página (Ctrl+Shift+R) para abrir o fluxo de caixa.</div>'; } else if (filtro.aba === "contador") contador(r); else if (filtro.aba === "caixa") caixa(r); else if (filtro.aba === "resultado") resultado(r, m); else if (filtro.aba === "empresas") empresas(r, m, c); else notas(r, m);
     }
   }
   // ⚙ Simples Nacional: anexo e faturamento dos últimos 12 meses (RBT12); com isso o app calcula o DAS estimado de cada nota
@@ -1456,7 +1456,7 @@
     P = ctx; var fs = arquivosDoCompartilhar(rc);
     if (fs.length) loteDepositos(fs, depois);
   }
-  window.AGE_FAT = { ver: ver, lancar: function (ctx, lida, depois) { P = ctx; formulario({ lida: lida }, depois || function () {}); }, dasPct: function () { var d = dasEstimado(100, 1); return d ? { pct: d.pct, semIss: d.semIss, cheio: d.info.efetiva } : null; }, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, notasCompartilhadas: notasCompartilhadas, depositosCompartilhados: depositosCompartilhados, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
+  window.AGE_FAT = { ver: ver, dasDaNota: function (n) { var c = contas(n); if (c.emp) return c.emp; var d = dasEstimado(c.bruto, Number(n.retencoes && n.retencoes.iss) || 0); return d ? d.valor : 0; }, lancar: function (ctx, lida, depois) { P = ctx; formulario({ lida: lida }, depois || function () {}); }, dasPct: function () { var d = dasEstimado(100, 1); return d ? { pct: d.pct, semIss: d.semIss, cheio: d.info.efetiva } : null; }, lerNFSe: lerNFSe, motivoRecusa: motivoRecusa, notasCompartilhadas: notasCompartilhadas, depositosCompartilhados: depositosCompartilhados, resolver: function (ctx, t) { P = ctx; return resolver(t); }, rotuloDe: function (ctx, x) { P = ctx; return rotuloDe(x); },
     // 🏦 extrato do banco em PDF: entradas (créditos) e saídas (débitos) com data, descrição, nome, CPF/CNPJ e valor
     lerExtrato: function (ctx, f) {
       P = ctx;
