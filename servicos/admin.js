@@ -4609,9 +4609,10 @@
       (S.func.length ? S.func.map(function (f) {
         return '<div class="cartao"' + (f.ativo ? "" : ' style="opacity:.6"') + '><div class="linha"><h3>' + esc(f.nome) + "</h3>" +
           '<span class="selo ' + (f.area === "ambos" ? "" : f.area) + '">' + esc(A.AREA[f.area]) + "</span>" + (f.ativo ? "" : '<span class="selo critico">desativado</span>') +
-          '<span class="dir peq mudo">' + esc(f.telefone || "sem telefone") + "</span></div>" +
+          '<span class="dir peq mudo">' + esc(f.telefone || "sem telefone") + (f.email ? " · " + esc(f.email) : "") + "</span></div>" +
           (f.ativo ? '<div class="acoes"><button class="peq" data-copiar="' + f.id + '">🔗 Copiar link</button>' +
             (f.telefone ? '<a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgLink(f))) + '">📲 Enviar link</a>' : "") +
+            (f.email ? '<a class="botao peq" href="mailto:' + esc(f.email) + "?subject=" + encodeURIComponent("Seu link do app da AGE") + "&body=" + encodeURIComponent(msgLink(f).replace(/\*/g, "")) + '">✉ Enviar por e-mail</a>' : "") +
             '<button class="peq" data-editar="' + f.id + '">Editar</button>' + botaoPagtos(f) + "</div>" : '<div class="acoes"><button class="peq" data-editar="' + f.id + '">Editar / reativar</button>' + botaoPagtos(f) + "</div>") + "</div>";
       }).join("") : '<div class="cartao vazio">Cadastre o primeiro funcionário.</div>') +
       '<p class="mudo peq">Cada funcionário tem um link próprio e secreto. Se alguém perder o celular ou sair da empresa, use “Editar” → “Gerar novo link” ou desative: o link antigo para de funcionar na hora.</p>' +
@@ -4692,6 +4693,7 @@
     var f = id ? porId(S.func, id) : null;
     var j = A.janela('<label for="ef-nome">Nome *</label><input id="ef-nome" maxlength="120">' +
       '<label for="ef-tel">WhatsApp (com DDD)</label><input id="ef-tel" type="tel" maxlength="40" placeholder="(11) 91234-5678">' +
+      '<label for="ef-email">E-mail</label><input id="ef-email" type="email" inputmode="email" autocapitalize="none" maxlength="160" placeholder="nome@exemplo.com">' +
       '<label for="ef-pix">Chave Pix (para o app reconhecer os comprovantes)</label><input id="ef-pix" maxlength="120" placeholder="Telefone, CPF, e-mail ou chave aleatória">' +
       '<label for="ef-diaria">Valor da diária (R$)</label><input id="ef-diaria" inputmode="decimal" placeholder="Ex.: 150,00">' +
       '<label for="ef-area">Área</label><select id="ef-area"><option value="eletrica">Elétrica</option><option value="pintura">Pintura</option><option value="ambos">Elétrica e pintura</option></select>' +
@@ -4701,6 +4703,7 @@
       { titulo: f ? "Editar funcionário" : "Novo funcionário" });
     var el = j.el;
     $("#ef-nome", el).value = f ? f.nome : ""; $("#ef-tel", el).value = f ? f.telefone || "" : ""; $("#ef-area", el).value = f ? f.area : "eletrica"; $("#ef-pix", el).value = f ? f.pix || "" : "";
+    $("#ef-email", el).value = f ? f.email || "" : "";
     $("#ef-diaria", el).value = f && f.diaria ? Number(f.diaria).toFixed(2).replace(".", ",") : "";
     if (f) $("#ef-ativo", el).checked = f.ativo;
     $("#ef-salvar", el).onclick = function () {
@@ -4709,15 +4712,19 @@
       var b = this; A.ocupado(b, true, "Salvando...");
       var dados = { nome: nome, telefone: nulo(val(el, "#ef-tel")), area: $("#ef-area", el).value };
       if (val(el, "#ef-pix") || (f && f.pix)) dados.pix = nulo(val(el, "#ef-pix"));
+      var em = val(el, "#ef-email").toLowerCase();
+      if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { A.ocupado(b, false); A.avisar("E-mail inválido: confira (ex.: nome@gmail.com).", "erro"); return; }
+      if (!S.semEmailFunc && (em || (f && f.email))) dados.email = nulo(em);
       var dia = A.lerNumero($("#ef-diaria", el).value) || 0;
       if (!S.semDiaria && (dia > 0 || (f && f.diaria))) dados.diaria = dia > 0 ? Math.round(dia * 100) / 100 : null;
       if (f) dados.ativo = $("#ef-ativo", el).checked;
       function gravarF(d) { return q(f ? sb.from("funcionarios").update(d).eq("id", f.id).select().single() : sb.from("funcionarios").insert(d).select().single()); }
       gravarF(dados).catch(function (e) {
         // banco ainda sem a coluna da diária: grava o resto e avisa para rodar o SQL
-        if (!("diaria" in dados) || !/diaria/.test(A.msgErro(e) + " " + (e && e.message))) throw e;
-        S.semDiaria = true; delete dados.diaria;
-        A.avisar("A diária não foi gravada: rode o supabase.sql no Supabase (coluna diaria dos funcionários).", "erro");
+        var msgE = A.msgErro(e) + " " + (e && e.message), faltou = ["diaria", "email"].filter(function (k) { return k in dados && new RegExp(k).test(msgE); });
+        if (!faltou.length) throw e;
+        faltou.forEach(function (k) { if (k === "diaria") S.semDiaria = true; else S.semEmailFunc = true; delete dados[k]; });
+        A.avisar("Parte do cadastro (" + faltou.map(function (k) { return k === "diaria" ? "diária" : "e-mail"; }).join(", ") + ") não foi gravada: rode o supabase.sql no Supabase (colunas novas dos funcionários).", "erro");
         return gravarF(dados);
       }).then(function (n) {
         trocar(S.func, n);

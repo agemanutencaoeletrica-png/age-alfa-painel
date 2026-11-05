@@ -311,6 +311,7 @@ create table if not exists public.pagamentos (
 alter table public.pagamentos add column if not exists forma text not null default 'pix';
 alter table public.funcionarios add column if not exists pix text;   -- chave Pix: o app reconhece os comprovantes
 alter table public.funcionarios add column if not exists diaria numeric(10,2);   -- valor combinado da diária
+alter table public.funcionarios add column if not exists email text;   -- e-mail do funcionário
 create unique index if not exists pagamentos_trans_idx on public.pagamentos (id_transacao) where id_transacao is not null;
 create index if not exists pagamentos_func_idx on public.pagamentos (funcionario_id, pago_em);
 

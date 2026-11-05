@@ -509,3 +509,6 @@ Em **Notas e resultado → 📈 Fluxo de caixa**: o saldo do banco que você inf
 - Avisa em vermelho se o saldo ficar **negativo** e quando; mostra o menor saldo do período. Atualize o saldo do banco de vez em quando.
 - Não inclui sozinho o pagamento da equipe pelo ponto nem o honorário do contador: lance como saída repetida.
 - Rode o `supabase.sql` (tabela `fluxo_previsto`); o arquivo `fluxo-de-caixa.sql` tem só essa parte.
+
+## ✉ E-mail do funcionário
+Em **Equipe → Editar** há o campo **E-mail** (confere o formato e grava em minúsculas). Com e-mail cadastrado, a linha do funcionário mostra o e-mail e o botão **✉ Enviar por e-mail**, que abre o seu e-mail com o link pessoal pronto. Rode o `supabase.sql` (coluna `funcionarios.email`); sem ela o app avisa e grava o resto.
