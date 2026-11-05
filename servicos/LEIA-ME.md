@@ -495,3 +495,9 @@ Em **Pagamentos**, o quadro **A pagar pelo ponto** mostra, para cada funcionári
 - **Por dia**: dias com ponto × diária inteira.
 - Dias e horas podem ser corrigidos à mão (campos do quadro; ficam guardados neste aparelho). Chegada sem saída não conta horas e aparece em vermelho. Reembolso não entra no "pago".
 - O resumo em texto enviado ao funcionário inclui essa conta quando ela estiver calculada na tela. O ponto lido vai até ~2 meses para trás quando o período é "Tudo".
+
+## 🧾 Nota fiscal (assistente de NFS-e)
+No editor do orçamento, **🧾 Preparar nota fiscal** monta os dados da nota: tomador (CNPJ/nome/endereço do cliente), município, **código do serviço** (BH 31.01.01 e Betim 07.02.01, das notas já emitidas; município novo: digite uma vez e fica guardado), descrição do serviço (itens do orçamento), valor (o **total do orçamento**, já com o imposto embutido) e ISS do município, com opção de **ISS retido pelo cliente**.
+- Cada campo tem **📋 Copiar**, e **Copiar tudo** copia a nota inteira. **🌐 Abrir o Emissor Nacional** abre o portal oficial (nfse.gov.br).
+- **O app não emite a nota sozinho**: a emissão é feita no portal, com o login/certificado da AGE. Depois de emitir, toque em **✅ Registrar a nota emitida**: abre a nota em Notas e resultado já preenchida (tomador, valor bruto, ISS retido), para você colocar o número e salvar. Aí entram o DAS, o resultado e os recebimentos.
+- Emissão automática (sem abrir o portal) exige um serviço pago de emissão (Focus NFe, eNotas, PlugNotas) e o certificado digital A1; fica para uma próxima etapa, se você quiser.
