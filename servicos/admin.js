@@ -2309,7 +2309,16 @@
     var txt = semAcento([String(o.numero).padStart(4, "0"), o.cliente, o.documento, soDig(o.documento), o.endereco, o.telefone, catNome(o.categoria)].concat((o.itens || []).map(function (i) { return i.descricao; })).join(" "));
     return b.split(/\s+/).every(function (p) { return txt.indexOf(p) >= 0; });
   }
+  var modoOrc = "lista";   // "lista" (orçamentos) ou "smbh" (chamados do Supermercados BH, separados)
   function verOrcamentos(c) {
+    var troca = '<div class="filtros"><button class="' + (modoOrc !== "smbh" ? "prim" : "") + '" data-ormodo="lista">📄 Orçamentos</button><button class="' + (modoOrc === "smbh" ? "prim" : "") + '" data-ormodo="smbh">🛒 Supermercados BH · chamados por loja</button></div>';
+    if (modoOrc === "smbh" && window.AGE_FECH && window.AGE_FECH.porLoja) {
+      c.innerHTML = troca + '<div id="ob-smbh"></div>';
+      window.AGE_FECH.porLoja($("#ob-smbh"), P);
+      $$("[data-ormodo]", c).forEach(function (b) { b.onclick = function () { modoOrc = b.dataset.ormodo; verOrcamentos(c); }; });
+      return;
+    }
+    modoOrc = "lista";
     c.innerHTML = '<div class="cab-secao"><h2>Orçamentos</h2><span><button class="prim" id="bo-novo">+ Novo orçamento</button> <button id="bo-mat">🧱 + Orçamento de materiais</button> <button id="bo-proj" title="Proposta técnico-comercial em PDF: SPDA, aterramento, diagrama unifilar...">📐 Proposta de projeto</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-6px">Só você vê esta área. Os funcionários nunca veem valores.</p>' +
       (S.orc.length ? '<div class="filtros">' + [["", "Todos"], ["servico", "🔧 Serviços"], ["materiais", "🧱 Materiais"]].map(function (f) {
@@ -2319,6 +2328,8 @@
         '<div class="cartao tabela-caixa"><table><thead><tr><th>Nº</th><th>Cliente</th><th class="esconde-cel">Área</th><th>Situação</th><th class="num">Total</th><th class="esconde-cel">Data</th><th></th></tr></thead><tbody id="bo-lista"></tbody></table></div>' +
         '<div id="bo-nada" class="vazio oculto">Nenhum orçamento com essa busca.</div>'
         : '<div class="cartao vazio">Nenhum orçamento ainda. Crie um aqui ou a partir do relatório de um funcionário.</div>');
+    c.insertAdjacentHTML("afterbegin", troca);
+    $$("[data-ormodo]", c).forEach(function (b) { b.onclick = function () { modoOrc = b.dataset.ormodo; verOrcamentos(c); }; });
     $("#bo-novo").onclick = function () { editarOrcamento(null, {}); };
     $("#bo-mat").onclick = function () { editarOrcamento(null, { tipo: "materiais" }); };
     if ($("#bo-proj")) $("#bo-proj").onclick = function () { window.AGE_PROJ.abrir(P); };
@@ -4609,9 +4620,10 @@
       (S.func.length ? S.func.map(function (f) {
         return '<div class="cartao"' + (f.ativo ? "" : ' style="opacity:.6"') + '><div class="linha"><h3>' + esc(f.nome) + "</h3>" +
           '<span class="selo ' + (f.area === "ambos" ? "" : f.area) + '">' + esc(A.AREA[f.area]) + "</span>" + (f.ativo ? "" : '<span class="selo critico">desativado</span>') +
-          '<span class="dir peq mudo">' + esc(f.telefone || "sem telefone") + "</span></div>" +
+          '<span class="dir peq mudo">' + esc(f.telefone || "sem telefone") + (f.email ? " · " + esc(f.email) : "") + "</span></div>" +
           (f.ativo ? '<div class="acoes"><button class="peq" data-copiar="' + f.id + '">🔗 Copiar link</button>' +
             (f.telefone ? '<a class="botao peq zap" target="_blank" rel="noopener" href="' + esc(A.linkZap(f.telefone, msgLink(f))) + '">📲 Enviar link</a>' : "") +
+            (f.email ? '<a class="botao peq" href="mailto:' + esc(f.email) + "?subject=" + encodeURIComponent("Seu link do app da AGE") + "&body=" + encodeURIComponent(msgLink(f).replace(/\*/g, "")) + '">✉ Enviar por e-mail</a>' : "") +
             '<button class="peq" data-editar="' + f.id + '">Editar</button>' + botaoPagtos(f) + "</div>" : '<div class="acoes"><button class="peq" data-editar="' + f.id + '">Editar / reativar</button>' + botaoPagtos(f) + "</div>") + "</div>";
       }).join("") : '<div class="cartao vazio">Cadastre o primeiro funcionário.</div>') +
       '<p class="mudo peq">Cada funcionário tem um link próprio e secreto. Se alguém perder o celular ou sair da empresa, use “Editar” → “Gerar novo link” ou desative: o link antigo para de funcionar na hora.</p>' +
@@ -4692,6 +4704,7 @@
     var f = id ? porId(S.func, id) : null;
     var j = A.janela('<label for="ef-nome">Nome *</label><input id="ef-nome" maxlength="120">' +
       '<label for="ef-tel">WhatsApp (com DDD)</label><input id="ef-tel" type="tel" maxlength="40" placeholder="(11) 91234-5678">' +
+      '<label for="ef-email">E-mail</label><input id="ef-email" type="email" inputmode="email" autocapitalize="none" maxlength="160" placeholder="nome@exemplo.com">' +
       '<label for="ef-pix">Chave Pix (para o app reconhecer os comprovantes)</label><input id="ef-pix" maxlength="120" placeholder="Telefone, CPF, e-mail ou chave aleatória">' +
       '<label for="ef-diaria">Valor da diária (R$)</label><input id="ef-diaria" inputmode="decimal" placeholder="Ex.: 150,00">' +
       '<label for="ef-area">Área</label><select id="ef-area"><option value="eletrica">Elétrica</option><option value="pintura">Pintura</option><option value="ambos">Elétrica e pintura</option></select>' +
@@ -4701,6 +4714,7 @@
       { titulo: f ? "Editar funcionário" : "Novo funcionário" });
     var el = j.el;
     $("#ef-nome", el).value = f ? f.nome : ""; $("#ef-tel", el).value = f ? f.telefone || "" : ""; $("#ef-area", el).value = f ? f.area : "eletrica"; $("#ef-pix", el).value = f ? f.pix || "" : "";
+    $("#ef-email", el).value = f ? f.email || "" : "";
     $("#ef-diaria", el).value = f && f.diaria ? Number(f.diaria).toFixed(2).replace(".", ",") : "";
     if (f) $("#ef-ativo", el).checked = f.ativo;
     $("#ef-salvar", el).onclick = function () {
@@ -4709,15 +4723,19 @@
       var b = this; A.ocupado(b, true, "Salvando...");
       var dados = { nome: nome, telefone: nulo(val(el, "#ef-tel")), area: $("#ef-area", el).value };
       if (val(el, "#ef-pix") || (f && f.pix)) dados.pix = nulo(val(el, "#ef-pix"));
+      var em = val(el, "#ef-email").toLowerCase();
+      if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { A.ocupado(b, false); A.avisar("E-mail inválido: confira (ex.: nome@gmail.com).", "erro"); return; }
+      if (!S.semEmailFunc && (em || (f && f.email))) dados.email = nulo(em);
       var dia = A.lerNumero($("#ef-diaria", el).value) || 0;
       if (!S.semDiaria && (dia > 0 || (f && f.diaria))) dados.diaria = dia > 0 ? Math.round(dia * 100) / 100 : null;
       if (f) dados.ativo = $("#ef-ativo", el).checked;
       function gravarF(d) { return q(f ? sb.from("funcionarios").update(d).eq("id", f.id).select().single() : sb.from("funcionarios").insert(d).select().single()); }
       gravarF(dados).catch(function (e) {
         // banco ainda sem a coluna da diária: grava o resto e avisa para rodar o SQL
-        if (!("diaria" in dados) || !/diaria/.test(A.msgErro(e) + " " + (e && e.message))) throw e;
-        S.semDiaria = true; delete dados.diaria;
-        A.avisar("A diária não foi gravada: rode o supabase.sql no Supabase (coluna diaria dos funcionários).", "erro");
+        var msgE = A.msgErro(e) + " " + (e && e.message), faltou = ["diaria", "email"].filter(function (k) { return k in dados && new RegExp(k).test(msgE); });
+        if (!faltou.length) throw e;
+        faltou.forEach(function (k) { if (k === "diaria") S.semDiaria = true; else S.semEmailFunc = true; delete dados[k]; });
+        A.avisar("Parte do cadastro (" + faltou.map(function (k) { return k === "diaria" ? "diária" : "e-mail"; }).join(", ") + ") não foi gravada: rode o supabase.sql no Supabase (colunas novas dos funcionários).", "erro");
         return gravarF(dados);
       }).then(function (n) {
         trocar(S.func, n);
