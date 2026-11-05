@@ -708,6 +708,20 @@ drop trigger if exists propostas_atualizado_em on public.propostas;
 create trigger propostas_atualizado_em before update on public.propostas
   for each row execute function public._tocar_atualizado_em();
 
+-- Fluxo de caixa projetado: saldo do banco e entradas/saídas previstas que você lança (contas fixas, parcelamento, combinados)
+create table if not exists public.fluxo_previsto (
+  id          uuid primary key default gen_random_uuid(),
+  tipo        text not null check (tipo in ('entrada', 'saida', 'saldo')),
+  data        date not null,
+  valor       numeric(12,2) not null check (tipo = 'saldo' or valor > 0),   -- o saldo do banco pode ser negativo
+  descricao   text,
+  recorrencia text check (recorrencia in ('semanal', 'quinzenal', 'mensal')),   -- vazio = acontece uma vez
+  ate         date,                      -- até quando repete (opcional)
+  baixado     boolean not null default false,   -- já foi feito (some da projeção)
+  criado_em   timestamptz not null default now()
+);
+create index if not exists fluxo_previsto_data_idx on public.fluxo_previsto (data);
+
 -- ---------- Regras de acesso (RLS) ----------
 
 alter table public.admins enable row level security;
@@ -719,7 +733,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

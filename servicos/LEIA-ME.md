@@ -501,3 +501,11 @@ No editor do orçamento, **🧾 Preparar nota fiscal** monta os dados da nota: t
 - Cada campo tem **📋 Copiar**, e **Copiar tudo** copia a nota inteira. **🌐 Abrir o Emissor Nacional** abre o portal oficial (nfse.gov.br).
 - **O app não emite a nota sozinho**: a emissão é feita no portal, com o login/certificado da AGE. Depois de emitir, toque em **✅ Registrar a nota emitida**: abre a nota em Notas e resultado já preenchida (tomador, valor bruto, ISS retido), para você colocar o número e salvar. Aí entram o DAS, o resultado e os recebimentos.
 - Emissão automática (sem abrir o portal) exige um serviço pago de emissão (Focus NFe, eNotas, PlugNotas) e o certificado digital A1; fica para uma próxima etapa, se você quiser.
+
+## 📈 Fluxo de caixa projetado
+Em **Notas e resultado → 📈 Fluxo de caixa**: o saldo do banco que você informar (🏦) + entradas previstas − saídas previstas, semana a semana e lançamento a lançamento, olhando 30, 60 ou 90 dias para frente.
+- **Entram sozinhos**: notas emitidas ainda não recebidas (na data da emissão + prazo médio, padrão 30 dias; atrasadas contam como recebidas hoje), compras a pagar (no vencimento) e o **DAS estimado** (dia 20 do mês seguinte, estimativa; dá para desligar em ⚙ Ajustes).
+- **Você lança**: ➕ entradas e ➖ saídas previstas (aluguel, parcelamento, DARF, contador, equipe, combinados), que podem **repetir** toda semana, a cada 15 dias ou todo mês. **✔ Já foi feito** tira da projeção.
+- Avisa em vermelho se o saldo ficar **negativo** e quando; mostra o menor saldo do período. Atualize o saldo do banco de vez em quando.
+- Não inclui sozinho o pagamento da equipe pelo ponto nem o honorário do contador: lance como saída repetida.
+- Rode o `supabase.sql` (tabela `fluxo_previsto`); o arquivo `fluxo-de-caixa.sql` tem só essa parte.
