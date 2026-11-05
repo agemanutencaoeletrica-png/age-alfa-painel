@@ -60,7 +60,8 @@
       $("#nf-res", el).innerHTML = '<div class="linha"><span>Valor da nota (bruto)</span><b class="dir">' + A.dinheiro(x.v) + "</b></div>" +
         '<div class="linha"><span>ISS ' + reais(x.p) + "%" + (x.ret ? " (retido pelo cliente)" : " (a AGE paga)") + '</span><span class="dir">' + A.dinheiro(x.iss) + "</span></div>" +
         (x.ret ? '<div class="linha"><span>Líquido que o cliente paga</span><b class="dir">' + A.dinheiro(x.liq) + "</b></div>" : "") +
-        (das && x.ret ? '<div class="mudo peq" style="margin-top:4px">DAS estimado do Simples (sem a parte do ISS, que o cliente retém): ' + reais(das.pct) + "% = " + A.dinheiro(Math.round(x.v * das.pct) / 100) + ", estimativa.</div>" : "");
+        (x.p > 0 ? "" : '<div class="aviso erro" style="margin-top:6px">⚠️ Informe o <b>município</b> e o <b>ISS (%)</b>: sem isso o ISS aparece zerado e a nota sai errada.</div>') +
+        (das ? '<div class="mudo peq" style="margin-top:4px">DAS estimado do Simples' + (x.ret && x.p > 0 ? " (sem a parte do ISS, que o cliente retém): " + reais(das.pct) + "% = " + A.dinheiro(Math.round(x.v * das.pct) / 100) : " (cheio): " + reais(das.cheio) + "% = " + A.dinheiro(Math.round(x.v * das.cheio) / 100)) + ", estimativa.</div>" : "");
     }
     ["#nf-valor", "#nf-iss"].forEach(function (k) { $(k, el).addEventListener("input", resumo); });
     $("#nf-ret", el).addEventListener("change", resumo);
