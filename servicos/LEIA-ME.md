@@ -525,3 +525,8 @@ Em **Orçamentos → 📐 Proposta de projeto** há agora **💾 Salvar proposta
 - **📂 Propostas salvas**: lista com cliente, valor e data; **Abrir** (continua a editar e **💾 Salvar** atualiza a mesma), **📋 Usar como modelo** (mantém serviços e condições, limpa o cliente) e 🗑 apagar.
 - **📋 Salvar como nova** cria outra proposta a partir da que está aberta. Depois, **📄 Gerar PDF** / **📤 Enviar ao cliente** como antes.
 - Rode o `supabase.sql` (tabela `propostas_projeto`); o arquivo `propostas-de-projeto.sql` tem só essa parte.
+
+## ✅ Acertado até hoje + conta ligada ao Cartão de ponto
+No quadro **🧮 A pagar pelo ponto** (aba Pagamentos), dias e horas vêm do **Cartão de ponto** (chegada → saída). Cada funcionário tem **📅 Cartão de ponto** dia a dia (chegada, saída, horas; "sem saída" em vermelho) e o atalho **🕒 Abrir o Cartão de ponto**. Só se faltar ponto você corrige dias/horas à mão.
+- **✅ Acertado até hoje**: marca tudo o que veio antes como pago/combinado; a conta de quanto falta pagar **recomeça de amanhã** (ponto e pagamentos anteriores deixam de contar). Também dá para definir a data em **Equipe → Editar → "Contar o que falta pagar a partir de"**.
+- Rode o `supabase.sql` (coluna `funcionarios.conta_desde`; o arquivo `atualizacoes-2026-11.sql` já inclui). Sem a coluna, o app guarda só neste aparelho e avisa.
