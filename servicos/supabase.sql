@@ -723,6 +723,17 @@ create table if not exists public.fluxo_previsto (
 );
 create index if not exists fluxo_previsto_data_idx on public.fluxo_previsto (data);
 
+-- Propostas de projeto (SPDA, aterramento, unifilar): cada proposta salva com todos os campos da tela, para abrir, editar ou usar como modelo
+create table if not exists public.propostas_projeto (
+  id            uuid primary key default gen_random_uuid(),
+  cliente       text not null,
+  valor         numeric(12,2),
+  campos        jsonb not null default '{}'::jsonb,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create index if not exists propostas_projeto_data_idx on public.propostas_projeto (atualizado_em desc);
+
 -- ---------- Regras de acesso (RLS) ----------
 
 alter table public.admins enable row level security;
@@ -734,7 +745,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
