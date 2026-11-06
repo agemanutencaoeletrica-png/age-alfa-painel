@@ -540,3 +540,6 @@ O PDF da proposta traz agora, em **6. Disposições Finais**, o parágrafo "Os s
 Aba **🏢 Dados da empresa**: CNPJ, **inscrição estadual** e **municipal**, regime, endereço, telefone, e-mail, banco, contador e responsável técnica, tudo em grupos, com **📋 Copiar** em cada linha, **📋 Copiar tudo**, busca e **✏** para editar. **+ Novo dado** acrescenta o que você quiser (alvará, número da ART, etc.). **Não guarde senhas aqui.**
 - Na primeira abertura o app grava o que já sabemos da AGE (IE 20553960040, IM 4694270019...). Rode o `supabase.sql` (tabela `empresa_dados`); o arquivo `atualizacoes-2026-11.sql` já inclui.
 - As inscrições também saem no cabeçalho do PDF da **Proposta de projeto**.
+
+## 📐 "Condição para a execução" na proposta de projeto
+O PDF da proposta de projeto traz, em **6. Disposições Finais**, a frase: a execução do aterramento e SPDA só começa depois do projeto concluído, da ART emitida e das informações do contratante, e terá orçamento e prazo próprios.

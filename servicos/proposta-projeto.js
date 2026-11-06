@@ -280,6 +280,7 @@
       paragrafo("A aceitação desta proposta dar-se-á mediante o de acordo do contratante, formalizado por assinatura no campo abaixo ou por confirmação escrita (e-mail ou aplicativo de mensagens).", 10, true);
       if (d.rt) paragrafo("Os serviços de engenharia serão executados sob a responsabilidade técnica de " + limpaNome(d.rt) + (d.titulo ? ", " + d.titulo : "") + (d.crea ? ", " + creaTxt(d.crea) : "") + ", contratado(a) pela " + (E.nome || "AGE") + " para este trabalho. A Anotação de Responsabilidade Técnica (ART) será emitida pelo responsável técnico, nos termos da legislação do Sistema Confea/CREA.", 10, true);
       else paragrafo("A Anotação de Responsabilidade Técnica (ART) será emitida pelo responsável técnico, nos termos da legislação do Sistema Confea/CREA.", 10, true);
+      paragrafo("Condição para a execução: a execução do serviço de aterramento e SPDA somente será iniciada após a conclusão do projeto e da emissão da ART, e depende da entrega, pelo contratante, das informações necessárias à elaboração do projeto. A execução será objeto de orçamento e prazo próprios, com base no projeto e na lista de materiais aprovados.", 10, true);
       paragrafo("Colocamo-nos à disposição para quaisquer esclarecimentos.", 10);
       y += 2;
       paragrafo([E.cidade ? String(E.cidade).split(" - ")[0] : "", dataExtensa(hoje)].filter(Boolean).join(", ") + ".", 10);
