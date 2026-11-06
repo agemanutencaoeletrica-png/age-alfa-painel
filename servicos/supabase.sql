@@ -735,6 +735,18 @@ create table if not exists public.propostas_projeto (
 );
 create index if not exists propostas_projeto_data_idx on public.propostas_projeto (atualizado_em desc);
 
+-- Dados da empresa (CNPJ, inscricoes, endereco, banco, contador...): um lugar so para consultar e copiar. Nao guardar senhas.
+create table if not exists public.empresa_dados (
+  id            uuid primary key default gen_random_uuid(),
+  grupo         text not null default 'Outros',
+  rotulo        text not null,
+  valor         text,
+  ordem         integer not null default 100,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create unique index if not exists empresa_dados_uniq on public.empresa_dados (grupo, rotulo);
+
 -- ---------- Regras de acesso (RLS) ----------
 
 alter table public.admins enable row level security;
@@ -746,7 +758,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

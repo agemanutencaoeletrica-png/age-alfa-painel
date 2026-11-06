@@ -20,6 +20,7 @@ window.AGE_CONFIG = {
   EMPRESA: {
     nome: "AGE Elétrica e Pintura",
     documento: "CNPJ 17.134.491/0001-66",   // CNPJ ou CPF
+    inscricoes: "IE 20553960040 · IM 4694270019",   // inscrição estadual e municipal (saem no cabeçalho da proposta de projeto)
     telefone: "(31) 98858-9772",
     email: "agemanutencaoeletrica@gmail.com",
     endereco: "R. das Canárias, 249 - Palmeiras",
