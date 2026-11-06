@@ -22,6 +22,9 @@
   var NAO = "Realização de testes nos quadros elétricos e nos circuitos, não incluídos no escopo dos diagramas unifilares;\nExecução, instalação ou fornecimento dos materiais relacionados na Lista de Materiais, que será entregue apenas como documento técnico;\nServiços não descritos expressamente no escopo desta proposta, que poderão ser objeto de orçamento complementar.";
 
   function din(v) { return A.dinheiro(Number(v) || 0); }
+  function tituloValido(t) { return /engenh|t[eé]cnic|arquitet|tecn[oó]log|respons|perit/i.test(String(t || "")); }
+  function limpaNome(t) { return String(t || "").replace(/\s+/g, " ").replace(/[\s.;,]+$/, "").trim(); }
+  function creaTxt(c) { c = String(c || "").trim().replace(/^(CREA-[A-Za-z]{2})\s*:\s*/i, "$1 "); return !c ? "" : /^CREA/i.test(c) ? c : "CREA: " + c; }
   function lerRT() { try { return JSON.parse(localStorage.getItem(RT_CHAVE) || "{}") || {}; } catch (e) { return {}; } }
   function gravarRT(o) { try { localStorage.setItem(RT_CHAVE, JSON.stringify(o)); } catch (e) { /* sem espaço: segue */ } }
   function linhas(t) { return String(t || "").split("\n").map(function (x) { return x.trim().replace(/^[-•*]\s*/, "").replace(/;$/, ""); }).filter(Boolean); }
@@ -82,7 +85,8 @@
       '<div class="duas"><div><label for="pj-val">Validade da proposta (dias)</label><input id="pj-val" inputmode="numeric" value="15"></div><div><label for="pj-prazo">Prazo de entrega (opcional)</label><input id="pj-prazo" maxlength="120" placeholder="Ex.: 15 dias úteis após receber as informações"></div></div>' +
       '<h3 style="margin:12px 0 4px">Responsável técnico (para a ART)</h3>' +
       '<div class="duas"><div><label for="pj-rt">Nome do engenheiro(a)</label><input id="pj-rt" maxlength="160" autocomplete="off"></div><div><label for="pj-crea">CREA</label><input id="pj-crea" maxlength="60" placeholder="CREA-MG 0000000000"></div></div>' +
-      '<label for="pj-tit">Título do responsável (opcional)</label><input id="pj-tit" maxlength="80" placeholder="Engenheiro Eletricista">' +
+      '<label for="pj-tit">Título do responsável (opcional) — a profissão, não o nome</label><input id="pj-tit" maxlength="80" placeholder="Engenheira Eletricista">' +
+      '<label for="pj-rep">Responsável pela AGE (nome que assina pela empresa)</label><input id="pj-rep" maxlength="120" autocomplete="off" placeholder="Nome de quem assina pela AGE">' +
       '<div id="pj-erro"></div>' +
       '<p class="peq mudo" id="pj-estado" style="margin:10px 0 0"></p>' +
       '<div class="acoes"><button class="prim" id="pj-salvar">💾 Salvar proposta</button><button id="pj-nova" class="oculto">📋 Salvar como nova</button><button id="pj-salvas">📂 Propostas salvas</button></div>' +
@@ -91,7 +95,7 @@
     var el = j.el;
     $("#pj-data", el).value = A.isoLocal(new Date());
     $("#pj-resp", el).value = RESP; $("#pj-nao", el).value = NAO; $("#pj-pag", el).value = "50% na aprovação da proposta e 50% na entrega dos projetos.";
-    $("#pj-rt", el).value = rt.nome || ""; $("#pj-crea", el).value = rt.crea || ""; $("#pj-tit", el).value = rt.titulo || "";
+    $("#pj-rt", el).value = rt.nome || ""; $("#pj-crea", el).value = rt.crea || ""; $("#pj-tit", el).value = rt.titulo || ""; $("#pj-rep", el).value = rt.rep || "";
     $("#pj-fim", el).onclick = function () { j.fechar(); };
     // ---- 💾 propostas salvas (tabela propostas_projeto): guarda todos os campos da tela para abrir, editar ou usar como modelo ----
     var atual = null;   // proposta salva que está sendo editada
@@ -151,7 +155,7 @@
       var v = A.lerNumero($("#pj-valor", el).value);
       var d = { data: $("#pj-data", el).value || A.isoLocal(new Date()), cliente: $("#pj-cli", el).value.trim(), doc: $("#pj-doc", el).value.trim(), local: $("#pj-local", el).value.trim(), valor: v, nf: $("#pj-nf", el).value, pagamento: $("#pj-pag", el).value.trim(),
         validade: Math.max(1, parseInt($("#pj-val", el).value, 10) || 15), prazo: $("#pj-prazo", el).value.trim(), resp: linhas($("#pj-resp", el).value), nao: linhas($("#pj-nao", el).value),
-        rt: $("#pj-rt", el).value.trim(), crea: $("#pj-crea", el).value.trim(), titulo: $("#pj-tit", el).value.trim(), itens: [] };
+        rt: $("#pj-rt", el).value.trim(), crea: $("#pj-crea", el).value.trim(), titulo: $("#pj-tit", el).value.trim(), rep: $("#pj-rep", el).value.trim(), itens: [] };
       var nq = Math.max(1, parseInt($("#pj-nq", el).value, 10) || 4);
       $$(".pj-it", el).forEach(function (cb) {
         if (!cb.checked) return;
@@ -174,7 +178,8 @@
       var d = ler(), erro = conferir(d);
       $("#pj-erro", el).innerHTML = erro ? '<div class="aviso erro">' + esc(erro) + "</div>" : "";
       if (erro) return Promise.resolve(null);
-      gravarRT({ nome: d.rt, crea: d.crea, titulo: d.titulo });
+      if (d.titulo && !tituloValido(d.titulo)) { $("#pj-erro", el).innerHTML = '<div class="aviso">⚠️ O <b>título</b> "' + esc(d.titulo) + '" parece um nome de pessoa: no título vai a profissão (ex.: Engenheira Eletricista). Ele não vai no PDF até você corrigir.</div>'; d.titulo = ""; }
+      gravarRT({ nome: d.rt, crea: d.crea, titulo: d.titulo, rep: d.rep });
       if (!d.rt || !d.crea) $("#pj-erro", el).innerHTML = '<div class="aviso">⚠️ Sem o nome e o CREA do responsável técnico, o PDF sai com a linha em branco para preencher à mão. A ART precisa de um profissional habilitado.</div>';
       A.ocupado(b, true, "Gerando...");
       return pdf(d).then(function (r) { A.ocupado(b, false); return { d: d, r: r }; }).catch(function (e) { A.ocupado(b, false); $("#pj-erro", el).innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; return null; });
@@ -271,23 +276,25 @@
       y += 2;
       // 6. disposições finais
       titulo("6. Disposições Finais");
-      paragrafo("A aceitação desta proposta dar-se-á mediante o de acordo do contratante, formalizado por assinatura no campo abaixo ou por confirmação escrita (e-mail ou aplicativo de mensagens). A Anotação de Responsabilidade Técnica (ART) será emitida pelo responsável técnico, nos termos da legislação do Sistema Confea/CREA.", 10, true);
+      paragrafo("A aceitação desta proposta dar-se-á mediante o de acordo do contratante, formalizado por assinatura no campo abaixo ou por confirmação escrita (e-mail ou aplicativo de mensagens).", 10, true);
+      if (d.rt) paragrafo("Os serviços de engenharia serão executados sob a responsabilidade técnica de " + limpaNome(d.rt) + (d.titulo ? ", " + d.titulo : "") + (d.crea ? ", " + creaTxt(d.crea) : "") + ", contratado(a) pela " + (E.nome || "AGE") + " para este trabalho. A Anotação de Responsabilidade Técnica (ART) será emitida pelo responsável técnico, nos termos da legislação do Sistema Confea/CREA.", 10, true);
+      else paragrafo("A Anotação de Responsabilidade Técnica (ART) será emitida pelo responsável técnico, nos termos da legislação do Sistema Confea/CREA.", 10, true);
       paragrafo("Colocamo-nos à disposição para quaisquer esclarecimentos.", 10);
       y += 2;
       paragrafo([E.cidade ? String(E.cidade).split(" - ")[0] : "", dataExtensa(hoje)].filter(Boolean).join(", ") + ".", 10);
-      // assinaturas
-      espaco(40); y += 20;
-      doc.setDrawColor(40); doc.setLineWidth(0.3); doc.line(L, y, L + 82, y); doc.line(R - 82, y, R, y);
-      fonte("bold", 10); preto();
-      doc.text(tx(d.rt || E.nome || ""), L + 41, y + 5, { align: "center" }); doc.text("De acordo - Contratante", R - 41, y + 5, { align: "center" });
-      fonte("normal", 9.5);
-      var l2 = [d.titulo || (d.rt ? "Responsável técnico" : "Responsável técnico (nome e CREA)"), d.crea ? "CREA: " + d.crea : ""].filter(Boolean);
-      l2.forEach(function (t, i) { doc.text(tx(t), L + 41, y + 10 + i * 4.5, { align: "center" }); });
+      // assinaturas: AGE, responsável técnico e contratante
+      espaco(46); y += 20;
+      var bl = [[L, L + 56], [L + 62, L + 118], [R - 56, R]];
+      doc.setDrawColor(40); doc.setLineWidth(0.3); bl.forEach(function (b) { doc.line(b[0], y, b[1], y); });
+      function centro(i, linhas, negrito) { linhas.filter(Boolean).forEach(function (t, k) { fonte(k === 0 && negrito ? "bold" : "normal", k === 0 ? 9.5 : 8.5); preto(); doc.splitTextToSize(tx(t), 54).slice(0, 2).forEach(function (ln, m) { doc.text(ln, (bl[i][0] + bl[i][1]) / 2, y + 5 + (k * 4.3) + m * 3.8, { align: "center" }); }); }); }
+      centro(0, [limpaNome(d.rep) || "Responsável pela AGE", E.nome || "AGE", E.documento || ""], true);
+      centro(1, [limpaNome(d.rt) || "Responsável técnico", d.titulo || "Responsável técnico", creaTxt(d.crea) || "CREA: ____________"], true);
+      centro(2, ["De acordo - Contratante", d.cliente, d.doc ? "CNPJ/CPF: " + d.doc : ""], true);
       // rodapé em todas as páginas
       var n = doc.getNumberOfPages();
       for (var p = 1; p <= n; p++) {
         doc.setPage(p); fonte("normal", 8); doc.setTextColor(130, 130, 130);
-        doc.text(tx([E.nome, E.documento, d.rt ? "Resp. técnico: " + d.rt + (d.crea ? " - " + d.crea : "") : ""].filter(Boolean).join(" - ") + "   |   Página " + p + " de " + n), 105, 290, { align: "center" });
+        doc.text(tx([E.nome, E.documento, d.rt ? "Resp. técnico: " + limpaNome(d.rt) + (d.crea ? " - " + creaTxt(d.crea) : "") : ""].filter(Boolean).join(" - ") + "   |   Página " + p + " de " + n), 105, 290, { align: "center" });
       }
       var nome = "Proposta-Projeto-" + String(d.cliente).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) + ".pdf";
       return { blob: doc.output("blob"), nome: nome };
