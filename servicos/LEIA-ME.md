@@ -543,3 +543,6 @@ Aba **🏢 Dados da empresa**: CNPJ, **inscrição estadual** e **municipal**, r
 
 ## 📐 "Condição para a execução" na proposta de projeto
 O PDF da proposta de projeto traz, em **6. Disposições Finais**, a frase: a execução do aterramento e SPDA só começa depois do projeto concluído, da ART emitida e das informações do contratante, e terá orçamento e prazo próprios.
+
+## 💵 Entrada antes de começar (proposta de projeto)
+O PDF da proposta de projeto traz, em **Disposições Finais**, "Início dos trabalhos": o início do projeto e a contagem do prazo de entrega dependem da **confirmação do pagamento da primeira parcela (entrada)** prevista na condição de pagamento.
