@@ -4704,6 +4704,7 @@
     var f = id ? porId(S.func, id) : null;
     var j = A.janela('<label for="ef-nome">Nome *</label><input id="ef-nome" maxlength="120">' +
       '<label for="ef-tel">WhatsApp (com DDD)</label><input id="ef-tel" type="tel" maxlength="40" placeholder="(11) 91234-5678">' +
+      '<label for="ef-desde">Contar o que falta pagar a partir de (o que veio antes já está acertado)</label><input type="date" id="ef-desde">' +
       '<label for="ef-email">E-mail</label><input id="ef-email" type="email" inputmode="email" autocapitalize="none" maxlength="160" placeholder="nome@exemplo.com">' +
       '<label for="ef-pix">Chave Pix (para o app reconhecer os comprovantes)</label><input id="ef-pix" maxlength="120" placeholder="Telefone, CPF, e-mail ou chave aleatória">' +
       '<label for="ef-diaria">Valor da diária (R$)</label><input id="ef-diaria" inputmode="decimal" placeholder="Ex.: 150,00">' +
@@ -4714,7 +4715,7 @@
       { titulo: f ? "Editar funcionário" : "Novo funcionário" });
     var el = j.el;
     $("#ef-nome", el).value = f ? f.nome : ""; $("#ef-tel", el).value = f ? f.telefone || "" : ""; $("#ef-area", el).value = f ? f.area : "eletrica"; $("#ef-pix", el).value = f ? f.pix || "" : "";
-    $("#ef-email", el).value = f ? f.email || "" : "";
+    $("#ef-email", el).value = f ? f.email || "" : ""; $("#ef-desde", el).value = f && f.conta_desde ? String(f.conta_desde).slice(0, 10) : "";
     $("#ef-diaria", el).value = f && f.diaria ? Number(f.diaria).toFixed(2).replace(".", ",") : "";
     if (f) $("#ef-ativo", el).checked = f.ativo;
     $("#ef-salvar", el).onclick = function () {
@@ -4726,16 +4727,17 @@
       var em = val(el, "#ef-email").toLowerCase();
       if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { A.ocupado(b, false); A.avisar("E-mail inválido: confira (ex.: nome@gmail.com).", "erro"); return; }
       if (!S.semEmailFunc && (em || (f && f.email))) dados.email = nulo(em);
+      if (!S.semDesdeFunc && ($("#ef-desde", el).value || (f && f.conta_desde))) dados.conta_desde = $("#ef-desde", el).value || null;
       var dia = A.lerNumero($("#ef-diaria", el).value) || 0;
       if (!S.semDiaria && (dia > 0 || (f && f.diaria))) dados.diaria = dia > 0 ? Math.round(dia * 100) / 100 : null;
       if (f) dados.ativo = $("#ef-ativo", el).checked;
       function gravarF(d) { return q(f ? sb.from("funcionarios").update(d).eq("id", f.id).select().single() : sb.from("funcionarios").insert(d).select().single()); }
       gravarF(dados).catch(function (e) {
         // banco ainda sem a coluna da diária: grava o resto e avisa para rodar o SQL
-        var msgE = A.msgErro(e) + " " + (e && e.message), faltou = ["diaria", "email"].filter(function (k) { return k in dados && new RegExp(k).test(msgE); });
+        var msgE = A.msgErro(e) + " " + (e && e.message), faltou = ["diaria", "email", "conta_desde"].filter(function (k) { return k in dados && new RegExp(k).test(msgE); });
         if (!faltou.length) throw e;
-        faltou.forEach(function (k) { if (k === "diaria") S.semDiaria = true; else S.semEmailFunc = true; delete dados[k]; });
-        A.avisar("Parte do cadastro (" + faltou.map(function (k) { return k === "diaria" ? "diária" : "e-mail"; }).join(", ") + ") não foi gravada: rode o supabase.sql no Supabase (colunas novas dos funcionários).", "erro");
+        faltou.forEach(function (k) { if (k === "diaria") S.semDiaria = true; else if (k === "email") S.semEmailFunc = true; else S.semDesdeFunc = true; delete dados[k]; });
+        A.avisar("Parte do cadastro (" + faltou.map(function (k) { return k === "diaria" ? "diária" : k === "email" ? "e-mail" : "contar a partir de"; }).join(", ") + ") não foi gravada: rode o supabase.sql no Supabase (colunas novas dos funcionários).", "erro");
         return gravarF(dados);
       }).then(function (n) {
         trocar(S.func, n);

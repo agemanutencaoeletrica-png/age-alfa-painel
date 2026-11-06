@@ -588,15 +588,35 @@
   function modoCalc() { try { return localStorage.getItem(CHAVE_CALC + "_modo") === "dia" ? "dia" : "hora"; } catch (e) { return "hora"; } }
   // pontos de um funcionário -> { dias, horas (decimal), semSaida }: cada chegada → saída conta as horas do dia da chegada
   function horasDoPonto(pontos) {
-    var dias = {}, inicio = null, semSaida = 0;
+    var dias = {}, inicio = null, semSaida = 0, lista = [];
     pontos.slice().sort(function (a, b) { return new Date(a.criado_em) - new Date(b.criado_em); }).forEach(function (pt) {
-      var t = new Date(pt.criado_em).getTime();
-      if (pt.tipo === "chegada" && inicio === null) { inicio = t; var k0 = A.isoLocal(new Date(t)); dias[k0] = dias[k0] || 0; }
-      else if (pt.tipo === "chegada" && inicio !== null) { semSaida++; inicio = t; var k1 = A.isoLocal(new Date(t)); dias[k1] = dias[k1] || 0; }   // chegada sem saída antes dela
-      else if (pt.tipo === "saida" && inicio !== null) { var k = A.isoLocal(new Date(inicio)); dias[k] = (dias[k] || 0) + (t - inicio) / 36e5; inicio = null; }
+      var t = new Date(pt.criado_em).getTime(), k;
+      if (pt.tipo === "chegada") {
+        if (inicio !== null) { semSaida++; lista.push({ dia: A.isoLocal(new Date(inicio)), ini: inicio, fim: null, h: 0 }); }   // chegada sem saída antes dela
+        inicio = t; k = A.isoLocal(new Date(t)); dias[k] = dias[k] || 0;
+      } else if (pt.tipo === "saida" && inicio !== null) {
+        k = A.isoLocal(new Date(inicio)); var h = (t - inicio) / 36e5; dias[k] = (dias[k] || 0) + h; lista.push({ dia: k, ini: inicio, fim: t, h: h }); inicio = null;
+      }
     });
-    if (inicio !== null) semSaida++;
-    return { dias: Object.keys(dias).length, horas: Object.keys(dias).reduce(function (t, k) { return t + dias[k]; }, 0), semSaida: semSaida };
+    if (inicio !== null) { semSaida++; lista.push({ dia: A.isoLocal(new Date(inicio)), ini: inicio, fim: null, h: 0 }); }
+    return { dias: Object.keys(dias).length, horas: Object.keys(dias).reduce(function (t, k) { return t + dias[k]; }, 0), semSaida: semSaida, lista: lista };
+  }
+  // "acertado até": o que veio antes dessa data já foi pago/combinado e não entra na conta (coluna funcionarios.conta_desde; sem ela, neste aparelho)
+  var CHAVE_DESDE = "age_contadesde_v1";
+  function contaDesde(f) {
+    if (f && f.conta_desde) return String(f.conta_desde).slice(0, 10);
+    try { return (JSON.parse(localStorage.getItem(CHAVE_DESDE) || "{}") || {})[f.id] || ""; } catch (e) { return ""; }
+  }
+  function acertar(f, depois) {
+    var d = new Date(); d.setDate(d.getDate() + 1); var desde = A.isoLocal(d);
+    if (!A.confirmar("Marcar tudo de " + f.nome + " como acertado até hoje?\nA conta passa a contar do ponto e dos pagamentos a partir de amanhã (" + A.data(d) + ").")) return;
+    function local() { try { var o = JSON.parse(localStorage.getItem(CHAVE_DESDE) || "{}") || {}; o[f.id] = desde; localStorage.setItem(CHAVE_DESDE, JSON.stringify(o)); } catch (e) { /* sem armazenamento */ } depois(); }
+    Promise.resolve(P.sb.from("funcionarios").update({ conta_desde: desde }).eq("id", f.id).select().single()).then(function (r) {
+      if (r.error) throw r.error; P.trocar(P.S.func, r.data); depois();
+    }).catch(function (e) {
+      if (/conta_desde/.test(String((e && (e.message || e.code)) || e))) { A.avisar("Guardado só neste aparelho: rode o supabase.sql no Supabase (coluna conta_desde dos funcionários) para valer em todos.", "erro"); local(); }
+      else A.avisar(A.msgErro ? A.msgErro(e) : e.message, "erro");
+    });
   }
   function fh(h) { var m = Math.round(h * 60); return Math.floor(m / 60) + "h" + (m % 60 ? dois(m % 60) : ""); }
   function aPagar(ps) {
@@ -611,23 +631,32 @@
       .then(function (r) { if (r.error) throw r.error; return r.data || []; })
       .then(function (pts) {
         var man = lerCalc(), lin = fs.map(function (f) {
-          var mine = pts.filter(function (x) { return x.funcionario_id === f.id; }), h = horasDoPonto(mine), ch = f.id + "|" + A.isoLocal(de) + "|" + A.isoLocal(ate), m = man[ch] || {};
+          var desde = contaDesde(f), deF = desde && new Date(desde + "T00:00:00") > de ? new Date(desde + "T00:00:00") : de;
+          var mine = pts.filter(function (x) { return x.funcionario_id === f.id && new Date(x.criado_em) >= deF; }), h = horasDoPonto(mine), ch = f.id + "|" + A.isoLocal(deF) + "|" + A.isoLocal(ate), m = man[ch] || {};
           var dias = m.dias !== undefined && m.dias !== "" ? Number(m.dias) : h.dias, horas = m.horas !== undefined && m.horas !== "" ? Number(m.horas) : Math.round(h.horas * 100) / 100;
           var diaria = Number(f.diaria), vh = diaria / JORNADA, dev = modo === "dia" ? dias * diaria : horas * vh;
-          var pago = todos.filter(function (p) { var d = new Date(p.pago_em); return p.funcionario_id === f.id && p.tipo !== "reembolso" && d >= de && d < ate; }).reduce(function (t, p) { return t + Number(p.valor); }, 0);
-          dev = Math.round(dev * 100) / 100; calcPonto[f.id] = { dev: dev, pago: pago, dias: dias, horas: horas, modo: modo, de: de, ate: ate };
-          return { f: f, ch: ch, h: h, dias: dias, horas: horas, vh: vh, dev: dev, pago: pago, edit: m.dias !== undefined || m.horas !== undefined };
+          var pago = todos.filter(function (p) { var d = new Date(p.pago_em); return p.funcionario_id === f.id && p.tipo !== "reembolso" && d >= deF && d < ate; }).reduce(function (t, p) { return t + Number(p.valor); }, 0);
+          dev = Math.round(dev * 100) / 100; calcPonto[f.id] = { dev: dev, pago: pago, dias: dias, horas: horas, modo: modo, de: deF, ate: ate };
+          return { f: f, ch: ch, h: h, dias: dias, horas: horas, vh: vh, dev: dev, pago: pago, edit: m.dias !== undefined || m.horas !== undefined, desde: desde && deF > de ? desde : "" };
         });
         box.innerHTML = '<div class="cartao"><div class="linha"><h3 style="margin:0">🧮 A pagar pelo ponto</h3><span class="dir"><select id="pg-calc-modo" aria-label="Como calcular"><option value="hora">Por hora trabalhada (diária ÷ ' + JORNADA + ' h)</option><option value="dia">Por dia (diária inteira)</option></select></span></div>' +
-          '<p class="mudo peq" style="margin:2px 0 6px">Período: ' + esc(A.data(de)) + " a " + esc(A.data(new Date(ate.getTime() - 864e5))) + ". Horas e dias vêm do ponto (chegada → saída); você pode corrigir os números. Reembolso não entra.</p>" +
+          '<p class="mudo peq" style="margin:2px 0 6px">Período: ' + esc(A.data(de)) + " a " + esc(A.data(new Date(ate.getTime() - 864e5))) + ". Horas e dias vêm do <b>Cartão de ponto</b> (chegada → saída); só se faltar ponto, corrija os números à mão. Reembolso não entra.</p>" +
           '<div class="tabela-caixa"><table><thead><tr><th>Funcionário</th><th class="num">Dias</th><th class="num">Horas</th><th class="num">A pagar</th><th class="num">Pago</th><th class="num">Falta</th></tr></thead><tbody>' +
           lin.map(function (x) {
             var falta = Math.round((x.dev - x.pago) * 100) / 100;
-            return "<tr><td>" + esc(x.f.nome) + '<div class="mudo peq">diária ' + dinheiro(x.f.diaria) + " · hora " + dinheiro(Math.round(x.vh * 100) / 100) + (x.h.semSaida ? ' · <span style="color:var(--critico)">' + x.h.semSaida + " chegada(s) sem saída</span>" : "") + (x.h.dias === 0 && !x.edit ? " · sem ponto no período" : "") + "</div></td>" +
+            return "<tr><td>" + esc(x.f.nome) + '<div class="mudo peq">diária ' + dinheiro(x.f.diaria) + " · hora " + dinheiro(Math.round(x.vh * 100) / 100) + (x.h.semSaida ? ' · <span style="color:var(--critico)">' + x.h.semSaida + " chegada(s) sem saída</span>" : "") + (x.h.dias === 0 && !x.edit ? ' · <span style="color:var(--atencao)">sem ponto no período</span>' : "") + (x.desde ? " · contando desde " + esc(A.data(new Date(x.desde + "T12:00:00"))) : "") + '<div><button class="peq" data-acertar="' + x.f.id + '" title="Marca tudo até hoje como acertado: a conta recomeça de amanhã">✅ Acertado até hoje</button></div></div></td>' +
               '<td class="num"><input data-pc="' + x.ch + '" data-c="dias" inputmode="decimal" value="' + String(x.dias).replace(".", ",") + '" style="width:60px;text-align:right"></td>' +
               '<td class="num"><input data-pc="' + x.ch + '" data-c="horas" inputmode="decimal" value="' + String(x.horas).replace(".", ",") + '" style="width:70px;text-align:right" title="' + fh(x.horas) + '"></td>' +
               '<td class="num"><b>' + dinheiro(x.dev) + '</b></td><td class="num">' + dinheiro(x.pago) + '</td><td class="num"><b style="color:' + (falta > 0.005 ? "var(--critico)" : "var(--bom)") + '">' + (falta > 0.005 ? "falta " + dinheiro(falta) : falta < -0.005 ? "a mais " + dinheiro(-falta) : "em dia ✔") + "</b></td></tr>";
-          }).join("") + "</tbody></table></div></div>";
+          }).join("") + "</tbody></table></div>" +
+          lin.map(function (x) {
+            return '<details style="margin-top:6px"><summary class="peq"><b>📅 Cartão de ponto de ' + esc(x.f.nome.split(" ")[0]) + "</b> · " + x.h.dias + " dia(s), " + fh(x.h.horas) + (x.h.semSaida ? " · " + x.h.semSaida + " sem saída" : "") + "</summary>" +
+              (x.h.lista.length ? '<div class="tabela-caixa"><table><thead><tr><th>Dia</th><th>Chegada</th><th>Saída</th><th class="num">Horas</th></tr></thead><tbody>' + x.h.lista.map(function (l) {
+                return "<tr><td>" + esc(A.data(new Date(l.ini))) + "</td><td>" + esc(A.hora(new Date(l.ini))) + "</td><td>" + (l.fim ? esc(A.hora(new Date(l.fim))) : '<span style="color:var(--critico)">sem saída</span>') + '</td><td class="num">' + (l.fim ? fh(l.h) : "—") + "</td></tr>";
+              }).join("") + "</tbody></table></div>" : '<p class="mudo peq">Nenhum ponto neste período. A conta vem do <b>Cartão de ponto</b>: peça para ' + esc(x.f.nome.split(" ")[0]) + " bater <b>chegada</b> e <b>saída</b> pelo link dele, ou digite os dias e as horas acima.</p>") +
+              '<div class="acoes"><a class="botao peq" href="#ponto">🕒 Abrir o Cartão de ponto</a></div></details>';
+          }).join("") + "</div>";
+        $$("[data-acertar]", box).forEach(function (bt) { bt.onclick = function () { acertar(funcDe(bt.dataset.acertar), function () { aPagar(ps); }); }; });
         $("#pg-calc-modo", box).value = modo;
         $("#pg-calc-modo", box).onchange = function () { try { localStorage.setItem(CHAVE_CALC + "_modo", this.value); } catch (e) { /* sem armazenamento */ } aPagar(ps); };
         $$("[data-pc]", box).forEach(function (inp) {
