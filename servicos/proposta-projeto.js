@@ -22,7 +22,8 @@
   var NAO = "Realização de testes nos quadros elétricos e nos circuitos, não incluídos no escopo dos diagramas unifilares;\nExecução, instalação ou fornecimento dos materiais relacionados na Lista de Materiais, que será entregue apenas como documento técnico;\nServiços não descritos expressamente no escopo desta proposta, que poderão ser objeto de orçamento complementar.";
 
   function din(v) { return A.dinheiro(Number(v) || 0); }
-  function tituloValido(t) { return /engenh|t[eé]cnic|arquitet|tecn[oó]log|respons|perit/i.test(String(t || "")); }
+  // título = profissão ("Engenheira Eletricista", "Eletricista"); só recusa o que parece nome de pessoa (3 palavras ou mais, sem palavra de profissão)
+  function tituloValido(t) { t = String(t || "").trim(); return /engenh|t[eé]cnic|arquitet|tecn[oó]log|respons|perit|eletric/i.test(t) || t.split(/\s+/).length < 3; }
   function limpaNome(t) { return String(t || "").replace(/\s+/g, " ").replace(/[\s.;,]+$/, "").trim(); }
   function creaTxt(c) { c = String(c || "").trim().replace(/^(CREA-[A-Za-z]{2})\s*:\s*/i, "$1 "); return !c ? "" : /^CREA/i.test(c) ? c : "CREA: " + c; }
   function lerRT() { try { return JSON.parse(localStorage.getItem(RT_CHAVE) || "{}") || {}; } catch (e) { return {}; } }
