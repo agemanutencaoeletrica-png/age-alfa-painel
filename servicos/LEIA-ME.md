@@ -535,3 +535,8 @@ No quadro **🧮 A pagar pelo ponto** (aba Pagamentos), dias e horas vêm do **C
 O PDF da proposta traz agora, em **6. Disposições Finais**, o parágrafo "Os serviços de engenharia serão executados sob a responsabilidade técnica de (nome, profissão, CREA), contratado(a) pela AGE", e a ART emitida pelo responsável técnico. As **assinaturas** são três: **a AGE** (campo novo "Responsável pela AGE"), **o responsável técnico** (nome, profissão e CREA) e **o contratante** (nome e CNPJ/CPF).
 - O campo **Título** é a **profissão** (ex.: Engenheira Eletricista). Se tiver um nome de pessoa, o app avisa e não põe no PDF.
 - O CREA não repete o "CREA:" e o ponto no fim do nome é tirado.
+
+## 🏢 Dados da empresa (um lugar só para consultar e copiar)
+Aba **🏢 Dados da empresa**: CNPJ, **inscrição estadual** e **municipal**, regime, endereço, telefone, e-mail, banco, contador e responsável técnica, tudo em grupos, com **📋 Copiar** em cada linha, **📋 Copiar tudo**, busca e **✏** para editar. **+ Novo dado** acrescenta o que você quiser (alvará, número da ART, etc.). **Não guarde senhas aqui.**
+- Na primeira abertura o app grava o que já sabemos da AGE (IE 20553960040, IM 4694270019...). Rode o `supabase.sql` (tabela `empresa_dados`); o arquivo `atualizacoes-2026-11.sql` já inclui.
+- As inscrições também saem no cabeçalho do PDF da **Proposta de projeto**.

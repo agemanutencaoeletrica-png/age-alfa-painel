@@ -224,7 +224,7 @@
       // cabeçalho da empresa
       fonte("bold", 15); azul(); doc.text(tx(E.nome || "AGE"), L, y);
       fonte("normal", 9); preto(); var yi = y + 5.5;
-      [E.documento, E.telefone, E.email, [E.endereco, E.cidade].filter(Boolean).join(", ")].filter(Boolean).forEach(function (l) { doc.text(tx(l), L, yi); yi += 4.3; });
+      [E.documento, E.inscricoes, E.telefone, E.email, [E.endereco, E.cidade].filter(Boolean).join(", ")].filter(Boolean).forEach(function (l) { doc.text(tx(l), L, yi); yi += 4.3; });
       y = yi + 3;
       doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.8); doc.line(L, y, R, y); y += 10;
       fonte("bold", 17); azul(); doc.text("PROPOSTA TÉCNICO-COMERCIAL", 105, y, { align: "center" }); y += 7;
