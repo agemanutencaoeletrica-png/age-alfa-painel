@@ -84,6 +84,8 @@
       '<div class="duas"><div><label for="pj-rt">Nome do engenheiro(a)</label><input id="pj-rt" maxlength="160" autocomplete="off"></div><div><label for="pj-crea">CREA</label><input id="pj-crea" maxlength="60" placeholder="CREA-MG 0000000000"></div></div>' +
       '<label for="pj-tit">Título do responsável (opcional)</label><input id="pj-tit" maxlength="80" placeholder="Engenheiro Eletricista">' +
       '<div id="pj-erro"></div>' +
+      '<p class="peq mudo" id="pj-estado" style="margin:10px 0 0"></p>' +
+      '<div class="acoes"><button class="prim" id="pj-salvar">💾 Salvar proposta</button><button id="pj-nova" class="oculto">📋 Salvar como nova</button><button id="pj-salvas">📂 Propostas salvas</button></div>' +
       '<div class="acoes"><button class="prim" id="pj-pdf">📄 Gerar PDF</button><button id="pj-env">📤 Enviar ao cliente</button><button id="pj-fim">Fechar</button></div>',
       { titulo: "📐 Proposta de projeto", larga: true, fixa: true });
     var el = j.el;
@@ -91,6 +93,60 @@
     $("#pj-resp", el).value = RESP; $("#pj-nao", el).value = NAO; $("#pj-pag", el).value = "50% na aprovação da proposta e 50% na entrega dos projetos.";
     $("#pj-rt", el).value = rt.nome || ""; $("#pj-crea", el).value = rt.crea || ""; $("#pj-tit", el).value = rt.titulo || "";
     $("#pj-fim", el).onclick = function () { j.fechar(); };
+    // ---- 💾 propostas salvas (tabela propostas_projeto): guarda todos os campos da tela para abrir, editar ou usar como modelo ----
+    var atual = null;   // proposta salva que está sendo editada
+    function tudo() {
+      var o = { _it: [] };
+      $$('input[id^="pj-"], textarea[id^="pj-"], select[id^="pj-"]', el).forEach(function (c) { o[c.id] = c.value; });
+      $$(".pj-it", el).forEach(function (cb) { o._it[Number(cb.dataset.i)] = cb.checked; });
+      return o;
+    }
+    function aplicar(o, modelo) {
+      Object.keys(o).forEach(function (k) { if (k === "_it") return; var c = $("#" + k, el); if (c) c.value = o[k]; });
+      (o._it || []).forEach(function (v, i) { var cb = $('.pj-it[data-i="' + i + '"]', el); if (cb) cb.checked = !!v; });
+      if (modelo) { $("#pj-cli", el).value = ""; $("#pj-doc", el).value = ""; $("#pj-local", el).value = ""; $("#pj-data", el).value = A.isoLocal(new Date()); }
+    }
+    function estado() {
+      $("#pj-estado", el).innerHTML = atual ? "✏ Editando a proposta salva de <b>" + esc(atual.cliente || "") + "</b> (salva em " + esc(A.data(atual.atualizado_em || atual.criado_em)) + "). <b>💾 Salvar</b> atualiza esta; <b>📋 Salvar como nova</b> cria outra." : "Proposta nova, ainda não salva.";
+      $("#pj-nova", el).classList.toggle("oculto", !atual);
+    }
+    function semTabela(e) { return /does not exist|schema cache|PGRST205|42P01/i.test(String((e && (e.message || e.code)) || e)); }
+    function salvarProposta(comoNova, b) {
+      var cli = $("#pj-cli", el).value.trim();
+      if (!cli) { $("#pj-erro", el).innerHTML = '<div class="aviso erro">Informe o contratante (cliente) para salvar.</div>'; return; }
+      $("#pj-erro", el).innerHTML = "";
+      var reg = { cliente: cli, valor: A.lerNumero($("#pj-valor", el).value) || null, campos: tudo(), atualizado_em: new Date().toISOString() };
+      A.ocupado(b, true, "Salvando...");
+      var q = atual && !comoNova ? P.sb.from("propostas_projeto").update(reg).eq("id", atual.id).select().single() : P.sb.from("propostas_projeto").insert(reg).select().single();
+      Promise.resolve(q).then(function (r) { if (r.error) throw r.error; return r.data; }).then(function (n) { A.ocupado(b, false); atual = n; estado(); A.avisar("💾 Proposta salva", "ok"); })
+        .catch(function (e) {
+          A.ocupado(b, false);
+          $("#pj-erro", el).innerHTML = '<div class="aviso erro">' + (semTabela(e) ? "Para salvar propostas, rode no Supabase o <b>supabase.sql</b> atualizado (tabela <b>propostas_projeto</b>)." : esc(A.msgErro ? A.msgErro(e) : e.message)) + "</div>";
+        });
+    }
+    $("#pj-salvar", el).onclick = function () { salvarProposta(false, this); };
+    $("#pj-nova", el).onclick = function () { salvarProposta(true, this); };
+    $("#pj-salvas", el).onclick = function () {
+      var jj = A.janela('<div id="ps-lista"><div class="cartao vazio">Carregando...</div></div>', { titulo: "📂 Propostas de projeto salvas", larga: true, semRascunho: true });
+      function lista() {
+        Promise.resolve(P.sb.from("propostas_projeto").select("*").order("atualizado_em", { ascending: false }).limit(300)).then(function (r) { if (r.error) throw r.error; return r.data || []; }).then(function (ls) {
+          var box = $("#ps-lista", jj.el);
+          if (!ls.length) { box.innerHTML = '<div class="cartao vazio">Nenhuma proposta salva ainda. Preencha e toque em 💾 Salvar proposta.</div>'; return; }
+          box.innerHTML = '<div class="tabela-caixa"><table><thead><tr><th>Cliente</th><th class="num">Valor</th><th>Salva em</th><th></th></tr></thead><tbody>' + ls.map(function (x) {
+            return "<tr><td>" + esc(x.cliente) + '</td><td class="num">' + (x.valor ? din(x.valor) : "—") + "</td><td>" + esc(A.data(x.atualizado_em || x.criado_em)) + '</td><td><button class="peq prim" data-ps-abrir="' + x.id + '">Abrir</button> <button class="peq" data-ps-modelo="' + x.id + '" title="Abre com os mesmos serviços e valores, sem o cliente">📋 Usar como modelo</button> <button class="peq perigo" data-ps-del="' + x.id + '">🗑</button></td></tr>';
+          }).join("") + "</tbody></table></div>";
+          var acha = function (id) { return ls.filter(function (x) { return x.id === id; })[0]; };
+          $$("[data-ps-abrir]", box).forEach(function (bt) { bt.onclick = function () { var x = acha(bt.dataset.psAbrir); aplicar(x.campos || {}, false); atual = x; estado(); jj.fechar(); }; });
+          $$("[data-ps-modelo]", box).forEach(function (bt) { bt.onclick = function () { var x = acha(bt.dataset.psModelo); aplicar(x.campos || {}, true); atual = null; estado(); jj.fechar(); A.avisar("📋 Modelo carregado: preencha o novo cliente", "ok"); }; });
+          $$("[data-ps-del]", box).forEach(function (bt) { bt.onclick = function () {
+            var x = acha(bt.dataset.psDel); if (!A.confirmar("Apagar a proposta salva de " + x.cliente + "? Não dá para recuperar.")) return;
+            Promise.resolve(P.sb.from("propostas_projeto").delete().eq("id", x.id)).then(function (r) { if (r.error) throw r.error; if (atual && atual.id === x.id) { atual = null; estado(); } lista(); }).catch(function (e) { A.avisar(A.msgErro ? A.msgErro(e) : e.message, "erro"); });
+          }; });
+        }).catch(function (e) { $("#ps-lista", jj.el).innerHTML = '<div class="aviso">' + (semTabela(e) ? "Para guardar propostas, rode no Supabase o <b>supabase.sql</b> atualizado (tabela <b>propostas_projeto</b>)." : esc(A.msgErro ? A.msgErro(e) : e.message)) + "</div>"; });
+      }
+      lista();
+    };
+    estado();
     function ler() {
       var v = A.lerNumero($("#pj-valor", el).value);
       var d = { data: $("#pj-data", el).value || A.isoLocal(new Date()), cliente: $("#pj-cli", el).value.trim(), doc: $("#pj-doc", el).value.trim(), local: $("#pj-local", el).value.trim(), valor: v, nf: $("#pj-nf", el).value, pagamento: $("#pj-pag", el).value.trim(),

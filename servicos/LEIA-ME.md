@@ -519,3 +519,9 @@ Em **Orçamentos → 🛒 Supermercados BH · chamados por loja**: só os chamad
 - Se o chamado tem um orçamento ligado, aparece o nº e o total dele, e **↳ usar R$ …** copia esse total para o valor do chamado.
 - Filtros por mês, situação (em aberto, concluídos, finalizados, sem valor) e busca por loja/chamado/serviço; **📋 Colar do portal** atualiza valores e finalizados; **⬇ Planilha (CSV)** e **📤 Compartilhar por loja**.
 - Não precisa rodar SQL.
+
+## 💾 Propostas de projeto salvas
+Em **Orçamentos → 📐 Proposta de projeto** há agora **💾 Salvar proposta**: guarda **todos os campos da tela** (cliente, local, serviços marcados, nº de quadros, valor, pagamento, prazo, responsável técnico...) na nuvem, para abrir em qualquer aparelho.
+- **📂 Propostas salvas**: lista com cliente, valor e data; **Abrir** (continua a editar e **💾 Salvar** atualiza a mesma), **📋 Usar como modelo** (mantém serviços e condições, limpa o cliente) e 🗑 apagar.
+- **📋 Salvar como nova** cria outra proposta a partir da que está aberta. Depois, **📄 Gerar PDF** / **📤 Enviar ao cliente** como antes.
+- Rode o `supabase.sql` (tabela `propostas_projeto`); o arquivo `propostas-de-projeto.sql` tem só essa parte.
