@@ -283,10 +283,17 @@
       y += 2;
       paragrafo([E.cidade ? String(E.cidade).split(" - ")[0] : "", dataExtensa(hoje)].filter(Boolean).join(", ") + ".", 10);
       // assinaturas: AGE, responsável técnico e contratante
-      espaco(46); y += 20;
+      espaco(52); y += 20;
       var bl = [[L, L + 56], [L + 62, L + 118], [R - 56, R]];
       doc.setDrawColor(40); doc.setLineWidth(0.3); bl.forEach(function (b) { doc.line(b[0], y, b[1], y); });
-      function centro(i, linhas, negrito) { linhas.filter(Boolean).forEach(function (t, k) { fonte(k === 0 && negrito ? "bold" : "normal", k === 0 ? 9.5 : 8.5); preto(); doc.splitTextToSize(tx(t), 54).slice(0, 2).forEach(function (ln, m) { doc.text(ln, (bl[i][0] + bl[i][1]) / 2, y + 5 + (k * 4.3) + m * 3.8, { align: "center" }); }); }); }
+      function centro(i, linhas, negrito) {
+        var yy = y + 5;   // cada linha começa abaixo da anterior, mesmo quando o texto quebra em 2 ou 3 linhas
+        linhas.filter(Boolean).forEach(function (t, k) {
+          fonte(k === 0 && negrito ? "bold" : "normal", k === 0 ? 9.5 : 8.5); preto();
+          doc.splitTextToSize(tx(t), 54).slice(0, 3).forEach(function (ln) { doc.text(ln, (bl[i][0] + bl[i][1]) / 2, yy, { align: "center" }); yy += 3.9; });
+          yy += 0.8;
+        });
+      }
       centro(0, [limpaNome(d.rep) || "Responsável pela AGE", E.nome || "AGE", E.documento || ""], true);
       centro(1, [limpaNome(d.rt) || "Responsável técnico", d.titulo || "Responsável técnico", creaTxt(d.crea) || "CREA: ____________"], true);
       centro(2, ["De acordo - Contratante", d.cliente, d.doc ? "CNPJ/CPF: " + d.doc : ""], true);
