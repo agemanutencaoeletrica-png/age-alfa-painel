@@ -530,3 +530,8 @@ Em **Orçamentos → 📐 Proposta de projeto** há agora **💾 Salvar proposta
 No quadro **🧮 A pagar pelo ponto** (aba Pagamentos), dias e horas vêm do **Cartão de ponto** (chegada → saída). Cada funcionário tem **📅 Cartão de ponto** dia a dia (chegada, saída, horas; "sem saída" em vermelho) e o atalho **🕒 Abrir o Cartão de ponto**. Só se faltar ponto você corrige dias/horas à mão.
 - **✅ Acertado até hoje**: marca tudo o que veio antes como pago/combinado; a conta de quanto falta pagar **recomeça de amanhã** (ponto e pagamentos anteriores deixam de contar). Também dá para definir a data em **Equipe → Editar → "Contar o que falta pagar a partir de"**.
 - Rode o `supabase.sql` (coluna `funcionarios.conta_desde`; o arquivo `atualizacoes-2026-11.sql` já inclui). Sem a coluna, o app guarda só neste aparelho e avisa.
+
+## 📐 Proposta de projeto: responsável técnico e três assinaturas no PDF
+O PDF da proposta traz agora, em **6. Disposições Finais**, o parágrafo "Os serviços de engenharia serão executados sob a responsabilidade técnica de (nome, profissão, CREA), contratado(a) pela AGE", e a ART emitida pelo responsável técnico. As **assinaturas** são três: **a AGE** (campo novo "Responsável pela AGE"), **o responsável técnico** (nome, profissão e CREA) e **o contratante** (nome e CNPJ/CPF).
+- O campo **Título** é a **profissão** (ex.: Engenheira Eletricista). Se tiver um nome de pessoa, o app avisa e não põe no PDF.
+- O CREA não repete o "CREA:" e o ponto no fim do nome é tirado.
