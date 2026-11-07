@@ -1664,15 +1664,17 @@
     if (!filtroPonto) {
       var hoje = new Date(), seg = new Date(hoje);
       seg.setDate(hoje.getDate() - ((hoje.getDay() + 6) % 7));
-      filtroPonto = { func: "", area: "", de: A.isoLocal(seg), ate: A.isoLocal(hoje) };
+      filtroPonto = { func: "", equipe: "", area: "", de: A.isoLocal(seg), ate: A.isoLocal(hoje) };
     }
     var F = filtroPonto;
     c.innerHTML = '<div class="cab-secao"><h2>Cartão de ponto</h2><button id="bp-csv">⬇ Planilha (CSV)</button></div>' +
-      '<div class="filtros"><select id="fp-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' +
-      S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
-      '<select id="fp-area" aria-label="Área"><option value="">Todas as áreas</option><option value="eletrica">⚡ Elétrica</option><option value="pintura">🎨 Pintura</option></select>' +
+      '<div class="filtros"><select id="fp-eq" aria-label="Equipe"><option value="">Todas as equipes</option><option value="eletrica">⚡ Equipe Elétrica</option><option value="pintura">🎨 Equipe Pintura</option></select><select id="fp-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' +
+      S.func.filter(function (f) { return !F.equipe || f.area === F.equipe || f.area === "ambos"; }).map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
+      '<select id="fp-area" aria-label="Serviço"><option value="">Serviço: todos</option><option value="eletrica">⚡ Elétrica</option><option value="pintura">🎨 Pintura</option></select>' +
       '<input type="date" id="fp-de" aria-label="De"><input type="date" id="fp-ate" aria-label="Até"></div><div id="lista-ponto">' + carregando() + "</div>";
-    $("#fp-func").value = F.func; $("#fp-area").value = F.area || ""; $("#fp-de").value = F.de; $("#fp-ate").value = F.ate;
+    if (F.func && !S.func.some(function (f) { return f.id === F.func && (!F.equipe || f.area === F.equipe || f.area === "ambos"); })) F.func = "";
+    $("#fp-eq").value = F.equipe || ""; $("#fp-func").value = F.func; $("#fp-area").value = F.area || ""; $("#fp-de").value = F.de; $("#fp-ate").value = F.ate;
+    $("#fp-eq").onchange = function () { F.equipe = this.value; verPonto(c); };
     ["#fp-func", "#fp-area", "#fp-de", "#fp-ate"].forEach(function (s) {
       $(s).onchange = function () { F.func = $("#fp-func").value; F.area = $("#fp-area").value; F.de = $("#fp-de").value; F.ate = $("#fp-ate").value; carregar(); };
     });
@@ -1706,16 +1708,23 @@
         }).sort(function (a, b) { return a.dia < b.dia ? 1 : a.dia > b.dia ? -1 : nomeFunc(a.func).localeCompare(nomeFunc(b.func)); });
 
         var todosDias = dias;
+        var daEquipe = function (fid) { var fu = porId(S.func, fid); return !F.equipe || !!fu && (fu.area === F.equipe || fu.area === "ambos"); };
+        dias = dias.filter(function (d) { return daEquipe(d.func); });
         if (F.area) dias = dias.filter(function (d) { return d.areas.indexOf(F.area) >= 0; });   // dia em que houve ponto em serviço dessa área
-        if (!dias.length) { l.innerHTML = '<div class="cartao vazio">Nenhum registro neste período' + (F.area ? " na área " + (F.area === "eletrica" ? "Elétrica" : "Pintura") : "") + ".</div>"; return; }
+        if (!dias.length) { l.innerHTML = '<div class="cartao vazio">Nenhum registro neste período' + (F.equipe ? " na equipe " + (F.equipe === "eletrica" ? "Elétrica" : "Pintura") : "") + (F.area ? " na área " + (F.area === "eletrica" ? "Elétrica" : "Pintura") : "") + ".</div>"; return; }
         var tot = {};
         dias.forEach(function (d) { var t = tot[d.func] = tot[d.func] || { ms: 0, dias: 0, eletrica: 0, pintura: 0, misto: 0, sem: 0 }; t.ms += d.horas.total; t.dias++; t[d.area === "eletrica" ? "eletrica" : d.area === "pintura" ? "pintura" : d.area === "misto" ? "misto" : "sem"] += d.horas.total; });
         var nomeArea = function (a) { return a === "eletrica" ? "⚡ Elétrica" : a === "pintura" ? "🎨 Pintura" : a === "misto" ? "Elétrica + pintura" : "Sem serviço"; };
         var h = '<div class="cartao"><h3>Resumo do período' + (F.area ? " · " + (F.area === "eletrica" ? "⚡ Elétrica" : "🎨 Pintura") : "") + '</h3><div class="tabela-caixa"><table><thead><tr><th>Funcionário</th><th class="num">Dias</th><th class="num">Horas</th><th class="num">⚡ Elétrica</th><th class="num">🎨 Pintura</th><th class="num">Misto/sem</th></tr></thead><tbody>' +
-          Object.keys(tot).sort(function (a, b) { return nomeFunc(a).localeCompare(nomeFunc(b)); }).map(function (fid) {
-            var t = tot[fid];
-            return "<tr><td>" + esc(nomeFunc(fid)) + '</td><td class="num">' + t.dias + '</td><td class="num">' + A.duracao(t.ms) + '</td><td class="num">' + A.duracao(t.eletrica) + '</td><td class="num">' + A.duracao(t.pintura) + '</td><td class="num">' + A.duracao(t.misto + t.sem) + "</td></tr>";
-          }).join("") + '</tbody></table></div><p class="mudo peq" style="margin:6px 0 0">A área vem do serviço em que o ponto foi batido. Dia com serviços de elétrica e de pintura aparece como "Elétrica + pintura" (as horas não são divididas entre as duas).</p></div>';
+          (function () {
+            var ar = function (fid) { var fu = porId(S.func, fid); return fu && fu.area ? fu.area : "ambos"; }, ordemEq = { eletrica: 0, pintura: 1, ambos: 2 }, ult = null;
+            return Object.keys(tot).sort(function (a, b) { return (ordemEq[ar(a)] - ordemEq[ar(b)]) || nomeFunc(a).localeCompare(nomeFunc(b)); }).map(function (fid) {
+              var cab = "";
+              if (!F.equipe && ar(fid) !== ult) { ult = ar(fid); cab = '<tr><td colspan="6" style="background:var(--sup2);font-weight:700">' + (ult === "eletrica" ? "⚡ Equipe Elétrica" : ult === "pintura" ? "🎨 Equipe Pintura" : "⚡🎨 Elétrica e pintura") + "</td></tr>"; }
+              var t = tot[fid];
+              return cab + "<tr><td>" + esc(nomeFunc(fid)) + '</td><td class="num">' + t.dias + '</td><td class="num">' + A.duracao(t.ms) + '</td><td class="num">' + A.duracao(t.eletrica) + '</td><td class="num">' + A.duracao(t.pintura) + '</td><td class="num">' + A.duracao(t.misto + t.sem) + "</td></tr>";
+            }).join("");
+          })() + '</tbody></table></div><p class="mudo peq" style="margin:6px 0 0">A área vem do serviço em que o ponto foi batido. Dia com serviços de elétrica e de pintura aparece como "Elétrica + pintura" (as horas não são divididas entre as duas).</p></div>';
         var diaAtual = null;
         dias.forEach(function (d) {
           if (d.dia !== diaAtual) {
