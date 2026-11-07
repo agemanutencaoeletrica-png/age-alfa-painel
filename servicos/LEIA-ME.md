@@ -546,3 +546,6 @@ O PDF da proposta de projeto traz, em **6. Disposições Finais**, a frase: a ex
 
 ## 💵 Entrada antes de começar (proposta de projeto)
 O PDF da proposta de projeto traz, em **Disposições Finais**, "Início dos trabalhos": o início do projeto e a contagem do prazo de entrega dependem da **confirmação do pagamento da primeira parcela (entrada)** prevista na condição de pagamento.
+
+## ⚡🎨 Cartão de ponto separado por área (elétrica x pintura)
+No **Cartão de ponto** há o filtro **Área** (Todas, ⚡ Elétrica, 🎨 Pintura). A área de cada dia vem do **serviço em que o ponto foi batido**. Cada dia mostra o selo da área, e o **resumo do período** separa as horas de cada funcionário em Elétrica, Pintura e Misto/sem serviço. Dia com serviços das duas áreas aparece como "Elétrica + pintura" e as horas não são divididas entre elas. A planilha (CSV) ganhou a coluna **Área**. Não precisa de SQL.

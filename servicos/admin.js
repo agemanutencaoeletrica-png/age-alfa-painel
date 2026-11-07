@@ -1664,16 +1664,17 @@
     if (!filtroPonto) {
       var hoje = new Date(), seg = new Date(hoje);
       seg.setDate(hoje.getDate() - ((hoje.getDay() + 6) % 7));
-      filtroPonto = { func: "", de: A.isoLocal(seg), ate: A.isoLocal(hoje) };
+      filtroPonto = { func: "", area: "", de: A.isoLocal(seg), ate: A.isoLocal(hoje) };
     }
     var F = filtroPonto;
     c.innerHTML = '<div class="cab-secao"><h2>Cartão de ponto</h2><button id="bp-csv">⬇ Planilha (CSV)</button></div>' +
       '<div class="filtros"><select id="fp-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' +
       S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
+      '<select id="fp-area" aria-label="Área"><option value="">Todas as áreas</option><option value="eletrica">⚡ Elétrica</option><option value="pintura">🎨 Pintura</option></select>' +
       '<input type="date" id="fp-de" aria-label="De"><input type="date" id="fp-ate" aria-label="Até"></div><div id="lista-ponto">' + carregando() + "</div>";
-    $("#fp-func").value = F.func; $("#fp-de").value = F.de; $("#fp-ate").value = F.ate;
-    ["#fp-func", "#fp-de", "#fp-ate"].forEach(function (s) {
-      $(s).onchange = function () { F.func = $("#fp-func").value; F.de = $("#fp-de").value; F.ate = $("#fp-ate").value; carregar(); };
+    $("#fp-func").value = F.func; $("#fp-area").value = F.area || ""; $("#fp-de").value = F.de; $("#fp-ate").value = F.ate;
+    ["#fp-func", "#fp-area", "#fp-de", "#fp-ate"].forEach(function (s) {
+      $(s).onchange = function () { F.func = $("#fp-func").value; F.area = $("#fp-area").value; F.de = $("#fp-de").value; F.ate = $("#fp-ate").value; carregar(); };
     });
     var dias = [];
     $("#bp-csv").onclick = function () { baixarCsv(dias); };
@@ -1688,6 +1689,8 @@
       if (F.func) cons = cons.eq("funcionario_id", F.func);
       q(cons).then(function (pts) {
         pts.forEach(registrarInfoPonto);
+        // área de cada ponto: a do serviço em que foi batido (elétrica ou pintura); sem serviço = sem área
+        var areaDe = function (p) { var sv = p.servico_id ? porId(S.serv, p.servico_id) : null; return sv && (sv.categoria === "eletrica" || sv.categoria === "pintura") ? sv.categoria : ""; };
         var grupos = {};
         pts.forEach(function (p) {
           var k = A.isoLocal(new Date(p.criado_em)) + "|" + p.funcionario_id;
@@ -1698,16 +1701,21 @@
           var ps = grupos[k], dia = k.split("|")[0];
           var hr = calcHoras(ps, dia === hojeIso ? Date.now() : null);
           var ch = ps.filter(function (p) { return p.tipo === "chegada"; }), sa = ps.filter(function (p) { return p.tipo === "saida"; });
-          return { dia: dia, func: ps[0].funcionario_id, pontos: ps, horas: hr, chegada: ch[0], saida: sa[sa.length - 1], semGps: ps.filter(function (p) { return p.lat === null; }).length };
+          var ars = ps.map(areaDe).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
+          return { dia: dia, func: ps[0].funcionario_id, areas: ars, area: ars.length === 1 ? ars[0] : ars.length ? "misto" : "", pontos: ps, horas: hr, chegada: ch[0], saida: sa[sa.length - 1], semGps: ps.filter(function (p) { return p.lat === null; }).length };
         }).sort(function (a, b) { return a.dia < b.dia ? 1 : a.dia > b.dia ? -1 : nomeFunc(a.func).localeCompare(nomeFunc(b.func)); });
 
-        if (!dias.length) { l.innerHTML = '<div class="cartao vazio">Nenhum registro neste período.</div>'; return; }
+        var todosDias = dias;
+        if (F.area) dias = dias.filter(function (d) { return d.areas.indexOf(F.area) >= 0; });   // dia em que houve ponto em serviço dessa área
+        if (!dias.length) { l.innerHTML = '<div class="cartao vazio">Nenhum registro neste período' + (F.area ? " na área " + (F.area === "eletrica" ? "Elétrica" : "Pintura") : "") + ".</div>"; return; }
         var tot = {};
-        dias.forEach(function (d) { var t = tot[d.func] = tot[d.func] || { ms: 0, dias: 0 }; t.ms += d.horas.total; t.dias++; });
-        var h = '<div class="cartao"><h3>Resumo do período</h3><div class="tabela-caixa"><table><thead><tr><th>Funcionário</th><th class="num">Dias</th><th class="num">Horas</th></tr></thead><tbody>' +
+        dias.forEach(function (d) { var t = tot[d.func] = tot[d.func] || { ms: 0, dias: 0, eletrica: 0, pintura: 0, misto: 0, sem: 0 }; t.ms += d.horas.total; t.dias++; t[d.area === "eletrica" ? "eletrica" : d.area === "pintura" ? "pintura" : d.area === "misto" ? "misto" : "sem"] += d.horas.total; });
+        var nomeArea = function (a) { return a === "eletrica" ? "⚡ Elétrica" : a === "pintura" ? "🎨 Pintura" : a === "misto" ? "Elétrica + pintura" : "Sem serviço"; };
+        var h = '<div class="cartao"><h3>Resumo do período' + (F.area ? " · " + (F.area === "eletrica" ? "⚡ Elétrica" : "🎨 Pintura") : "") + '</h3><div class="tabela-caixa"><table><thead><tr><th>Funcionário</th><th class="num">Dias</th><th class="num">Horas</th><th class="num">⚡ Elétrica</th><th class="num">🎨 Pintura</th><th class="num">Misto/sem</th></tr></thead><tbody>' +
           Object.keys(tot).sort(function (a, b) { return nomeFunc(a).localeCompare(nomeFunc(b)); }).map(function (fid) {
-            return "<tr><td>" + esc(nomeFunc(fid)) + '</td><td class="num">' + tot[fid].dias + '</td><td class="num">' + A.duracao(tot[fid].ms) + "</td></tr>";
-          }).join("") + "</tbody></table></div></div>";
+            var t = tot[fid];
+            return "<tr><td>" + esc(nomeFunc(fid)) + '</td><td class="num">' + t.dias + '</td><td class="num">' + A.duracao(t.ms) + '</td><td class="num">' + A.duracao(t.eletrica) + '</td><td class="num">' + A.duracao(t.pintura) + '</td><td class="num">' + A.duracao(t.misto + t.sem) + "</td></tr>";
+          }).join("") + '</tbody></table></div><p class="mudo peq" style="margin:6px 0 0">A área vem do serviço em que o ponto foi batido. Dia com serviços de elétrica e de pintura aparece como "Elétrica + pintura" (as horas não são divididas entre as duas).</p></div>';
         var diaAtual = null;
         dias.forEach(function (d) {
           if (d.dia !== diaAtual) {
@@ -1715,7 +1723,7 @@
             var dt = new Date(d.dia + "T12:00:00");
             h += '<h3 style="margin:16px 0 8px">' + esc(dt.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })) + "</h3>";
           }
-          h += '<div class="cartao"><div class="linha"><b>' + esc(nomeFunc(d.func)) + "</b>" +
+          h += '<div class="cartao"><div class="linha"><b>' + esc(nomeFunc(d.func)) + "</b>" + '<span class="selo ' + (d.area === "eletrica" ? "eletrica" : d.area === "pintura" ? "pintura" : "") + '">' + nomeArea(d.area) + "</span>" +
             '<span class="peq">Chegada <b>' + (d.chegada ? A.hora(d.chegada.criado_em) : "—") + "</b> · Saída <b>" + (d.saida ? A.hora(d.saida.criado_em) : "—") + "</b></span>" +
             (d.horas.emAberto ? '<span class="selo atencao">' + (d.dia === hojeIso ? "ainda trabalhando" : "sem saída") + "</span>" : "") +
             (d.semGps ? '<span class="selo critico">' + d.semGps + " sem GPS</span>" : "") +
@@ -1732,10 +1740,10 @@
   function baixarCsv(dias) {
     if (!dias || !dias.length) { A.avisar("Nada para exportar neste período."); return; }
     var cel = function (t) { t = String(t === null || t === undefined ? "" : t); return /[;"\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
-    var linhas = [["Data", "Funcionário", "Primeira chegada", "Última saída", "Horas trabalhadas", "Registros", "Sem GPS", "Situação"]];
+    var linhas = [["Data", "Funcionário", "Primeira chegada", "Última saída", "Horas trabalhadas", "Registros", "Sem GPS", "Situação", "Área"]];
     dias.slice().sort(function (a, b) { return a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : nomeFunc(a.func).localeCompare(nomeFunc(b.func)); }).forEach(function (d) {
       linhas.push([A.dataSimples(d.dia), nomeFunc(d.func), d.chegada ? A.hora(d.chegada.criado_em) : "", d.saida ? A.hora(d.saida.criado_em) : "",
-        A.duracao(d.horas.total), d.pontos.length, d.semGps, d.horas.emAberto ? "sem saída" : "ok"]);
+        A.duracao(d.horas.total), d.pontos.length, d.semGps, d.horas.emAberto ? "sem saída" : "ok", d.area === "eletrica" ? "Elétrica" : d.area === "pintura" ? "Pintura" : d.area === "misto" ? "Elétrica e pintura" : "Sem serviço"]);
     });
     var csv = "﻿" + linhas.map(function (l) { return l.map(cel).join(";"); }).join("\r\n");
     var a = document.createElement("a");
