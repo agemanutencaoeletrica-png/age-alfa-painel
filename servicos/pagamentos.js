@@ -6,7 +6,7 @@
   "use strict";
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var P = null;
-  var filtro = { periodo: "4sem", func: "", de: "", ate: "", forma: "", agrupar: "semana" };
+  var filtro = { periodo: "4sem", func: "", equipe: "", de: "", ate: "", forma: "", agrupar: "semana" };
   var AGRUPAR = { semana: "Por semana", quinzena: "Por quinzena", mes: "Por mês" };
   var TIPOS = { diaria: "Diária", salario: "Salário", adiantamento: "Adiantamento", vale: "Vale", reembolso: "Reembolso (material/combustível)", outro: "Outro" };
   var MESES = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
@@ -528,11 +528,14 @@
     else { de = filtro.de ? new Date(filtro.de + "T00:00:00") : new Date(2000, 0, 1); ate = filtro.ate ? new Date(new Date(filtro.ate + "T00:00:00").getTime() + dia) : new Date(2100, 0, 1); }
     return { de: de, ate: ate };
   }
+  // equipe: quem trabalha na elétrica, na pintura ou nas duas ("ambos" aparece nas duas equipes)
+  function naEquipe(f, eq) { eq = eq === undefined ? filtro.equipe : eq; return !eq || (f && (f.area === eq || f.area === "ambos")); }
+  function funcsDaEquipe() { return (P.S.func || []).filter(function (f) { return naEquipe(f); }); }
   function lista() {
     var pr = periodo();
     return P.S.pag.filter(function (p) {
       var d = new Date(p.pago_em);
-      return d >= pr.de && d < pr.ate && (!filtro.func || p.funcionario_id === filtro.func) &&
+      return d >= pr.de && d < pr.ate && (!filtro.func || p.funcionario_id === filtro.func) && (!filtro.equipe || naEquipe(funcDe(p.funcionario_id))) &&
         (!filtro.forma || (filtro.forma === "especie") === (p.forma === "especie"));
     }).sort(function (a, b) { return new Date(a.pago_em) - new Date(b.pago_em); });
   }
@@ -621,7 +624,7 @@
   function fh(h) { var m = Math.round(h * 60); return Math.floor(m / 60) + "h" + (m % 60 ? dois(m % 60) : ""); }
   function aPagar(ps) {
     var box = $("#pg-pagar"); if (!box) return;
-    var fs = (P.S.func || []).filter(function (f) { return Number(f.diaria) > 0 && (!filtro.func || f.id === filtro.func); });
+    var fs = funcsDaEquipe().filter(function (f) { return Number(f.diaria) > 0 && (!filtro.func || f.id === filtro.func); });
     if (!fs.length) { box.innerHTML = ""; return; }
     var pr = periodo(), de = pr.de, ate = pr.ate;
     if (filtro.periodo === "tudo" || (ate - de) > 400 * 864e5) { de = new Date(Date.now() - 62 * 864e5); ate = new Date(Date.now() + 864e5); }   // ponto: no máximo ~2 meses
@@ -702,12 +705,14 @@
       '<div class="filtros"><select id="pg-per" aria-label="Período"><option value="semana">Esta semana</option><option value="passada">Semana passada</option><option value="4sem">Últimas 4 semanas</option>' +
       '<option value="mes">Este mês</option><option value="mespassado">Mês passado</option><option value="tudo">Tudo</option><option value="datas">Escolher datas</option></select>' +
       '<select id="pg-agr" aria-label="Agrupar">' + Object.keys(AGRUPAR).map(function (k) { return '<option value="' + k + '">' + AGRUPAR[k] + "</option>"; }).join("") + '</select>' +
-      '<select id="pg-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + P.S.func.map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
+      '<select id="pg-eq" aria-label="Equipe"><option value="">Todas as equipes</option><option value="eletrica">⚡ Equipe Elétrica</option><option value="pintura">🎨 Equipe Pintura</option></select>' +
+      '<select id="pg-func" aria-label="Funcionário"><option value="">Todos os funcionários</option>' + funcsDaEquipe().map(function (f) { return '<option value="' + f.id + '">' + esc(f.nome) + "</option>"; }).join("") + "</select>" +
       '<input type="date" id="pg-de" aria-label="De" class="' + (filtro.periodo === "datas" ? "" : "oculto") + '"><input type="date" id="pg-ate" aria-label="Até" class="' + (filtro.periodo === "datas" ? "" : "oculto") + '"></div>' +
       '<div id="pg-pagar"></div><div id="pg-res"></div>';
-    $("#pg-per").value = filtro.periodo; $("#pg-func").value = filtro.func; $("#pg-agr").value = filtro.agrupar; $("#pg-de").value = filtro.de; $("#pg-ate").value = filtro.ate;
-    ["#pg-per", "#pg-agr", "#pg-func", "#pg-de", "#pg-ate"].forEach(function (id) {
-      $(id).onchange = function () { filtro.agrupar = $("#pg-agr").value; filtro.periodo = $("#pg-per").value; filtro.func = $("#pg-func").value; filtro.de = $("#pg-de").value; filtro.ate = $("#pg-ate").value; ver(c, P); };
+    if (filtro.func && !funcsDaEquipe().some(function (f) { return f.id === filtro.func; })) filtro.func = "";
+    $("#pg-per").value = filtro.periodo; $("#pg-eq").value = filtro.equipe; $("#pg-func").value = filtro.func; $("#pg-agr").value = filtro.agrupar; $("#pg-de").value = filtro.de; $("#pg-ate").value = filtro.ate;
+    ["#pg-per", "#pg-agr", "#pg-eq", "#pg-func", "#pg-de", "#pg-ate"].forEach(function (id) {
+      $(id).onchange = function () { filtro.equipe = $("#pg-eq").value; filtro.agrupar = $("#pg-agr").value; filtro.periodo = $("#pg-per").value; filtro.func = $("#pg-func").value; filtro.de = $("#pg-de").value; filtro.ate = $("#pg-ate").value; ver(c, P); };
     });
     $$("[data-forma]", c).forEach(function (b) { b.onclick = function () { filtro.forma = b.dataset.forma; ver(c, P); }; });
     $("#pg-especie").onclick = function () { receber({ arquivos: [], texto: "", especie: true }, P); };
@@ -729,8 +734,19 @@
     r.innerHTML = '<div class="cartao"><div class="linha"><h3 style="margin:0">Total do período' + (filtro.forma === "especie" ? " · 💵 dinheiro" : filtro.forma === "pix" ? " · Pix" : "") + '</h3><span class="dir" style="font-size:1.3em;font-weight:700">' + dinheiro(soma(ps)) + "</span></div>" +
       '<div class="peq mudo">' + ps.length + " pagamento" + (ps.length > 1 ? "s" : "") + " · Pix: <b>" + dinheiro(soma(ps.filter(ehPix))) + "</b> · 💵 Dinheiro: <b>" + dinheiro(soma(ps.filter(function (p) { return !ehPix(p); }))) + "</b></div>" +
       '<div class="tabela-caixa" style="margin-top:6px"><table><thead><tr><th>Funcionário</th><th class="num">Pagamentos</th><th class="num">Total</th><th></th></tr></thead><tbody>' +
-      tf.map(function (x) { return "<tr><td>" + esc(P.nomeFunc(x.func) || "—") + diariasTxt(x.func, ps, true) + '</td><td class="num">' + ps.filter(function (p) { return (p.funcionario_id || "-") === x.func; }).length + '</td><td class="num"><b>' + dinheiro(x.total) + "</b></td><td>" +
-        (funcDe(x.func) && funcDe(x.func).token ? '<button class="peq" data-pg-link="' + x.func + '" title="Copia o link de pagamentos deste funcionário">🔗 Link</button>' : "") + "</td></tr>"; }).join("") +
+      (function () {
+        var ar = function (id) { var fu = funcDe(id); return fu && fu.area ? fu.area : "sem"; }, ordem = { eletrica: 0, pintura: 1, ambos: 2, sem: 3 }, ult = null;
+        tf = tf.slice().sort(function (a, b) { return (ordem[ar(a.func)] - ordem[ar(b.func)]) || (b.total - a.total); });
+        return tf.map(function (x) {
+          var cab = "";
+          if (!filtro.equipe && ar(x.func) !== ult) {
+            ult = ar(x.func); var sub = tf.filter(function (y) { return ar(y.func) === ult; }).reduce(function (t, y) { return t + y.total; }, 0);
+            cab = '<tr><td colspan="4" style="background:var(--sup2);font-weight:700">' + (ult === "eletrica" ? "⚡ Equipe Elétrica" : ult === "pintura" ? "🎨 Equipe Pintura" : ult === "ambos" ? "⚡🎨 Elétrica e pintura" : "Sem funcionário") + " · " + dinheiro(sub) + "</td></tr>";
+          }
+          return cab + "<tr><td>" + esc(P.nomeFunc(x.func) || "—") + diariasTxt(x.func, ps, true) + '</td><td class="num">' + ps.filter(function (p) { return (p.funcionario_id || "-") === x.func; }).length + '</td><td class="num"><b>' + dinheiro(x.total) + "</b></td><td>" +
+            (funcDe(x.func) && funcDe(x.func).token ? '<button class="peq" data-pg-link="' + x.func + '" title="Copia o link de pagamentos deste funcionário">🔗 Link</button>' : "") + "</td></tr>";
+        }).join("");
+      })() +
       "</tbody></table></div>" +
       '<div class="acoes"><button id="pg-csv">⬇ Planilha (CSV)</button><button id="pg-comp">📤 Compartilhar relatório</button></div></div>' +
       porGrupo(ps, filtro.agrupar).map(function (s) {

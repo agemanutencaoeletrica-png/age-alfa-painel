@@ -549,3 +549,6 @@ O PDF da proposta de projeto traz, em **Disposições Finais**, "Início dos tra
 
 ## ⚡🎨 Cartão de ponto separado por área (elétrica x pintura)
 No **Cartão de ponto** há o filtro **Área** (Todas, ⚡ Elétrica, 🎨 Pintura). A área de cada dia vem do **serviço em que o ponto foi batido**. Cada dia mostra o selo da área, e o **resumo do período** separa as horas de cada funcionário em Elétrica, Pintura e Misto/sem serviço. Dia com serviços das duas áreas aparece como "Elétrica + pintura" e as horas não são divididas entre elas. A planilha (CSV) ganhou a coluna **Área**. Não precisa de SQL.
+
+## ⚡🎨 Equipes separadas no Ponto e nos Pagamentos
+No **Cartão de ponto** e em **Pagamentos** há o filtro **Equipe** (Todas, ⚡ Equipe Elétrica, 🎨 Equipe Pintura). A equipe vem da **área do funcionário** (Equipe → Editar → Área); quem é "Elétrica e pintura" aparece nas duas equipes. A lista de funcionários, os totais, o quadro **A pagar pelo ponto** e a planilha seguem a equipe escolhida. Em "Todas", os totais vêm **agrupados por equipe**, com o subtotal de cada uma em Pagamentos. Não precisa de SQL.
