@@ -552,3 +552,8 @@ No **Cartão de ponto** há o filtro **Área** (Todas, ⚡ Elétrica, 🎨 Pintu
 
 ## ⚡🎨 Equipes separadas no Ponto e nos Pagamentos
 No **Cartão de ponto** e em **Pagamentos** há o filtro **Equipe** (Todas, ⚡ Equipe Elétrica, 🎨 Equipe Pintura). A equipe vem da **área do funcionário** (Equipe → Editar → Área); quem é "Elétrica e pintura" aparece nas duas equipes. A lista de funcionários, os totais, o quadro **A pagar pelo ponto** e a planilha seguem a equipe escolhida. Em "Todas", os totais vêm **agrupados por equipe**, com o subtotal de cada uma em Pagamentos. Não precisa de SQL.
+
+## 👔👷 Sócio e funcionário cada um no seu lugar
+- Em **Sócios**, o que a empresa pagou ao sócio (ou à conta ligada, como a esposa) fica em **💸 Repasses ao sócio**. O que o **sócio pagou do próprio bolso pela empresa** (ex.: Pix da Neon a um funcionário) fica separado em **🧾 Pagos pelo sócio pela empresa**, com o funcionário marcado "👷". Não é repasse ao sócio e não entra no "Já repassado".
+- **Repasse a funcionário é barrado** em Sócios (à mão e por comprovante): o app avisa para lançar em **Pagamentos (equipe)**. O contrário também: **sócio escolhido como funcionário em Pagamentos é barrado** ("é SÓCIO: lance em Sócios").
+- Correção: o reconhecimento de sócio ao ler comprovantes e extrato em Pagamentos só funcionava depois de abrir a aba Sócios; agora funciona sempre.
