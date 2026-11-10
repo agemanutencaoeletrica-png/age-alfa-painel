@@ -4739,6 +4739,31 @@
     };
     setTimeout(function () { $("#cs-senha", el).focus(); }, 50);
   }
+  // 🔀 junta dois cadastros da mesma pessoa: ponto, relatórios, pagamentos, rotas, serviços e km vão para o cadastro que fica; o repetido é apagado (pede a senha)
+  function juntarFunc(f, janelaEdicao) {
+    var outros = S.func.filter(function (x) { return x.id !== f.id; });
+    if (!outros.length) { A.avisar("Não há outro funcionário para juntar.", "erro"); return; }
+    var jj = A.janela('<p>Tudo de <b>' + esc(f.nome) + '</b> (ponto, relatórios, pagamentos, rotas, serviços) passa para o cadastro que você escolher, e <b>este cadastro é apagado</b>. Não tem volta.</p>' +
+      '<label for="jf-para">Cadastro que FICA</label><select id="jf-para"><option value="">— escolha —</option>' + outros.map(function (x) { return '<option value="' + x.id + '">' + esc(x.nome) + (x.telefone ? " · " + esc(x.telefone) : "") + (x.ativo ? "" : " (desativado)") + "</option>"; }).join("") + "</select>" +
+      '<p class="mudo peq">Os dados do cadastro que fica não mudam (telefone, Pix, diária, link). Só preenche o que estiver vazio nele.</p><div id="jf-msg"></div>' +
+      '<div class="acoes"><button class="perigo" id="jf-ok">Continuar</button><button id="jf-cancelar">Cancelar</button></div>', { titulo: "🔀 Juntar funcionários", semRascunho: true });
+    var el = jj.el;
+    $("#jf-cancelar", el).onclick = function () { jj.fechar(); };
+    $("#jf-ok", el).onclick = function () {
+      var para = $("#jf-para", el).value; if (!para) { $("#jf-msg", el).innerHTML = '<div class="aviso erro">Escolha o cadastro que fica.</div>'; return; }
+      var alvo = porId(S.func, para); jj.fechar();
+      confirmarComSenha("🔀 Juntar funcionários", "<p><b>" + esc(f.nome) + "</b> será juntado em <b>" + esc(alvo.nome) + "</b> e apagado.</p>", "Juntar e apagar", function () {
+        return q(sb.rpc("juntar_funcionarios", { p_de: f.id, p_para: para })).then(function () {
+          if (janelaEdicao) janelaEdicao.fechar();
+          A.avisar("Juntado em " + alvo.nome, "ok");
+          return carregarBase().then(function () { rota(); });
+        }).catch(function (e) {
+          var m = A.msgErro(e);
+          A.avisar(/juntar_funcionarios|schema cache|does not exist|PGRST202/i.test(m) ? "Rode o supabase.sql no Supabase (função juntar_funcionarios) para poder juntar." : m, "erro");
+        });
+      });
+    };
+  }
   function editarFunc(id) {
     var f = id ? porId(S.func, id) : null;
     var j = A.janela('<label for="ef-nome">Nome *</label><input id="ef-nome" maxlength="120">' +
@@ -4750,7 +4775,7 @@
       '<label for="ef-area">Área</label><select id="ef-area"><option value="eletrica">Elétrica</option><option value="pintura">Pintura</option><option value="ambos">Elétrica e pintura</option></select>' +
       (f ? '<label class="marca-linha"><input type="checkbox" id="ef-ativo"> Ativo (pode usar o link)</label>' : "") +
       '<div class="acoes"><button class="prim" id="ef-salvar">Salvar</button>' +
-      (f ? '<button id="ef-token">🔄 Gerar novo link</button><button class="perigo" id="ef-apagar">Apagar</button>' : "") + "</div>",
+      (f ? '<button id="ef-token">🔄 Gerar novo link</button><button id="ef-juntar" title="Passa o ponto, os relatórios e os pagamentos deste cadastro para outro e apaga este">🔀 Juntar com outro funcionário</button><button class="perigo" id="ef-apagar">Apagar</button>' : "") + "</div>",
       { titulo: f ? "Editar funcionário" : "Novo funcionário" });
     var el = j.el;
     $("#ef-nome", el).value = f ? f.nome : ""; $("#ef-tel", el).value = f ? f.telefone || "" : ""; $("#ef-area", el).value = f ? f.area : "eletrica"; $("#ef-pix", el).value = f ? f.pix || "" : "";
@@ -4760,6 +4785,14 @@
     $("#ef-salvar", el).onclick = function () {
       var nome = val(el, "#ef-nome");
       if (!nome) { A.avisar("Informe o nome.", "erro"); return; }
+      // a mesma pessoa não entra duas vezes: mesmo nome + mesmo telefone é barrado; mesmo nome com telefone diferente pede confirmação
+      var nomeK = semAcento(nome).replace(/[^a-z]/g, ""), telK = A.soDigitos(val(el, "#ef-tel")).slice(-9);
+      var igual = S.func.filter(function (x) { return (!f || x.id !== f.id) && semAcento(x.nome).replace(/[^a-z]/g, "") === nomeK; })[0];
+      if (igual) {
+        var telIg = A.soDigitos(igual.telefone || "").slice(-9);
+        if (telK === telIg) { A.avisar("Já existe " + igual.nome + " com esse mesmo telefone" + (igual.ativo ? "" : " (desativado)") + ". Se for outro cadastro da mesma pessoa, use 🔀 Juntar com outro funcionário.", "erro"); return; }
+        if (!A.confirmar("Já existe " + igual.nome + " com outro telefone (" + (igual.telefone || "sem telefone") + "). É a MESMA pessoa?\nSe for, não cadastre de novo: use 🔀 Juntar com outro funcionário.\n\nÉ outra pessoa com o mesmo nome? Toque em OK para salvar assim mesmo.")) return;
+      }
       var b = this; A.ocupado(b, true, "Salvando...");
       var dados = { nome: nome, telefone: nulo(val(el, "#ef-tel")), area: $("#ef-area", el).value };
       if (val(el, "#ef-pix") || (f && f.pix)) dados.pix = nulo(val(el, "#ef-pix"));
@@ -4799,6 +4832,7 @@
           '<button id="ok-copiar">🔗 Copiar link</button></div>', { titulo: "Novo link" }).el.querySelector("#ok-copiar").onclick = function () { copiar(linkFunc(n)); };
       }).catch(falhou);
     };
+    $("#ef-juntar", el).onclick = function () { juntarFunc(f, j); };
     $("#ef-apagar", el).onclick = function () {
       var nPag = (S.pag || []).filter(function (x) { return x.funcionario_id === f.id; }).length, nServ = S.serv.filter(function (x) { return x.funcionario_id === f.id; }).length;
       var aviso = "<p>Apagar <b>" + esc(f.nome) + "</b> não tem volta.</p>" +
@@ -4811,7 +4845,7 @@
         (S.pag || []).forEach(function (x) { if (x.funcionario_id === f.id) x.funcionario_id = null; });
         j.fechar(); A.avisar("Apagado", "ok"); rota();
       }).catch(function (e) {
-        if (/foreign key|violates/i.test(A.msgErro(e))) A.avisar("Ele já tem registros de ponto ou relatórios. Desmarque “Ativo” em vez de apagar.", "erro");
+        if (/foreign key|violates/i.test(A.msgErro(e))) A.avisar("Ele já tem ponto ou relatórios, então não dá para apagar. Se for a MESMA pessoa cadastrada duas vezes, use 🔀 Juntar com outro funcionário; senão, desmarque “Ativo”.", "erro");
         else falhou(e);
       }); });
     };    return el;

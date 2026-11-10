@@ -747,6 +747,30 @@ create table if not exists public.empresa_dados (
 );
 create unique index if not exists empresa_dados_uniq on public.empresa_dados (grupo, rotulo);
 
+-- Juntar dois cadastros do mesmo funcionario: passa ponto, relatorios, pagamentos, rotas, servicos e km para o que fica e apaga o repetido (so o dono).
+create or replace function public.juntar_funcionarios(p_de uuid, p_para uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare n_p int; n_r int; n_k int; n_g int; n_t int; n_s int;
+begin
+  if not public.eh_admin() then raise exception 'Sem permissao.'; end if;
+  if p_de is null or p_para is null or p_de = p_para then raise exception 'Escolha dois cadastros diferentes.'; end if;
+  if not exists (select 1 from public.funcionarios where id = p_de) or not exists (select 1 from public.funcionarios where id = p_para) then raise exception 'Funcionario nao encontrado.'; end if;
+  update public.pontos set funcionario_id = p_para where funcionario_id = p_de;       get diagnostics n_p = row_count;
+  update public.relatorios set funcionario_id = p_para where funcionario_id = p_de;   get diagnostics n_r = row_count;
+  update public.km_registros set funcionario_id = p_para where funcionario_id = p_de; get diagnostics n_k = row_count;
+  update public.pagamentos set funcionario_id = p_para where funcionario_id = p_de;   get diagnostics n_g = row_count;
+  update public.rotas set funcionario_id = p_para where funcionario_id = p_de;        get diagnostics n_t = row_count;
+  update public.servicos set funcionario_id = p_para where funcionario_id = p_de;     get diagnostics n_s = row_count;
+  -- o que estiver vazio no cadastro que fica e existir no repetido, preenche
+  update public.funcionarios f set
+    telefone = coalesce(f.telefone, d.telefone), pix = coalesce(f.pix, d.pix), email = coalesce(f.email, d.email), diaria = coalesce(f.diaria, d.diaria)
+  from public.funcionarios d where f.id = p_para and d.id = p_de;
+  delete from public.funcionarios where id = p_de;
+  return jsonb_build_object('pontos', n_p, 'relatorios', n_r, 'km', n_k, 'pagamentos', n_g, 'rotas', n_t, 'servicos', n_s);
+end $$;
+revoke execute on function public.juntar_funcionarios(uuid, uuid) from public, anon;
+grant execute on function public.juntar_funcionarios(uuid, uuid) to authenticated;
+
 -- ---------- Regras de acesso (RLS) ----------
 
 alter table public.admins enable row level security;
