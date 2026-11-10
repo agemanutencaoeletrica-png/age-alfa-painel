@@ -560,3 +560,11 @@ No **Cartão de ponto** e em **Pagamentos** há o filtro **Equipe** (Todas, ⚡ 
 
 ## 🔐 Apagar funcionário pede a senha
 Em **Equipe → Editar → Apagar**, o app mostra o aviso (quantos pagamentos e serviços ficam sem funcionário) e pede a **sua senha do painel** (a mesma de entrar). Senha errada ou em branco: **nada é apagado**. Se ele já tem ponto ou relatórios, o sistema não deixa apagar: desmarque **Ativo**. A função `confirmarComSenha` serve para outras ações perigosas.
+
+## 🔀 Juntar funcionários repetidos
+- Em **Ponto → Funcionários → editar**, o botão **🔀 Juntar com outro funcionário** move ponto, relatórios, km, pagamentos, rotas e serviços do cadastro repetido para o que fica, completa telefone/Pix/e-mail/diária que faltarem e apaga o repetido. Pede a senha do painel.
+- Requer rodar o `supabase.sql` (função `juntar_funcionarios`).
+- O app **não aceita** o mesmo nome com o mesmo telefone (últimos 9 dígitos). Mesmo nome com outro telefone pergunta se é a mesma pessoa.
+
+## Orçamento da Líder Tintas (PDF) agora é lido
+O leitor reconhece o formato "código, descrição, unid., qtd, unitário, total, nº" e o total impresso como "1.099,78 TOTAL:" (antes pegava o "Total Desconto").

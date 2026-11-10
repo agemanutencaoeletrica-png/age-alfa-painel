@@ -47,7 +47,7 @@
     // total: rótulo forte ("TOTAL DA NOTA", "TOTAL A PAGAR") aceita o número na linha vizinha (DANFE: rótulos numa linha,
     // números na de baixo); rótulo fraco ("VALOR TOTAL", "TOTAL") só com o número na mesma linha; depois a fatura/parcela
     var forteT = /total\s*da\s*nota|total\s+a\s+pagar|valor\s+a\s+pagar|valor\s+pago/i;
-    var fracoT = /valor\s+total(?!\s+dos?\s+(?:produtos|servi))|total\s+(?:geral|r\$)|^\W*total\b(?!\s+(?:bruto|de\s+itens|dos))|\btotal\s*:?\s*(?:r\$\s*)?(?:\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,4}\.\d{2})(?![\d,.])\D{0,4}$/i;
+    var fracoT = /valor\s+total(?!\s+dos?\s+(?:produtos|servi))|total\s+(?:geral|r\$)|^\W*total\b(?!\s+(?:bruto|de\s+itens|dos|desconto|acr))|^\W*\d{1,3}(?:\.\d{3})*,\d{2}\s+total\s*:?\s*$|\btotal\s*:?\s*(?:r\$\s*)?(?:\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,4}\.\d{2})(?![\d,.])\D{0,4}$/i;
     var achou = null, pos = function (v) { return v.filter(function (n) { return n > 0; }); };
     // junto do rótulo do total a foto costuma trocar 5 por S e a vírgula por ponto ("s4.00" = 54,00)
     var valoresT = function (x) {
@@ -157,6 +157,15 @@
       if (tot === null) tot = Math.round(qtd * unit * 100) / 100;
       r.itens.push({ item: md[1].replace(/\s+/g, " ").trim().slice(0, 120), qtd: qtd, un: mu[1].toLowerCase().replace("und", "un"), unit: unit, valor: tot });
       ls[i] = "";
+    });
+    // orçamento de loja de tinta (Líder): "32156 EUCATEX ACQUA RESIST BRANCO FOSCO 18L L1 1,00 799,89 799,89 1" (código, descrição, unid., qtd, unitário, total, nº)
+    ls.forEach(function (x, i) {
+      var m6 = x.match(/^\W*\d{3,8}\s+([A-Za-zÀ-ú].*?)\s+([A-Za-z]{1,4}\d?)\s+(\d+(?:[.,]\d{1,3})?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+\d{1,3}\s*$/);
+      if (!m6) return;
+      var q6 = A.lerNumero(m6[3]), u6 = A.lerNumero(m6[4]), t6 = A.lerNumero(m6[5]);
+      if (!(q6 > 0) || Math.abs(q6 * u6 - t6) > 0.05) return;
+      var un6 = (m6[2].match(/^(UN|UND|PC|PÇ|PCT|M|MT|KG|CX|RL|GL|LATA|BD|PAR)/i) || ["un"])[0].toLowerCase().replace("und", "un");
+      r.itens.push({ item: m6[1].replace(/\s+/g, " ").trim().slice(0, 120), qtd: q6, un: un6, unit: u6, valor: t6 }); ls[i] = "";
     });
     // "002637 1,00 UN ESMALTE CORALIT 3,6L AMARELO 49,90 49,90" (código, quantidade, unidade, descrição, unitário, total)
     ls.forEach(function (x, i) {
