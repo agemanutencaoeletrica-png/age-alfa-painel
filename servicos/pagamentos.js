@@ -464,6 +464,9 @@
       var quitadas = 0;
       if (!sel.length) { $("#pg-erro", el).innerHTML = '<div class="aviso erro">Marque pelo menos um pagamento.</div>'; return; }
       if (falta.length) { $("#pg-erro", el).innerHTML = '<div class="aviso erro">Preencha funcionário, valor e data em todos os marcados.</div>'; return; }
+      if (window.AGE_SOC && window.AGE_SOC.usar) window.AGE_SOC.usar(P);
+      var sc = window.AGE_SOC && sel.filter(function (it) { var fu = !(it.quita && it.nota) ? P.porId(P.S.func, it.funcionario_id) : null; return fu && window.AGE_SOC.achar(fu.nome, [fu.pix], false); })[0];
+      if (sc) { var fs0 = P.porId(P.S.func, sc.funcionario_id); $("#pg-erro", el).innerHTML = '<div class="aviso erro">⛔ <b>' + esc(fs0.nome) + '</b> é <b>SÓCIO</b>: lance na aba <b>👔 Sócios</b> (repasse), e não nos pagamentos da equipe. Troque o funcionário ou desmarque este.</div>'; return; }
       $("#pg-erro", el).innerHTML = ""; A.ocupado(b, true, "Salvando...");
       sel.reduce(function (pr, it) {
         return pr.then(function () {
@@ -1045,6 +1048,7 @@
       G.forEach(function (g) {
         g.total = g.itens.reduce(function (s, x) { return s + x.valor; }, 0);
         // repasse a sócio (ou a conta ligada a ele, ex.: esposa) NÃO é pagamento de funcionário: vai para 👔 Sócios
+        if (window.AGE_SOC && window.AGE_SOC.usar) window.AGE_SOC.usar(P);
         g.socio = window.AGE_SOC ? window.AGE_SOC.achar(g.nome, g.docs, g.cortado) : null;
         var ach = g.socio ? null : acharNoExtrato(g);
         g.f = ach ? ach.f : null; g.por = g.socio ? "sócio" : ach ? ach.por : "";

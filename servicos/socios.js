@@ -35,6 +35,14 @@
       return contas.some(function (c) { var cd = dig(c.doc); return (cd.length >= 11 && ds.some(function (d) { return d === cd; })) || (n.length >= 10 && letras(c.nome) === n) || (cortado && ds.length === 0 && n.length >= 9 && letras(c.nome).indexOf(n) === 0); });
     })[0] || null;
   }
+  // este nome/CPF é de um FUNCIONÁRIO da equipe? (CPF na chave Pix, ou nome completo igual / começo do nome cortado)
+  function funcionarioDe(nome, docs, cortado) {
+    var ds = (docs || []).map(dig).filter(function (d) { return d.length >= 11; }), n = letras(nome);
+    return ((P && P.S.func) || []).filter(function (f) {
+      var pd = dig(f.pix);
+      return (pd.length >= 11 && ds.some(function (d) { return d === pd; })) || (n.length >= 10 && letras(f.nome) === n) || (cortado && ds.length === 0 && n.length >= 9 && letras(f.nome).indexOf(n) === 0);
+    })[0] || null;
+  }
   function paraTexto(rel) { return (rel || []).map(function (x) { return x.nome + (x.doc ? "; " + x.doc : ""); }).join("\n"); }
   function deTexto(t) {
     return String(t || "").split("\n").map(function (l) { l = l.trim(); if (!l) return null; var p = l.split(/[;|]/); return { nome: p[0].trim().slice(0, 160), doc: (p[1] || "").trim().slice(0, 30) }; }).filter(function (x) { return x && x.nome; });
@@ -55,7 +63,7 @@
     var ls = lista();
     if (!ls.length) { r.innerHTML = '<div class="cartao vazio">Nenhum sócio ainda. Toque em <b>+ Novo sócio</b>.</div>'; return; }
     r.innerHTML = ls.map(function (s) {
-      var t = totais(s), sv = servicosDe(s), rp = repassesDe(s);
+      var t = totais(s), sv = servicosDe(s), todosRp = repassesDe(s), rp = todosRp.filter(function (x) { return x.tipo !== "aporte"; }), ap = todosRp.filter(function (x) { return x.tipo === "aporte"; });
       var tile = function (rot, v, cor) { return '<div class="ladrilho" style="border-left:4px solid var(--' + cor + ')"><div class="r">' + rot + '</div><div class="v" style="font-size:1.15em">' + din(v) + "</div></div>"; };
       return '<div class="cartao" data-so="' + esc(s.id) + '"><div class="linha" style="gap:8px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:220px"><b style="font-size:1.1em">' + esc(s.nome) + "</b> " +
         '<span class="selo">' + esc(String(s.percentual).replace(".", ",")) + "% dos serviços fechados</span>" + (s.ativo === false ? ' <span class="selo">inativo</span>' : "") +
@@ -67,9 +75,13 @@
         '<details style="margin-top:6px"' + (sv.length ? " open" : "") + "><summary><b>Serviços fechados (" + sv.length + ")</b></summary>" + (sv.length ? '<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Cliente / serviço</th><th class="num">Valor</th><th class="num">Parte</th><th></th></tr></thead><tbody>' +
           sv.map(function (x) { var nt = x.receita_id ? (P.S.receitas || []).filter(function (n) { return n.id === x.receita_id; })[0] : null;
             return "<tr><td>" + dataBr(x.data) + "</td><td>" + esc(x.cliente || "") + (x.descricao ? '<div class="peq mudo">' + esc(x.descricao) + "</div>" : "") + (nt ? '<div class="peq">🧾 nota ' + esc(nt.numero_nota || "s/ nº") + (nt.recebido ? " · ✅ recebida" : " · ⏳ a receber") + "</div>" : "") + '</td><td class="num">' + din(x.valor) + '</td><td class="num">' + din(parte(x, s)) + ' <span class="peq mudo">' + String(pc(x, s)).replace(".", ",") + '%</span></td><td><button class="peq" data-so-sv="' + esc(x.id) + '">✏</button></td></tr>'; }).join("") + "</tbody></table></div>" : '<p class="peq mudo">Nenhum serviço lançado.</p>') + "</details>" +
-        '<details' + (rp.length ? " open" : "") + "><summary><b>Repasses (" + rp.length + ")</b></summary>" + (rp.length ? '<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Quem recebeu</th><th class="num">Valor</th><th></th></tr></thead><tbody>' +
-          rp.map(function (x) { return "<tr><td>" + dataBr(dataLocal(x.pago_em)) + ' <span class="peq mudo">' + esc(horaBr(x.pago_em)) + "</span></td><td>" + (x.tipo === "aporte" ? '<span class="selo">pagou pela empresa</span> ' : "") + esc(x.favorecido || "") + (x.descricao ? '<div class="peq mudo">' + esc(x.descricao) + "</div>" : "") +
-            (x.comprovante ? ' <button class="peq" data-so-foto="' + esc(x.comprovante) + '">🖼</button>' : "") + '</td><td class="num">' + din(x.valor) + '</td><td><button class="peq" data-so-rp="' + esc(x.id) + '">✏</button></td></tr>'; }).join("") + "</tbody></table></div>" : '<p class="peq mudo">Nenhum repasse lançado.</p>') + "</details></div>";
+        '<details' + (rp.length ? " open" : "") + "><summary><b>💸 Repasses ao sócio (" + rp.length + ')</b> <span class="peq mudo">a empresa pagou a ele ou à conta ligada</span></summary>' + (rp.length ? '<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Quem recebeu</th><th class="num">Valor</th><th></th></tr></thead><tbody>' +
+          rp.map(function (x) { return "<tr><td>" + dataBr(dataLocal(x.pago_em)) + ' <span class="peq mudo">' + esc(horaBr(x.pago_em)) + "</span></td><td>" + esc(x.favorecido || "") + (x.descricao ? '<div class="peq mudo">' + esc(x.descricao) + "</div>" : "") +
+            (x.comprovante ? ' <button class="peq" data-so-foto="' + esc(x.comprovante) + '">🖼</button>' : "") + '</td><td class="num">' + din(x.valor) + '</td><td><button class="peq" data-so-rp="' + esc(x.id) + '">✏</button></td></tr>'; }).join("") + "</tbody></table></div>" : '<p class="peq mudo">Nenhum repasse lançado.</p>') + "</details>" +
+        '<details' + (ap.length ? " open" : "") + ' style="margin-top:6px"><summary><b>🧾 Pagos pelo sócio pela empresa (' + ap.length + ')</b> <span class="peq mudo">ele adiantou com o dinheiro dele</span></summary>' + (ap.length ? '<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Pago a</th><th class="num">Valor</th><th></th></tr></thead><tbody>' +
+          ap.map(function (x) { var fu = funcionarioDe(x.favorecido, [], false);
+            return "<tr><td>" + dataBr(dataLocal(x.pago_em)) + ' <span class="peq mudo">' + esc(horaBr(x.pago_em)) + "</span></td><td>" + (fu ? '<span class="selo">👷 funcionário</span> ' : "") + esc(x.favorecido || "") + (x.descricao ? '<div class="peq mudo">' + esc(x.descricao) + "</div>" : "") +
+              (x.comprovante ? ' <button class="peq" data-so-foto="' + esc(x.comprovante) + '">🖼</button>' : "") + '</td><td class="num">' + din(x.valor) + '</td><td><button class="peq" data-so-rp="' + esc(x.id) + '">✏</button></td></tr>'; }).join("") + '</tbody></table></div><p class="peq mudo" style="margin:4px 0 0">Isto <b>não é repasse ao sócio</b>: é só o registro de que ele pagou do bolso o que era da empresa (a empresa deve esse valor a ele). O pagamento em si fica em <b>Pagamentos</b> (equipe) ou em <b>Compras</b>.</p>' : '<p class="peq mudo">Nada lançado.</p>') + "</details></div>";
     }).join("");
     $$("[data-so]", r).forEach(function (el) {
       var s = lista().filter(function (x) { return x.id === el.dataset.so; })[0];
@@ -180,6 +192,8 @@
       var v = A.lerNumero($("#rp-valor", el).value);
       if (!$("#rp-data", el).value) { A.avisar("Informe a data.", "erro"); return; }
       if (!(v > 0)) { A.avisar("Informe o valor.", "erro"); return; }
+      var fu0 = $("#rp-tipo", el).value !== "aporte" ? funcionarioDe($("#rp-fav", el).value, [], false) : null;
+      if (fu0) { A.avisar(fu0.nome + " é FUNCIONÁRIO: lance em Pagamentos (equipe), e não como repasse ao sócio. Se o sócio pagou do bolso, escolha o tipo \"O sócio pagou algo da empresa\".", "erro"); return; }
       var d = { socio_id: s.id, pago_em: paraIso($("#rp-data", el).value, $("#rp-hora", el).value), valor: v, tipo: $("#rp-tipo", el).value, favorecido: $("#rp-fav", el).value.trim() || null, descricao: $("#rp-desc", el).value.trim() || null };
       var b = this; A.ocupado(b, true, "Salvando...");
       P.q(novo ? P.sb.from("socio_repasses").insert(d).select().single() : P.sb.from("socio_repasses").update(d).eq("id", rp.id).select().single()).then(function (n) {
@@ -228,6 +242,8 @@
         var b = this, sel = [];
         $$(".cp-uso", el).forEach(function (cb) { if (cb.checked) sel.push({ it: itens[Number(cb.dataset.i)], tipo: $(".cp-tipo[data-i='" + cb.dataset.i + "']", el).value }); });
         if (!sel.length) { A.avisar("Marque o que vai lançar.", "erro"); return; }
+        var errF = sel.map(function (q2) { return q2.tipo !== "aporte" ? funcionarioDe(q2.it.x.favorecido, [q2.it.x.cpf, q2.it.x.chave], false) : null; }).filter(Boolean)[0];
+        if (errF) { A.avisar(errF.nome + " é FUNCIONÁRIO: lance em Pagamentos (equipe). Aqui só entra repasse ao sócio (ou o que o sócio pagou do bolso).", "erro"); return; }
         A.ocupado(b, true, "Lançando...");
         var n = 0, total = 0;
         sel.reduce(function (pr, q2) {
@@ -248,5 +264,5 @@
     });
   }
 
-  window.AGE_SOC = { ver: ver, achar: achar, totais: totais, lista: lista, repassesDe: repassesDe };
+  window.AGE_SOC = { usar: function (ctx) { P = ctx; }, ver: ver, achar: achar, funcionarioDe: funcionarioDe, totais: totais, lista: lista, repassesDe: repassesDe };
 })();
