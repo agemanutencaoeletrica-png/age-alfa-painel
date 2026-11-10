@@ -565,3 +565,6 @@ Em **Equipe → Editar → Apagar**, o app mostra o aviso (quantos pagamentos e 
 - Em **Ponto → Funcionários → editar**, o botão **🔀 Juntar com outro funcionário** move ponto, relatórios, km, pagamentos, rotas e serviços do cadastro repetido para o que fica, completa telefone/Pix/e-mail/diária que faltarem e apaga o repetido. Pede a senha do painel.
 - Requer rodar o `supabase.sql` (função `juntar_funcionarios`).
 - O app **não aceita** o mesmo nome com o mesmo telefone (últimos 9 dígitos). Mesmo nome com outro telefone pergunta se é a mesma pessoa.
+
+## Orçamento da Líder Tintas (PDF) agora é lido
+O leitor reconhece o formato "código, descrição, unid., qtd, unitário, total, nº" e o total impresso como "1.099,78 TOTAL:" (antes pegava o "Total Desconto").
