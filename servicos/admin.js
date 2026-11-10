@@ -4717,6 +4717,28 @@
     });
   }
 
+  // ação perigosa: pede a SENHA DE LOGIN do painel (a mesma de entrar) antes de executar. fazer() devolve uma promessa.
+  function confirmarComSenha(titulo, avisoHtml, rotuloBotao, fazer) {
+    var j = A.janela(avisoHtml + '<label for="cs-senha">Digite a sua senha do painel para confirmar</label><input id="cs-senha" type="password" autocomplete="current-password" maxlength="100"><div id="cs-msg"></div>' +
+      '<div class="acoes"><button class="perigo" id="cs-ok">' + esc(rotuloBotao) + '</button><button id="cs-cancelar">Cancelar</button></div>', { titulo: titulo, semRascunho: true });
+    var el = j.el;
+    $("#cs-cancelar", el).onclick = function () { j.fechar(); };
+    function erro(m) { $("#cs-msg", el).innerHTML = '<div class="aviso erro">' + esc(m) + "</div>"; }
+    $("#cs-senha", el).addEventListener("keydown", function (ev) { if (ev.key === "Enter") $("#cs-ok", el).click(); });
+    $("#cs-ok", el).onclick = function () {
+      var senha = $("#cs-senha", el).value, b = this; if (!senha) { erro("Digite a senha para confirmar."); return; }
+      A.ocupado(b, true, "Conferindo...");
+      sb.auth.getSession().then(function (r) {
+        var se = r.data && r.data.session, email = se && se.user && se.user.email;
+        if (!email) throw new Error("Sua sessão expirou. Entre de novo.");
+        return sb.auth.signInWithPassword({ email: email, password: senha });
+      }).then(function (x) {
+        if (x.error) throw new Error(/Invalid login/i.test(x.error.message || "") ? "Senha errada. Nada foi apagado." : A.msgErro(x.error));
+        j.fechar(); return fazer();
+      }).catch(function (e) { A.ocupado(b, false); erro(A.msgErro(e)); });
+    };
+    setTimeout(function () { $("#cs-senha", el).focus(); }, 50);
+  }
   function editarFunc(id) {
     var f = id ? porId(S.func, id) : null;
     var j = A.janela('<label for="ef-nome">Nome *</label><input id="ef-nome" maxlength="120">' +
@@ -4778,15 +4800,20 @@
       }).catch(falhou);
     };
     $("#ef-apagar", el).onclick = function () {
-      if (!A.confirmar("Apagar " + f.nome + "? Só é possível se ainda não houver registros de ponto ou relatórios dele.")) return;
-      q(sb.from("funcionarios").delete().eq("id", f.id)).then(function () {
+      var nPag = (S.pag || []).filter(function (x) { return x.funcionario_id === f.id; }).length, nServ = S.serv.filter(function (x) { return x.funcionario_id === f.id; }).length;
+      var aviso = "<p>Apagar <b>" + esc(f.nome) + "</b> não tem volta.</p>" +
+        (nPag ? '<div class="aviso erro">⚠️ Ele tem <b>' + nPag + " pagamento(s)</b> lançado(s): eles ficam <b>sem funcionário</b> e saem dos totais da equipe. Prefira desmarcar “Ativo”.</div>" : "") +
+        (nServ ? '<div class="aviso">Tem ' + nServ + " serviço(s) ligado(s) a ele: ficam sem funcionário.</div>" : "") +
+        '<p class="mudo peq">Se ele já tem ponto ou relatórios, o sistema não deixa apagar: nesse caso desmarque “Ativo”.</p>';
+      confirmarComSenha("🗑 Apagar funcionário", aviso, "Apagar " + f.nome.split(" ")[0], function () { return q(sb.from("funcionarios").delete().eq("id", f.id)).then(function () {
         tirar(S.func, f.id);
         S.serv.forEach(function (s) { if (s.funcionario_id === f.id) s.funcionario_id = null; });
+        (S.pag || []).forEach(function (x) { if (x.funcionario_id === f.id) x.funcionario_id = null; });
         j.fechar(); A.avisar("Apagado", "ok"); rota();
       }).catch(function (e) {
         if (/foreign key|violates/i.test(A.msgErro(e))) A.avisar("Ele já tem registros de ponto ou relatórios. Desmarque “Ativo” em vez de apagar.", "erro");
         else falhou(e);
-      });
+      }); });
     };    return el;
   }
 

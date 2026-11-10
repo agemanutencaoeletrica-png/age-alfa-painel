@@ -557,3 +557,6 @@ No **Cartão de ponto** e em **Pagamentos** há o filtro **Equipe** (Todas, ⚡ 
 - Em **Sócios**, o que a empresa pagou ao sócio (ou à conta ligada, como a esposa) fica em **💸 Repasses ao sócio**. O que o **sócio pagou do próprio bolso pela empresa** (ex.: Pix da Neon a um funcionário) fica separado em **🧾 Pagos pelo sócio pela empresa**, com o funcionário marcado "👷". Não é repasse ao sócio e não entra no "Já repassado".
 - **Repasse a funcionário é barrado** em Sócios (à mão e por comprovante): o app avisa para lançar em **Pagamentos (equipe)**. O contrário também: **sócio escolhido como funcionário em Pagamentos é barrado** ("é SÓCIO: lance em Sócios").
 - Correção: o reconhecimento de sócio ao ler comprovantes e extrato em Pagamentos só funcionava depois de abrir a aba Sócios; agora funciona sempre.
+
+## 🔐 Apagar funcionário pede a senha
+Em **Equipe → Editar → Apagar**, o app mostra o aviso (quantos pagamentos e serviços ficam sem funcionário) e pede a **sua senha do painel** (a mesma de entrar). Senha errada ou em branco: **nada é apagado**. Se ele já tem ponto ou relatórios, o sistema não deixa apagar: desmarque **Ativo**. A função `confirmarComSenha` serve para outras ações perigosas.
