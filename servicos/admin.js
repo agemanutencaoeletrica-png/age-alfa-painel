@@ -123,6 +123,10 @@
     });
   }
   var LAUDO_PARTES = [["vistoria", "Vistoria técnica"], ["solucao", "Solução"]];
+  // 📋 apresentação e escopo técnico: texto próprio, guardado junto do laudo (mesmo campo no banco), com título próprio no PDF
+  function temEscopo(o) { return !!(o && o.laudo && String(o.laudo.escopo || "").trim()); }
+  function copiaLaudo(l) { l = l || {}; return { vistoria: l.vistoria || "", solucao: l.solucao || "", escopo: l.escopo || "" }; }
+  function temAlgo(o) { return temLaudo(o) || temEscopo(o); }
   function modelosLaudo() { return MODELOS_LAUDO.concat(S.modelosLaudo || []); }
   function guardarModelosLocal() { try { localStorage.setItem("age_modelos_laudo", JSON.stringify((S.modelosLaudo || []).filter(function (m) { return m.local; }))); } catch (e) { /* sem armazenamento */ } }
   function lerModelosLocal() { try { return JSON.parse(localStorage.getItem("age_modelos_laudo") || "[]"); } catch (e) { return []; } }
@@ -2390,7 +2394,7 @@
       categoria: o.categoria || "", itens: JSON.parse(JSON.stringify(o.itens || [])), desconto: Number(o.desconto) || 0,
       pagamento: o.pagamento || "", prazo: o.prazo || "", validade_dias: o.validade_dias || 15, observacoes: o.observacoes || "",
       valores_cliente: o.valores_cliente || "itens", materiais_cliente: o.materiais_cliente === true, tipo: o.tipo || "servico",
-      laudo: temLaudo(o) ? { vistoria: o.laudo.vistoria || "", solucao: o.laudo.solucao || "" } : null
+      laudo: temAlgo(o) ? copiaLaudo(o.laudo) : null
     });
     A.avisar("📋 Itens do orçamento nº " + String(o.numero).padStart(4, "0") + " copiados. Preencha o cliente e ajuste o que mudou.", "ok");
   }
@@ -2446,7 +2450,18 @@
   var MODOS_MAT = { itens: "Com o valor de cada material", total: "Só o valor total (sem o valor de cada material)", nenhum: "Sem valores: só o nome e a quantidade dos materiais" };
   function modoMat(o) { return MODOS_MAT[o.valores_cliente] ? o.valores_cliente : "itens"; }
   function semValores(o) { return soMateriais(o) && modoMat(o) === "nenhum"; }
-  function valoresCliente(o) { return soMateriais(o) ? modoMat(o) === "itens" : o.valores_cliente !== "total"; }
+  // orçamento completo (materiais + mão de obra): o que o cliente vê com valor. t_total = só o total; t_mao = valor da mão de obra; t_mat = valor dos materiais;
+  // "itens" = tudo com valor. (Nos três primeiros os materiais entram no total.)
+  function modoVis(o) { return !soMateriais(o) && /^t_(total|mao|mat)$/.test(o.valores_cliente || "") ? o.valores_cliente : null; }
+  function valoresCliente(o) { var mv = modoVis(o); return soMateriais(o) ? modoMat(o) === "itens" : mv ? mv === "t_mao" : o.valores_cliente !== "total"; }
+  // linhas de subtotal que o cliente vê acima do total, conforme o modo
+  function linhasSub(o, t) {
+    var mv = modoVis(o), l = [];
+    if (mv === "t_total") return l;
+    if (mv !== "t_mao" && t.mc && t.mat) l.push(["Materiais", t.mat]);
+    if (mv !== "t_mat" && t.serv) l.push(["Mão de obra", t.serv]);
+    return l;
+  }
   // 🏛 impostos embutidos (só o dono vê): modo "sem" = os valores digitados são líquidos e o app soma ISS + DAS em cada valor do cliente;
   // modo "com" = os valores já têm imposto (total não muda; só mostra quanto é imposto). O cliente nunca vê as linhas de imposto.
   var CHAVE_ISS = "age_iss_municipios_v1", ISS_BASE = { "BELO HORIZONTE/MG": 2.7, "BETIM/MG": 2.8 };
@@ -2548,12 +2563,13 @@
     // orçamento só de materiais: valores dos materiais vão para o cliente, sem mão de obra
     var notaPre = M._nota; delete M._nota;   // nota de 🧾 Compras para ler logo ao abrir
     var textoPre = M._texto; delete M._texto;   // texto compartilhado com o app: separa nos campos logo ao abrir
-    M.laudo = temLaudo(M) ? { vistoria: M.laudo.vistoria || "", solucao: M.laudo.solucao || "" } : { vistoria: "", solucao: "" };
+    M.laudo = copiaLaudo(M.laudo);
     if (soMateriais(M)) { M.materiais_cliente = true; M.valores_cliente = modoMat(M); if (!base || !base.pagamento) M.pagamento = M.pagamento === "50% na aprovação e 50% na entrega do serviço" ? "À vista na aprovação" : M.pagamento; }
     M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
     if (soMateriais(M)) M.itens.forEach(function (i) { i.tipo = "material"; });
     if (!M.itens.length) M.itens.push(soMateriais(M) ? { tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 } : { tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 });
-    M.materiais_cliente = matCliente(M); M.valores_cliente = soMateriais(M) ? modoMat(M) : valoresCliente(M) ? "itens" : "total";
+    M.materiais_cliente = matCliente(M); M.valores_cliente = soMateriais(M) ? modoMat(M) : modoVis(M) ? M.valores_cliente : valoresCliente(M) ? "itens" : "total";
+    var visSel = modoVis(M);
 
     var j = A.janela(
       '<label for="eo2-cli">Cliente *</label><input id="eo2-cli" maxlength="200">' +
@@ -2562,6 +2578,8 @@
       '<div class="duas"><div><label for="eo2-tel">WhatsApp do cliente</label><input id="eo2-tel" type="tel" maxlength="40"></div><div><label for="eo2-email">E-mail do cliente</label><input id="eo2-email" type="email" maxlength="200"></div></div>' +
       '<div class="duas"><div><label for="eo2-end">Endereço</label><input id="eo2-end" maxlength="300"></div><div><label for="eo2-cat">Área</label><div class="linha" style="gap:6px"><select id="eo2-cat" style="flex:1"><option value="">—</option>' +
       opcoesAreas() + '</select><button type="button" class="peq" id="eo2-areas" title="Acrescentar, renomear ou tirar áreas (TI, Câmeras...)">✏️ Áreas</button></div></div></div>' +
+      '<details class="cartao" id="eo2-esc-cx" style="margin-top:12px"' + (temEscopo(M) ? " open" : "") + '><summary><b>📋 Apresentação e escopo técnico</b> <span class="peq mudo">· opcional, vai no PDF antes dos itens</span></summary>' +
+        '<label for="eo2-escopo">O que a proposta contempla e o que será feito</label><textarea id="eo2-escopo" rows="8" spellcheck="true" lang="pt-BR" maxlength="6000" placeholder="Apresentação da proposta e, abaixo, os serviços incluídos. Comece a linha com - ou • para virar tópico."></textarea></details>' +
       (soMateriais(M) ? "" : '<details class="cartao" id="eo2-laudo-cx" style="margin-top:12px"' + (temLaudo(M) ? " open" : "") + '><summary><b>🔍 Laudo técnico (vistoria e solução)</b> <span class="peq mudo">· opcional, vai no PDF antes dos itens</span></summary>' +
         '<div class="linha" style="margin-top:8px"><select id="eo2-lmod" aria-label="Modelo de laudo" style="flex:1 1 100%"></select><button class="peq" id="eo2-lsalvar" title="Guarda este laudo para usar em outros orçamentos">💾 Salvar como modelo</button>' +
         '<button class="peq" id="eo2-lapagar" title="Apaga o modelo escolhido na lista">🗑 Apagar modelo</button></div>' +
@@ -2569,12 +2587,15 @@
         '<label for="eo2-sol">Solução (o que será feito)</label><textarea id="eo2-sol" rows="4" spellcheck="true" lang="pt-BR" maxlength="4000"></textarea>' +
         '<p class="mudo peq" style="margin:4px 0 0">Comece a linha com • ou - para virar tópico no PDF. Escolha um modelo e edite à vontade: o modelo não muda.</p></details>') +
       '<h3 style="margin-top:14px">Itens</h3><div id="eo2-itens"></div><datalist id="eo2-dl-precos"></datalist>' +
-      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button>' + (soMateriais(M) ? "" : '<button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-mais-ambos">+ Material + mão de obra</button>') + '<button class="peq" id="eo2-lista-mat" title="Escolher vários materiais da lista de uma vez">📋 Escolher da lista</button><button class="peq" id="eo2-ler-nota" title="Materiais da nota fiscal ou do orçamento da loja (foto, PDF, XML, lista colada ou nota já lançada em Compras)">📷 Ler nota / orçamento da loja</button><button class="peq" id="eo2-colar" title="Cole a lista de materiais, o escopo dos serviços ou a vistoria: o app separa cada coisa no seu campo">📝 Colar texto</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button>' +
+      '<div class="linha" style="margin-top:8px"><button class="peq" id="eo2-mais-mat">+ Material</button>' + (soMateriais(M) ? '<button class="peq" id="eo2-virar" title="Vira um orçamento completo: os materiais ficam e você acrescenta a mão de obra">👷 Incluir mão de obra</button>' : '<button class="peq" id="eo2-mais-serv">+ Mão de obra / serviço</button><button class="peq" id="eo2-mais-ambos">+ Material + mão de obra</button>') + '<button class="peq" id="eo2-lista-mat" title="Escolher vários materiais da lista de uma vez">📋 Escolher da lista</button><button class="peq" id="eo2-ler-nota" title="Materiais da nota fiscal ou do orçamento da loja (foto, PDF, XML, lista colada ou nota já lançada em Compras)">📷 Ler nota / orçamento da loja</button><button class="peq" id="eo2-colar" title="Cole a lista de materiais, o escopo dos serviços ou a vistoria: o app separa cada coisa no seu campo">📝 Colar texto</button><button class="peq" id="eo2-maiusc" title="Deixa a descrição de todos os itens em letra maiúscula (toque de novo para desfazer)">🔠 MAIÚSCULAS</button>' +
         '<button class="peq" id="eo2-organizar" title="Põe os itens parecidos um embaixo do outro, em ordem de medida (ex.: Cabo PP 2x1,5, 2x2,5, 3x1,5). Para mudar um item de lugar, segure o ⠿ e arraste.">🔀 Organizar itens</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
       '<div class="cartao' + (soMateriais(M) ? " oculto" : "") + '" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
-      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="itens"> <b>Cada item com o seu valor</b> (valor unitário e subtotal)</label>' +
-      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="total"> <b>Só o valor total</b>, com a lista dos itens e as quantidades, sem o valor de cada item</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="itens"> <b>Tudo com valor</b>: materiais e mão de obra, cada item com o seu valor</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_total"> <b>Só o valor total</b> (a lista dos itens vai sem valores)</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_mao"> <b>Só o valor da mão de obra</b> (materiais só a lista; o total inclui os materiais)</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_mat"> <b>Só o valor dos materiais</b> (mão de obra sem valor; o total inclui a mão de obra)</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="total"> <b>Só mão de obra no orçamento</b> (os materiais ficam por conta do cliente, fora do total)</label>' +
       '<details style="margin-top:6px"><summary class="mudo peq">Ajuste fino (serviços e materiais separados)</summary>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-vitens"> Mostrar o valor de cada serviço de mão de obra</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" id="eo2-mcli"> Enviar também o valor dos materiais</label>' +
@@ -2611,7 +2632,7 @@
     function marcarModoValores() {
       var v = $("#eo2-vitens", el), m = $("#eo2-mcli", el); if (!v || !m) return;
       var temMat = (M.itens || []).some(function (i) { return i.tipo === "material" || i.tipo === "ambos"; }), mv = m.checked || !temMat;   // sem materiais, o ajuste dos materiais não conta
-      $$('input[name="eo2-vmodo"]', el).forEach(function (r) { r.checked = (r.value === "itens" && v.checked && mv) || (r.value === "total" && !v.checked && !m.checked); });
+      $$('input[name="eo2-vmodo"]', el).forEach(function (r) { r.checked = visSel ? r.value === visSel : (r.value === "itens" && v.checked && mv) || (r.value === "total" && !v.checked && !m.checked); });
     }
     function preencher() {
       $("#eo2-doc", el).value = M.documento ? fmtDoc(M.documento) : "";
@@ -2621,18 +2642,19 @@
       $("#eo2-obs", el).value = M.observacoes || ""; $("#eo2-st", el).value = M.status;
       var imp0 = M.impostos || {}; $("#eo2-imp-modo", el).value = imp0.modo || ""; $("#eo2-imp-mun", el).value = imp0.municipio || ""; $("#eo2-imp-iss", el).value = imp0.iss ? reais2(imp0.iss) : ""; $("#eo2-imp-out", el).value = imp0.outros ? reais2(imp0.outros) : "";
       if (imp0.modo) $("#eo2-imp", el).open = true;
-      $("#eo2-vitens", el).checked = M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente; marcarModoValores();
+      $("#eo2-vitens", el).checked = visSel ? visSel === "t_mao" : M.valores_cliente !== "total"; $("#eo2-mcli", el).checked = !!M.materiais_cliente; marcarModoValores();
       $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.checked = r.value === modoMat(M); });
+      $("#eo2-escopo", el).value = M.laudo.escopo || "";
       if ($("#eo2-vist", el)) { $("#eo2-vist", el).value = M.laudo.vistoria || ""; $("#eo2-sol", el).value = M.laudo.solucao || ""; }
     }
     preencher();
     ["#eo2-cli", "#eo2-end", "#eo2-pag", "#eo2-prazo"].forEach(function (k) { ligarMaiuscula($(k, el)); });
-    ["#eo2-obs", "#eo2-vist", "#eo2-sol"].forEach(function (k) { ligarMaiuscula($(k, el), true); });
+    ["#eo2-obs", "#eo2-vist", "#eo2-sol", "#eo2-escopo"].forEach(function (k) { if ($(k, el)) ligarMaiuscula($(k, el), true); });
 
     // rascunho no aparelho: o que foi digitado e ainda não foi salvo volta se a página recarregar, fechar ou cair a internet
     var chaveRasc = "age_rascunho_orc_" + (M.id || "novo"), tRasc = null, rascPronto = false;
     function temAlgo() {
-      return !!(M.cliente || M.telefone || M.endereco || temLaudo(M) || M.itens.some(function (i) { return (i.descricao && i.descricao !== "Mão de obra") || Number(i.valor); }));
+      return !!(M.cliente || M.telefone || M.endereco || temAlgo(M) || M.itens.some(function (i) { return (i.descricao && i.descricao !== "Mão de obra") || Number(i.valor); }));
     }
     function guardarRasc() {
       if (!rascPronto) return;
@@ -2684,7 +2706,7 @@
     function mostrarAuto(t) { var x = $("#eo2-auto", el); if (x) x.textContent = t; }
     function assinatura() {
       return JSON.stringify([M.documento, M.cliente, M.telefone, M.email, M.endereco, M.categoria, M.desconto, M.validade_dias, M.pagamento, M.prazo, M.observacoes, M.status,
-        M.valores_cliente, M.materiais_cliente, (M.laudo || {}).vistoria || "", (M.laudo || {}).solucao || "",
+        M.valores_cliente, M.materiais_cliente, (M.laudo || {}).vistoria || "", (M.laudo || {}).solucao || "", (M.laudo || {}).escopo || "",
         M.itens.map(function (i) { return [i.tipo, i.descricao, Number(i.qtd) || 0, i.un, Number(i.valor) || 0, Number(i.valor_mat) || 0]; })]);
     }
     var salvoSig = null;
@@ -2897,10 +2919,12 @@
       M.desconto = A.lerNumero($("#eo2-desc", el).value); M.validade_dias = Math.max(1, parseInt($("#eo2-val", el).value, 10) || 15);
       M.pagamento = val(el, "#eo2-pag"); M.prazo = val(el, "#eo2-prazo"); M.observacoes = val(el, "#eo2-obs"); M.status = $("#eo2-st", el).value;
       M.valores_cliente = $("#eo2-vitens", el).checked ? "itens" : "total"; M.materiais_cliente = $("#eo2-mcli", el).checked;
+      if (visSel && !soMateriais(M)) { M.valores_cliente = visSel; M.materiais_cliente = true; }
       if (soMateriais(M)) { var rm = $('input[name="eo2-mmodo"]:checked', el); M.valores_cliente = rm ? rm.value : "itens"; M.materiais_cliente = true; }
       var mImp = $("#eo2-imp-modo", el).value;
       M.impostos = mImp ? { modo: mImp, municipio: val(el, "#eo2-imp-mun"), iss: A.lerNumero($("#eo2-imp-iss", el).value) || 0, outros: A.lerNumero($("#eo2-imp-out", el).value) || 0 } : null;
-      if ($("#eo2-vist", el)) M.laudo = { vistoria: $("#eo2-vist", el).value.trim(), solucao: $("#eo2-sol", el).value.trim() };
+      if ($("#eo2-vist", el)) M.laudo = Object.assign(copiaLaudo(M.laudo), { vistoria: $("#eo2-vist", el).value.trim(), solucao: $("#eo2-sol", el).value.trim() });
+      if ($("#eo2-escopo", el)) M.laudo = Object.assign(copiaLaudo(M.laudo), { escopo: $("#eo2-escopo", el).value.trim() });
     }
     // 💲 forma de pagamento pronta: o app calcula pelos materiais e pela mão de obra do orçamento; "Manual" não mexe no que você escreve
     var condAuto = "";
@@ -2960,18 +2984,26 @@
       editarAreas(function () { var sel = $("#eo2-cat", el), v = sel.value; sel.innerHTML = '<option value="">—</option>' + opcoesAreas(); if (!CAT_ORC[v] && v) sel.insertAdjacentHTML("beforeend", '<option value="' + esc(v) + '">' + esc(catNome(v)) + "</option>"); sel.value = v; });
     };
     $("#eo2-mais-mat", el).onclick = function () { M.itens.push({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }); desenharItens(); focarUltimo(); };
+    if ($("#eo2-virar", el)) $("#eo2-virar", el).onclick = function () {
+      lerCampos();
+      if (!M.cliente) { A.avisar("Informe o cliente antes.", "erro"); return; }
+      if (!A.confirmar("Este orçamento passa a ser um orçamento completo (materiais + mão de obra). Os materiais e os preços ficam. Continuar?")) return;
+      M.tipo = "servico"; M.materiais_cliente = true; M.valores_cliente = "t_total"; visSel = "t_total";
+      salvar(true).then(function (n) { j.fechar(); editarOrcamento(porId(S.orc, n.id) || n); }).catch(function (e) { M.tipo = "materiais"; A.avisar(A.msgErro(e), "erro"); });
+    };
     if ($("#eo2-mais-serv", el)) $("#eo2-mais-serv", el).onclick = function () { M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 }); desenharItens(); focarUltimo(); };
     if ($("#eo2-mais-ambos", el)) $("#eo2-mais-ambos", el).onclick = function () { M.itens.push({ tipo: "ambos", descricao: "", qtd: 1, un: "un", valor: 0, valor_mat: 0 }); desenharItens(); focarUltimo(); };
     // trocar a opção dos materiais muda o rótulo do valor e o total para o cliente
     $("#eo2-mcli", el).addEventListener("change", function () { lerCampos(); desenharItens(); });
-    $("#eo2-vitens", el).addEventListener("change", function () { marcarModoValores(); totais(); });
-    $("#eo2-mcli", el).addEventListener("change", function () { marcarModoValores(); });
+    $("#eo2-vitens", el).addEventListener("change", function () { visSel = null; marcarModoValores(); totais(); });
+    $("#eo2-mcli", el).addEventListener("change", function () { visSel = null; marcarModoValores(); });
     // 💲 como o cliente vê os valores: cada item com valor (como estava) ou só o total com a lista dos itens e quantidades
     $$('input[name="eo2-vmodo"]', el).forEach(function (r) {
       r.addEventListener("change", function () {
-        var tot = this.value === "total";
-        $("#eo2-vitens", el).checked = !tot; $("#eo2-mcli", el).checked = !tot;
+        var vv = this.value, novo = /^t_/.test(vv);
+        $("#eo2-vitens", el).checked = novo ? vv === "t_mao" : vv !== "total"; $("#eo2-mcli", el).checked = vv !== "total";
         $("#eo2-vitens", el).dispatchEvent(new Event("change", { bubbles: true })); $("#eo2-mcli", el).dispatchEvent(new Event("change", { bubbles: true }));
+        visSel = novo ? vv : null; marcarModoValores(); lerCampos(); totais();
       });
     });
     $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.addEventListener("change", function () { lerCampos(); desenharItens(); }); });
@@ -2995,7 +3027,7 @@
       $("#eo2-rasc-sim", el).onclick = function () {
         var id = M.id, numero = M.numero;
         M = Object.assign(M, r.M, { id: id, numero: numero });
-        M.laudo = temLaudo(M) ? { vistoria: M.laudo.vistoria || "", solucao: M.laudo.solucao || "" } : { vistoria: "", solucao: "" };
+        M.laudo = copiaLaudo(M.laudo);
         M.itens = (M.itens || []).map(function (i) { return Object.assign({ tipo: "material", descricao: "", qtd: 1, un: "un", valor: 0 }, i); });
         if (!M.itens.length) M.itens.push({ tipo: "servico", descricao: "", qtd: 1, un: "serv", valor: 0 });
         preencher(); listaPrecos(); desenharItens(); av.remove(); A.avisar("Rascunho recuperado. Clique em Salvar para guardar.", "ok");
@@ -3052,7 +3084,7 @@
       if (S.semDocOrc) delete dados.documento;
       if (!S.semImpOrc) dados.impostos = M.impostos && M.impostos.modo ? M.impostos : null;
       if (!S.semTipoOrc) dados.tipo = M.tipo || "servico";
-      if (!S.semLaudoOrc) dados.laudo = temLaudo(M) ? { vistoria: M.laudo.vistoria, solucao: M.laudo.solucao } : null;
+      if (!S.semLaudoOrc) dados.laudo = temAlgo(M) ? copiaLaudo(M.laudo) : null;
       function gravar(d) { return q(M.id ? sb.from("orcamentos").update(d).eq("id", M.id).select().single() : sb.from("orcamentos").insert(d).select().single()); }
       return gravar(dados).catch(function (e) {
         // banco ainda sem as colunas novas: grava sem elas e avisa uma vez para rodar o SQL
@@ -3071,7 +3103,7 @@
         if (S.semDocOrc) n.documento = M.documento;
         if (S.semImpOrc) n.impostos = M.impostos;
         if (S.semTipoOrc) n.tipo = M.tipo;
-        if (S.semLaudoOrc) n.laudo = temLaudo(M) ? M.laudo : null;
+        if (S.semLaudoOrc) n.laudo = temAlgo(M) ? M.laudo : null;
         trocar(S.orc, n);
         S.orc.sort(function (a, b) { return b.numero - a.numero; });
         var titulo = el.closest(".modal").querySelector(".cab h2");
@@ -3091,7 +3123,7 @@
           return n;
         }
         M = Object.assign(M, n);
-        M.laudo = temLaudo(M) ? { vistoria: M.laudo.vistoria || "", solucao: M.laudo.solucao || "" } : { vistoria: "", solucao: "" };
+        M.laudo = copiaLaudo(M.laudo);
         // salvo no servidor: o rascunho deste aparelho não é mais necessário
         clearTimeout(tRasc); apagarRasc(); apagarRasc("age_rascunho_orc_novo"); chaveRasc = "age_rascunho_orc_" + n.id;
         aprenderItens(itens, M.categoria);
@@ -3490,7 +3522,7 @@
   function gruposCliente(o) {
     var mc = matCliente(o), vi = valoresCliente(o);
     return [
-      { titulo: "Materiais", itens: o.itens.filter(function (i) { return i.tipo === "material"; }), comValor: soMateriais(o) ? vi : mc },
+      { titulo: "Materiais", itens: o.itens.filter(function (i) { return i.tipo === "material"; }), comValor: soMateriais(o) ? vi : modoVis(o) ? modoVis(o) === "t_mat" : mc },
       { titulo: "Mão de obra / serviços", itens: o.itens.filter(function (i) { return i.tipo !== "material"; }), comValor: vi }
     ].filter(function (g) { return g.itens.length; });
   }
@@ -3500,6 +3532,7 @@
       String(o.numero).padStart(4, "0") + " — " + A.data(o.criado_em) + "\n\nCliente: " + o.cliente + "\n" + (o.documento ? rotuloDoc(o.documento) + ": " + fmtDoc(o.documento) + "\n" : "");
     if (o.endereco) t += "Local: " + o.endereco + "\n";
     t += "\n";
+    if (temEscopo(o)) t += "*📋 Apresentação e escopo técnico*\n" + linhasLaudo(o.laudo.escopo).map(function (x) { return (x.topico ? "• " : "") + x.texto; }).join("\n") + "\n\n";
     if (temLaudo(o)) {
       t += "*🔍 Laudo técnico*\n";
       LAUDO_PARTES.forEach(function (pt) {
@@ -3518,8 +3551,7 @@
     });
     // lista de materiais sem valores: sem os totais
     if (!semValores(o)) {
-      if (tc.mc && tc.mat) t += "Materiais: " + A.dinheiro(tc.mat) + "\n";
-      if (tc.serv) t += "Mão de obra: " + A.dinheiro(tc.serv) + "\n";
+      linhasSub(o, tc).forEach(function (l) { t += l[0] + ": " + A.dinheiro(l[1]) + "\n"; });
       if (Number(o.desconto)) t += "Desconto: − " + A.dinheiro(o.desconto) + "\n";
       t += "*Total: " + A.dinheiro(tc.total) + "*\n";
     }
@@ -3635,6 +3667,20 @@
       });
       y += 5;
 
+      // apresentação e escopo técnico
+      if (temEscopo(o)) {
+        espaco(24);
+        fonte("bold", 12); azul(); doc.text("APRESENTAÇÃO E ESCOPO TÉCNICO", L, y); y += 1.8;
+        doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.5); doc.line(L, y, R, y); y += 5.5;
+        linhasLaudo(o.laudo.escopo).forEach(function (x) {
+          fonte("normal", 10); preto();
+          var rec = x.topico ? 9 : 0, d = doc.splitTextToSize(tx(x.texto), R - L - rec);
+          espaco(d.length * 4.6 + 1);
+          if (x.topico) { doc.setFillColor(20, 50, 92); doc.circle(L + 5.5, y - 1.2, 0.8, "F"); }
+          doc.text(d, L + rec, y); y += d.length * 4.6 + 1.6;
+        });
+        y += 4;
+      }
       // laudo técnico (vistoria e solução)
       if (temLaudo(o)) {
         espaco(24);
@@ -3681,7 +3727,7 @@
       if (!semValores(o)) {
       espaco(32);
       fonte("normal", 10); preto();
-      (t.mc && t.mat ? [["Materiais", t.mat]] : []).concat(t.serv ? [["Mão de obra", t.serv]] : []).concat(Number(o.desconto) ? [["Desconto", -Number(o.desconto)]] : []).forEach(function (l) {
+      linhasSub(o, t).concat(Number(o.desconto) ? [["Desconto", -Number(o.desconto)]] : []).forEach(function (l) {
         doc.text(l[0], xt, y); doc.text((l[1] < 0 ? "- " : "") + tx(A.dinheiro(Math.abs(l[1]))), R, y, { align: "right" }); y += 5.5;
       });
       doc.setDrawColor(20, 50, 92); doc.setLineWidth(0.6); doc.line(xt, y - 2.5, R, y - 2.5); y += 3;
@@ -3748,6 +3794,15 @@
       '<div class="num"><b>' + nomeOrc(o, true) + " Nº " + String(o.numero).padStart(4, "0") + "</b><br>Data: " + A.data(o.criado_em) + "<br>Válido até: " + A.data(validade) + "</div></div>" +
       '<div class="cli"><b>Cliente:</b> ' + esc(o.cliente) + (o.documento ? " · <b>" + rotuloDoc(o.documento) + ":</b> " + esc(fmtDoc(o.documento)) : "") + (o.telefone ? " · " + esc(o.telefone) : "") + (o.email ? " · " + esc(o.email) : "") + (o.endereco ? "<br><b>Local:</b> " + esc(o.endereco) : "") +
       (o.categoria ? "<br><b>Serviço:</b> " + esc(catNome(o.categoria)) : "") + "</div>" +
+      (temEscopo(o) ? '<div class="laudo"><h3>Apresentação e escopo técnico</h3>' + (function () {
+        var h = "", aberto = false;
+        linhasLaudo(o.laudo.escopo).forEach(function (x) {
+          if (x.topico && !aberto) { h += "<ul>"; aberto = true; }
+          if (!x.topico && aberto) { h += "</ul>"; aberto = false; }
+          h += x.topico ? "<li>" + esc(x.texto) + "</li>" : "<p>" + esc(x.texto) + "</p>";
+        });
+        return h + (aberto ? "</ul>" : "");
+      })() + "</div>" : "") +
       (temLaudo(o) ? '<div class="laudo"><h3>Laudo técnico</h3>' + LAUDO_PARTES.map(function (pt) {
         var ls = linhasLaudo(o.laudo[pt[0]]); if (!ls.length) return "";
         var h = "<h4>" + pt[1] + "</h4>", aberto = false;
@@ -3759,8 +3814,7 @@
         return h + (aberto ? "</ul>" : "");
       }).join("") + "</div>" : "") +
       gruposCliente(o).map(bloco).join("") +
-      (semValores(o) ? "" : '<div class="tot">' + (t.mc && t.mat ? "<div><span>Materiais</span><span>" + A.dinheiro(t.mat) + "</span></div>" : "") +
-      (t.serv ? "<div><span>Mão de obra</span><span>" + A.dinheiro(t.serv) + "</span></div>" : "") +
+      (semValores(o) ? "" : '<div class="tot">' + linhasSub(o, t).map(function (l) { return "<div><span>" + l[0] + "</span><span>" + A.dinheiro(l[1]) + "</span></div>"; }).join("") +
       (Number(o.desconto) ? "<div><span>Desconto</span><span>− " + A.dinheiro(o.desconto) + "</span></div>" : "") +
       '<div class="g"><span>Total</span><span>' + A.dinheiro(t.total) + "</span></div></div>") +
       '<div class="cond">' + (o.pagamento ? "<p><b>Forma de pagamento:</b> " + esc(o.pagamento) + "</p>" : "") + (o.prazo ? "<p><b>Prazo de execução:</b> " + esc(o.prazo) + "</p>" : "") +
