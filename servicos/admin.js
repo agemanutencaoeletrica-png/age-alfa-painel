@@ -2452,12 +2452,12 @@
   function semValores(o) { return soMateriais(o) && modoMat(o) === "nenhum"; }
   // orçamento completo (materiais + mão de obra): o que o cliente vê com valor. t_total = só o total; t_mao = valor da mão de obra; t_mat = valor dos materiais;
   // "itens" = tudo com valor. (Nos três primeiros os materiais entram no total.)
-  function modoVis(o) { return !soMateriais(o) && /^t_(total|mao|mat)$/.test(o.valores_cliente || "") ? o.valores_cliente : null; }
+  function modoVis(o) { return !soMateriais(o) && /^t_(total|mao|mat|lista)$/.test(o.valores_cliente || "") ? o.valores_cliente : null; }
   function valoresCliente(o) { var mv = modoVis(o); return soMateriais(o) ? modoMat(o) === "itens" : mv ? mv === "t_mao" : o.valores_cliente !== "total"; }
   // linhas de subtotal que o cliente vê acima do total, conforme o modo
   function linhasSub(o, t) {
     var mv = modoVis(o), l = [];
-    if (mv === "t_total") return l;
+    if (mv === "t_total" || mv === "t_lista") return l;
     if (mv !== "t_mao" && t.mc && t.mat) l.push(["Materiais", t.mat]);
     if (mv !== "t_mat" && t.serv) l.push(["Mão de obra", t.serv]);
     return l;
@@ -2593,6 +2593,7 @@
       '<div class="cartao' + (soMateriais(M) ? " oculto" : "") + '" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="itens"> <b>Tudo com valor</b>: materiais e mão de obra, cada item com o seu valor</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_total"> <b>Só o valor total</b> (a lista dos itens vai sem valores)</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_lista"> <b>Só a lista de materiais, sem valores, e o valor total</b> (a mão de obra não aparece em linha; o total inclui tudo)</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_mao"> <b>Só o valor da mão de obra</b> (materiais só a lista; o total inclui os materiais)</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_mat"> <b>Só o valor dos materiais</b> (mão de obra sem valor; o total inclui a mão de obra)</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="total"> <b>Só mão de obra no orçamento</b> (os materiais ficam por conta do cliente, fora do total)</label>' +
@@ -3520,10 +3521,10 @@
   }
 
   function gruposCliente(o) {
-    var mc = matCliente(o), vi = valoresCliente(o);
+    var mc = matCliente(o), vi = valoresCliente(o), soLista = modoVis(o) === "t_lista";   // t_lista: só a lista de materiais, sem valores, e o total
     return [
-      { titulo: "Materiais", itens: o.itens.filter(function (i) { return i.tipo === "material"; }), comValor: soMateriais(o) ? vi : modoVis(o) ? modoVis(o) === "t_mat" : mc },
-      { titulo: "Mão de obra / serviços", itens: o.itens.filter(function (i) { return i.tipo !== "material"; }), comValor: vi }
+      { titulo: "Materiais", itens: o.itens.filter(function (i) { return i.tipo === "material" || (soLista && i.tipo === "ambos"); }), comValor: soMateriais(o) ? vi : modoVis(o) ? modoVis(o) === "t_mat" : mc },
+      { titulo: "Mão de obra / serviços", itens: soLista ? [] : o.itens.filter(function (i) { return i.tipo !== "material"; }), comValor: vi }
     ].filter(function (g) { return g.itens.length; });
   }
   function textoOrcamento(o, semNegrito) {
