@@ -568,3 +568,8 @@ Em **Equipe → Editar → Apagar**, o app mostra o aviso (quantos pagamentos e 
 
 ## Orçamento da Líder Tintas (PDF) agora é lido
 O leitor reconhece o formato "código, descrição, unid., qtd, unitário, total, nº" e o total impresso como "1.099,78 TOTAL:" (antes pegava o "Total Desconto").
+
+## 📋 Apresentação e escopo técnico + o que vai para o cliente
+- Todo orçamento (inclusive o de materiais) tem a área **📋 Apresentação e escopo técnico**: texto próprio, que sai no PDF, na impressão e no WhatsApp antes dos itens, com tópicos (linhas começando com - ou •). Fica no mesmo campo do laudo no banco: não precisa rodar SQL.
+- No orçamento de materiais, o botão **👷 Incluir mão de obra** vira orçamento completo (os materiais e o escopo ficam).
+- Em **O que vai para o cliente**, no orçamento completo: **Tudo com valor**, **Só o valor total**, **Só o valor da mão de obra** ou **Só o valor dos materiais**. Em todos, o total inclui materiais e mão de obra; só muda o que aparece com valor. "Só mão de obra no orçamento" mantém o modo antigo (materiais por conta do cliente, fora do total).
