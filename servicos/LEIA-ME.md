@@ -579,3 +579,5 @@ Nova aba **Clientes**: reúne quem já está no painel (serviços e orçamentos)
 
 - Lojas da rede (Supermercados BH, postos), chamados e prefeituras **não aparecem como cliente**: ficam nas abas Lojas e Prefeitura.
 - **🗑 Apagar** (dentro de ✏️ Editar): cliente cadastrado à mão é apagado de vez; cliente que já tem serviço ou orçamento só **some da lista de Clientes** (os serviços e orçamentos dele continuam nas abas deles). Para ver de novo, marque **Mostrar apagados da lista** e toque em **↩ Mostrar de novo na lista**. Rode o `supabase.sql` de novo (coluna `oculto`).
+
+- **Clientes, editar o nome:** o nome do cliente agora pode ser corrigido em ✏️ Editar. A correção vale na aba Clientes (os serviços e orçamentos antigos continuam com o nome de antes). Há também o botão **💾 Salvar**, além do salvamento automático; se não salvar, o aviso em vermelho diz o motivo e dá para tentar de novo sem perder o que foi digitado.
