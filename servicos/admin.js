@@ -189,7 +189,7 @@
   // serviço/obra de prefeitura fica só na aba Prefeitura
   function ehPrefObra(o) { return !!(o && o.prefeitura_id); }
   function ehPrefServ(s) { return ehPrefObra(porId(S.obras, s.obra_id)); }
-  function nomeFunc(id) { var f = porId(S.func, id); return f ? f.nome : "—"; }
+  function nomeFunc(id) { var f = porId(S.func, id); return f ? nomeProprio(f.nome, true) : "—"; }
   function carregando() { return '<div class="vazio"><span class="carregando"></span> Carregando...</div>'; }
   function val(el, sel) { var x = $(sel, el); return x ? x.value.trim() : ""; }
   function nulo(t) { return t === "" ? null : t; }
@@ -4858,7 +4858,7 @@
       { titulo: f ? "Editar funcionário" : "Novo funcionário" });
     var el = j.el;
     ligarNome($("#ef-nome", el));
-    $("#ef-nome", el).value = f ? f.nome : ""; $("#ef-tel", el).value = f ? f.telefone || "" : ""; $("#ef-area", el).value = f ? f.area : "eletrica"; $("#ef-pix", el).value = f ? f.pix || "" : "";
+    $("#ef-nome", el).value = f ? nomeProprio(f.nome, true) : ""; $("#ef-tel", el).value = f ? f.telefone || "" : ""; $("#ef-area", el).value = f ? f.area : "eletrica"; $("#ef-pix", el).value = f ? f.pix || "" : "";
     $("#ef-email", el).value = f ? f.email || "" : ""; $("#ef-desde", el).value = f && f.conta_desde ? String(f.conta_desde).slice(0, 10) : "";
     $("#ef-diaria", el).value = f && f.diaria ? Number(f.diaria).toFixed(2).replace(".", ",") : "";
     if (f) $("#ef-ativo", el).checked = f.ativo;
@@ -4933,7 +4933,7 @@
 
   // o módulo da prefeitura (prefeitura.js) usa as mesmas funções do painel
   var P = {
-    get sb() { return sb; }, S: S, q: q, catNome: catNome, ligarMaiuscula: ligarMaiuscula, ligarNome: ligarNome,
+    get sb() { return sb; }, S: S, q: q, catNome: catNome, ligarMaiuscula: ligarMaiuscula, ligarNome: ligarNome, nomeProprio: nomeProprio, maiusculaInicial: maiusculaInicial,
     tiposServico: function () { return Object.keys(CAT_ORC).filter(function (k) { return k !== "eletrica_pintura"; }).map(catNome); }, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
     val: val, nulo: nulo, htmlFoto: htmlFoto, hidratarFotos: hidratarFotos, infoFoto: infoFoto, registrarInfoPonto: registrarInfoPonto,
     opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,

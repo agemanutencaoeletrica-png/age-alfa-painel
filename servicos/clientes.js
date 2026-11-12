@@ -9,6 +9,9 @@
   var filtro = { busca: "", tipo: "", de: "", ate: "" };
   var raiz = null, fila = Promise.resolve();
 
+  // o que já foi gravado em minúsculas aparece com a maiúscula inicial (nome: cada palavra; observação: cada linha)
+  function nm(t) { return P && P.nomeProprio ? P.nomeProprio(t, true) : String(t || ""); }
+  function ob(t) { return P && P.maiusculaInicial ? P.maiusculaInicial(t, true) : String(t || ""); }
   function semAcento(t) { return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim(); }
   function chave(nome) { return semAcento(nome).replace(/[^a-z0-9]/g, ""); }
   function dia(v) { return v ? A.isoLocal(new Date(v)) : ""; }   // data local (AAAA-MM-DD) de um instante
@@ -137,11 +140,11 @@
       r._ls = ls;
       r.innerHTML = ls.map(function (x) {
         var fone = String(x.tel || "").replace(/\D/g, "");
-        return '<div class="cartao"><div style="float:right"><button class="peq" data-ed="' + esc(x.k) + '">✏️ Editar</button></div><div><b>' + esc(x.nome) + "</b> " + (x.oculto ? '<span class="selo atencao">apagado da lista</span> ' : "") + Object.keys(x.tipos).map(function (t) { return '<span class="selo">' + esc(t) + (x.tipos[t] > 1 ? " ×" + x.tipos[t] : "") + "</span>"; }).join(" ") + "</div>" +
+        return '<div class="cartao"><div style="float:right"><button class="peq" data-ed="' + esc(x.k) + '">✏️ Editar</button></div><div><b>' + esc(nm(x.nome)) + "</b> " + (x.oculto ? '<span class="selo atencao">apagado da lista</span> ' : "") + Object.keys(x.tipos).map(function (t) { return '<span class="selo">' + esc(t) + (x.tipos[t] > 1 ? " ×" + x.tipos[t] : "") + "</span>"; }).join(" ") + "</div>" +
           '<div class="peq mudo">Cliente desde <b>' + esc(A.dataSimples(x.desde)) + "</b> · " + x.nServ + " serviço(s) · " + x.nOrc + " orçamento(s)" + (x.aprovado ? " · aprovado " + A.dinheiro(x.aprovado) : "") +
           (x.ultima && x.ultima !== x.desde ? " · última atividade " + esc(A.dataSimples(x.ultima)) : "") + "</div>" +
           (x.tel || x.doc || x.end ? '<div class="peq">' + [x.tel ? (fone.length >= 10 ? '<a href="https://wa.me/' + (fone.length <= 11 ? "55" : "") + fone + '" target="_blank" rel="noopener">📲 ' + esc(x.tel) + "</a>" : esc(x.tel)) : "", x.doc ? esc(x.doc) : "", x.end ? esc(x.end) : ""].filter(Boolean).join(" · ") + "</div>" : "") +
-          (x.obs ? '<div class="peq mudo">' + esc(x.obs) + "</div>" : "") +
+          (x.obs ? '<div class="peq mudo">' + esc(ob(x.obs)) + "</div>" : "") +
           (x.itens.length ? '<details class="peq" style="margin-top:6px"><summary>Ver o que pediu</summary>' + x.itens.map(function (i) {
             return "<div>" + esc(A.dataSimples(i.data)) + " · <b>" + esc(i.tipo) + "</b> · " + esc(i.origem) + (i.texto ? " · " + esc(i.texto) : "") + (i.status ? " · " + esc(i.status) : "") + "</div>";
           }).join("") + "</details>" : "") + "</div>";
@@ -187,7 +190,7 @@
       '<label for="cl-obs">Observações</label><textarea id="cl-obs" rows="3" maxlength="3000"></textarea>' +
       '<p class="peq mudo" id="cl-st" style="margin:8px 0 0">' + (c.novo ? "Escreva o nome para começar a salvar." : "Salva sozinho a cada mudança. Se preferir, toque em Salvar.") + "</p>" +
       '<div class="acoes">' + (c.tiposEdit ? '<button id="cl-auto" title="Volta a mostrar os tipos que o painel acha pelos serviços e orçamentos">↺ Tipos automáticos</button>' : "") + '<button class="prim" id="cl-salvar">💾 Salvar</button><button id="cl-fechar">Fechar</button>' + (c.novo && !c.k ? "" : c.oculto ? '<button id="cl-apagar" title="Mostra o cliente de novo na lista">↩ Mostrar de novo na lista</button>' : '<button class="perigo" id="cl-apagar">🗑 Apagar</button>') + "</div>",
-      { titulo: c.novo ? "Novo cliente" : "Cliente: " + c.nome, semRascunho: true, aoFechar: function () { clearTimeout(timer); if (pend) salvar(); if (raiz) fila.then(function () { ver(raiz, P); }); } });
+      { titulo: c.novo ? "Novo cliente" : "Cliente: " + nm(c.nome), semRascunho: true, aoFechar: function () { clearTimeout(timer); if (pend) salvar(); if (raiz) fila.then(function () { ver(raiz, P); }); } });
     var el = j.el, timer = null, pend = false, el_ = el;
     function desenharTipos() {
       $("#cl-tipos", el).innerHTML = Object.keys(nomes).map(function (n) {
@@ -210,7 +213,7 @@
     }
     function agendar() { pend = true; clearTimeout(timer); timer = setTimeout(salvar, 600); }
     if (P.ligarNome) { P.ligarNome($("#cl-nome", el)); P.ligarMaiuscula($("#cl-outro", el)); P.ligarMaiuscula($("#cl-obs", el), true); }
-    $("#cl-nome", el).value = c.nome || ""; $("#cl-desde", el).value = c.desde || ""; $("#cl-tel", el).value = c.tel || ""; $("#cl-obs", el).value = c.obs || "";
+    $("#cl-nome", el).value = nm(c.nome); $("#cl-desde", el).value = c.desde || ""; $("#cl-tel", el).value = c.tel || ""; $("#cl-obs", el).value = ob(c.obs);
     desenharTipos();
     ["#cl-desde", "#cl-tel", "#cl-obs", "#cl-nome"].forEach(function (s) { if ($(s, el)) { $(s, el).oninput = agendar; $(s, el).onchange = agendar; } });
     $("#cl-add", el).onclick = function () {
