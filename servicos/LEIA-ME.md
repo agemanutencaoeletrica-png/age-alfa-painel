@@ -586,3 +586,4 @@ Nova aba **Clientes**: reúne quem já está no painel (serviços e orçamentos)
 Em **Clientes** (nome, tipo novo e observações), **Parceiros** (nome, empresa e informações) e no **nome do funcionário**, o app já começa com maiúscula: nomes ficam "Maria da Silva" (de, da, do, das, dos e "e" ficam minúsculos; o que você já escreveu em MAIÚSCULAS não muda) e observações começam cada linha com maiúscula. A última palavra do nome é ajustada quando você sai do campo.
 
 - **Maiúsculas no que já estava gravado:** nomes (clientes, parceiros, empresa e funcionários) e observações que foram digitados em minúsculas passam a **aparecer** com a inicial maiúscula na lista e ao abrir para editar; ao tocar em Salvar, o texto é gravado já corrigido.
+- **Observação do cliente em destaque:** na lista de Clientes a observação aparece com 📌, em negrito, sobre fundo amarelo claro e barra laranja (e a caixa de observações ao editar também), para não passar batido.

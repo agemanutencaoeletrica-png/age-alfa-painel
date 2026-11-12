@@ -144,7 +144,7 @@
           '<div class="peq mudo">Cliente desde <b>' + esc(A.dataSimples(x.desde)) + "</b> · " + x.nServ + " serviço(s) · " + x.nOrc + " orçamento(s)" + (x.aprovado ? " · aprovado " + A.dinheiro(x.aprovado) : "") +
           (x.ultima && x.ultima !== x.desde ? " · última atividade " + esc(A.dataSimples(x.ultima)) : "") + "</div>" +
           (x.tel || x.doc || x.end ? '<div class="peq">' + [x.tel ? (fone.length >= 10 ? '<a href="https://wa.me/' + (fone.length <= 11 ? "55" : "") + fone + '" target="_blank" rel="noopener">📲 ' + esc(x.tel) + "</a>" : esc(x.tel)) : "", x.doc ? esc(x.doc) : "", x.end ? esc(x.end) : ""].filter(Boolean).join(" · ") + "</div>" : "") +
-          (x.obs ? '<div class="peq mudo">' + esc(ob(x.obs)) + "</div>" : "") +
+          (x.obs ? '<div class="obs-destaque">📌 ' + esc(ob(x.obs)) + "</div>" : "") +
           (x.itens.length ? '<details class="peq" style="margin-top:6px"><summary>Ver o que pediu</summary>' + x.itens.map(function (i) {
             return "<div>" + esc(A.dataSimples(i.data)) + " · <b>" + esc(i.tipo) + "</b> · " + esc(i.origem) + (i.texto ? " · " + esc(i.texto) : "") + (i.status ? " · " + esc(i.status) : "") + "</div>";
           }).join("") + "</details>" : "") + "</div>";
