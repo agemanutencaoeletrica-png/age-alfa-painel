@@ -180,3 +180,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   .modal { padding: 14px 12px; }
   .esconde-cel { display: none; }
 }
+
+/* observação do cliente em destaque (aba Clientes) */
+.obs-destaque { margin-top: 6px; padding: 8px 10px; border-radius: 8px; border-left: 4px solid var(--atencao); background: var(--atencao-f);
+  color: var(--texto); font-weight: 600; font-size: 14px; white-space: pre-line; }
+#cl-obs { background: var(--atencao-f); border-color: var(--atencao); font-weight: 600; }

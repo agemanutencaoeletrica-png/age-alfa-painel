@@ -10,6 +10,8 @@
   var filtro = { busca: "", tipo: "" }, marcados = {};
   var TIPOS = ["Eletricista", "Pintor", "Engenheiro / Arquiteto", "TI e câmeras", "Fornecedor", "Cliente parceiro", "Outro"];
 
+  function nm(t) { return P && P.nomeProprio ? P.nomeProprio(t, true) : String(t || ""); }
+  function ob(t) { return P && P.maiusculaInicial ? P.maiusculaInicial(t, true) : String(t || ""); }
   function semAcento(t) { return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim(); }
   function dig(t) { return String(t || "").replace(/\D/g, ""); }
   function lista() { return (P && P.S.parceiros) || []; }
@@ -64,7 +66,7 @@
     r.innerHTML = ls.map(function (p) {
       var tel = fone(p);
       return '<div class="cartao" data-pa="' + p.id + '"' + (p.ativo === false ? ' style="opacity:.6"' : "") + '><div class="linha"><label class="marca-linha" style="font-weight:400;margin:0"><input type="checkbox" data-pa-marca' + (marcados[p.id] ? " checked" : "") + ' aria-label="Marcar ' + esc(p.nome) + '"></label>' +
-        '<h3 style="margin:0;flex:1">' + esc(p.nome) + (p.empresa ? ' <span class="peq mudo">· ' + esc(p.empresa) + "</span>" : "") + "</h3>" +
+        '<h3 style="margin:0;flex:1">' + esc(nm(p.nome)) + (p.empresa ? ' <span class="peq mudo">· ' + esc(nm(p.empresa)) + "</span>" : "") + "</h3>" +
         (p.tipo ? '<span class="selo">' + esc(p.tipo) + "</span>" : "") + (p.ativo === false ? ' <span class="selo atencao">inativo</span>' : "") + "</div>" +
         '<div class="peq" style="margin-top:4px">' + [tel ? "📱 " + esc(tel) : "", p.email ? "✉ " + esc(p.email) : "", p.cidade ? "📍 " + esc(p.cidade) : ""].filter(Boolean).join(" · ") + "</div>" +
         (p.obs ? '<div class="peq mudo" style="margin-top:2px;white-space:pre-wrap">' + esc(String(p.obs).slice(0, 200)) + (String(p.obs).length > 200 ? "…" : "") + "</div>" : "") +
@@ -203,9 +205,10 @@
       '<div class="acoes"><button class="prim" id="pa-salvar">💾 Salvar</button>' + (novo ? "" : '<button class="perigo" id="pa-apagar">🗑 Excluir</button>') + '<button id="pa-cancelar">Cancelar</button></div>',
       { titulo: novo ? "🤝 Novo parceiro" : "🤝 " + (p.nome || "Parceiro"), larga: true, fixa: true });
     var el = j.el;
-    $("#pa-nome", el).value = p.nome || ""; $("#pa-emp", el).value = p.empresa || ""; $("#pa-tp", el).value = p.tipo || ""; $("#pa-zap", el).value = p.whatsapp || "";
+    if (P.ligarNome) { P.ligarNome($("#pa-nome", el)); P.ligarNome($("#pa-emp", el)); P.ligarMaiuscula($("#pa-obs", el), true); }
+    $("#pa-nome", el).value = nm(p.nome); $("#pa-emp", el).value = nm(p.empresa); $("#pa-tp", el).value = p.tipo || ""; $("#pa-zap", el).value = p.whatsapp || "";
     $("#pa-tel", el).value = p.telefone || ""; $("#pa-mail", el).value = p.email || ""; $("#pa-cid", el).value = p.cidade || ""; $("#pa-end", el).value = p.endereco || "";
-    $("#pa-obs", el).value = p.obs || ""; $("#pa-ativo", el).checked = p.ativo !== false;
+    $("#pa-obs", el).value = ob(p.obs); $("#pa-ativo", el).checked = p.ativo !== false;
     $("#pa-cnpj", el).value = p.cnpj || "";
     ligarAuto(el);
     $("#pa-cancelar", el).onclick = function () { j.fechar(); };
