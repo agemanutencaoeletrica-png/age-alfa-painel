@@ -548,7 +548,8 @@
       q(sb.from("parceiros_tipos").select("*").order("ordem").order("nome")).catch(function () { return null; }),
       q(sb.from("socios").select("*").order("nome")).catch(function () { return null; }),
       q(sb.from("socio_servicos").select("*").order("data", { ascending: false }).limit(3000)).catch(function () { return null; }),
-      q(sb.from("socio_repasses").select("*").order("pago_em", { ascending: false }).limit(3000)).catch(function () { return null; })
+      q(sb.from("socio_repasses").select("*").order("pago_em", { ascending: false }).limit(3000)).catch(function () { return null; }),
+      q(sb.from("clientes_ficha").select("*").order("nome")).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -568,6 +569,7 @@
       S.semOrcLoja = !r[19]; S.orcLoja = r[19] || [];   // 🏪 orçamentos das lojas (cada um separado)
       S.semPropostas = !r[20]; S.propostas = r[20] || [];   // 📑 propostas prontas (orçamentos técnicos guardados)
       S.semParceiros = !r[22]; S.parceiros = r[22] || []; S.tiposParc = r[23] || null;
+      S.semFichas = !r[27]; S.fichas = r[27] || [];   // 👥 ficha dos clientes (data e tipos de serviço editados)
       S.semSocios = !r[24] || !r[25] || !r[26]; S.socios = r[24] || []; S.socServ = r[25] || []; S.socRep = r[26] || [];   // 👔 sócios   // 🤝 parceiros (contatos para mandar documentos e projetos)
       S.semAreas = !r[21]; S.areasOrc = r[21] || null; montarAreas();   // áreas de serviço do orçamento (sem a tabela: Manutenção, TI e Câmeras padrão)
     });
@@ -4908,7 +4910,8 @@
 
   // o módulo da prefeitura (prefeitura.js) usa as mesmas funções do painel
   var P = {
-    get sb() { return sb; }, S: S, q: q, catNome: catNome, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
+    get sb() { return sb; }, S: S, q: q, catNome: catNome,
+    tiposServico: function () { return Object.keys(CAT_ORC).filter(function (k) { return k !== "eletrica_pintura"; }).map(catNome); }, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
     val: val, nulo: nulo, htmlFoto: htmlFoto, hidratarFotos: hidratarFotos, infoFoto: infoFoto, registrarInfoPonto: registrarInfoPonto,
     opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,
     rota: rota, recarregar: function () { return carregarBase().then(function () { rota(); }); }, atualizarAbas: function () { desenharAbas(location.hash.slice(1) || "hoje"); }, resumoServ: resumoServ, importarChamado: importarChamado, carregarJsPdf: carregarJsPdf, baixar: baixar, podeCompartilharArquivo: podeCompartilharArquivo, UNIDADES: UNIDADES, carregarLeaflet: carregarLeaflet,
