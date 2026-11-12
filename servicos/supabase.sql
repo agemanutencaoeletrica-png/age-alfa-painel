@@ -777,12 +777,24 @@ alter table public.admins enable row level security;
 drop policy if exists admin_le on public.admins;
 create policy admin_le on public.admins for select to authenticated using (public.eh_admin());
 
+-- 👥 clientes: ficha de cada cliente (data em que passou a ser cliente e tipos de serviço, que você edita na aba Clientes)
+create table if not exists public.clientes_ficha (
+  chave         text primary key check (length(chave) between 1 and 200),
+  nome          text not null check (length(trim(nome)) between 1 and 200),
+  telefone      text check (telefone is null or length(telefone) <= 40),
+  cadastrado_em date,
+  tipos         jsonb,
+  obs           text check (obs is null or length(obs) <= 3000),
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+
 do $$
 declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
