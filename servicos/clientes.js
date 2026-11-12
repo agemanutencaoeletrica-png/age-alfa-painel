@@ -24,7 +24,7 @@
 
   // monta a lista de clientes a partir do que já existe no painel
   function montar() {
-    var S = P.S, mapa = {}, obraChave = {};
+    var S = P.S, mapa = {}, obraChave = {}, fora = {};
     function cli(nome) {
       var k = chave(nome); if (!k) return null;
       if (!mapa[k]) mapa[k] = { k: k, nome: String(nome).trim(), tel: "", doc: "", end: "", desde: "", itens: [] };
@@ -32,6 +32,8 @@
     }
     function desde(c, d) { if (d && (!c.desde || d < c.desde)) c.desde = d; }
     (S.obras || []).forEach(function (o) {
+      // lojas da rede (Supermercados BH, postos...) e prefeituras não são clientes: ficam nas abas Lojas e Prefeitura
+      if (o.loja_id || o.prefeitura_id || o.chamado) { fora[o.id] = 1; return; }
       var c = cli(o.cliente); if (!c) return;
       obraChave[o.id] = c.k;
       desde(c, dia(o.criado_em)); c.cadastro = true;
@@ -45,6 +47,7 @@
       });
     });
     (S.orc || []).forEach(function (o) {
+      if (o.obra_id && fora[o.obra_id]) return;
       var k = o.obra_id && obraChave[o.obra_id], c = k ? mapa[k] : cli(o.cliente); if (!c) return;
       var d = dia(o.criado_em); desde(c, d);
       c.tel = c.tel || o.telefone || ""; c.doc = c.doc || o.documento || ""; c.end = c.end || o.endereco || "";
@@ -61,6 +64,7 @@
       if (!c.desde) c.desde = dia(f.criado_em);
       c.tel = f.telefone || c.tel; c.obs = f.obs || "";
       if (Array.isArray(f.tipos)) c.tiposEdit = f.tipos;
+      c.oculto = !!f.oculto;
     });
     var lista = Object.keys(mapa).map(function (k) {
       var c = mapa[k], tipos = {};
@@ -93,7 +97,8 @@
 
   function ver(c, ctx) {
     P = ctx; raiz = c;
-    var todos = montar().sort(function (a, b) { return a.desde < b.desde ? 1 : a.desde > b.desde ? -1 : a.nome.localeCompare(b.nome); });
+    var todosAll = montar().sort(function (a, b) { return a.desde < b.desde ? 1 : a.desde > b.desde ? -1 : a.nome.localeCompare(b.nome); });
+    var todos = todosAll.filter(function (x) { return !x.oculto; });   // os apagados da lista não entram nas contas
     var tiposTodos = {};
     todos.forEach(function (x) { Object.keys(x.tipos).forEach(function (t) { tiposTodos[t] = (tiposTodos[t] || 0) + 1; }); });
     var nomesTipos = Object.keys(tiposTodos).sort(function (a, b) { return tiposTodos[b] - tiposTodos[a]; });
@@ -114,12 +119,12 @@
       }).join("") + "</div></div>" +
       '<div class="filtros"><input type="search" id="cl-busca" placeholder="🔍 Buscar nome, telefone ou CPF/CNPJ" value="' + esc(filtro.busca) + '"><select id="cl-tipo" aria-label="Tipo de serviço"><option value="">Todos os tipos de serviço</option>' +
       nomesTipos.map(function (t) { return '<option value="' + esc(t) + '"' + (filtro.tipo === t ? " selected" : "") + ">" + esc(t) + "</option>"; }).join("") + "</select>" +
-      '<label class="peq">Desde <input type="date" id="cl-de" value="' + esc(filtro.de) + '"></label><label class="peq">até <input type="date" id="cl-ate" value="' + esc(filtro.ate) + '"></label></div>' +
+      '<label class="peq"><input type="checkbox" id="cl-ocultos"' + (filtro.ocultos ? " checked" : "") + '> Mostrar apagados da lista (' + todosAll.filter(function (x) { return x.oculto; }).length + ')</label><label class="peq">Desde <input type="date" id="cl-de" value="' + esc(filtro.de) + '"></label><label class="peq">até <input type="date" id="cl-ate" value="' + esc(filtro.ate) + '"></label></div>' +
       '<div id="cl-lista"></div>';
 
     function listar() {
       var b = semAcento(filtro.busca), dd = String(filtro.busca || "").replace(/\D/g, "");
-      var ls = todos.filter(function (x) {
+      var ls = (filtro.ocultos ? todosAll : todos).filter(function (x) {
         if (filtro.tipo && !x.tipos[filtro.tipo]) return false;
         if (filtro.de && x.desde < filtro.de) return false;
         if (filtro.ate && x.desde > filtro.ate) return false;
@@ -131,7 +136,7 @@
       r._ls = ls;
       r.innerHTML = ls.map(function (x) {
         var fone = String(x.tel || "").replace(/\D/g, "");
-        return '<div class="cartao"><div style="float:right"><button class="peq" data-ed="' + esc(x.k) + '">✏️ Editar</button></div><div><b>' + esc(x.nome) + "</b> " + Object.keys(x.tipos).map(function (t) { return '<span class="selo">' + esc(t) + (x.tipos[t] > 1 ? " ×" + x.tipos[t] : "") + "</span>"; }).join(" ") + "</div>" +
+        return '<div class="cartao"><div style="float:right"><button class="peq" data-ed="' + esc(x.k) + '">✏️ Editar</button></div><div><b>' + esc(x.nome) + "</b> " + (x.oculto ? '<span class="selo atencao">apagado da lista</span> ' : "") + Object.keys(x.tipos).map(function (t) { return '<span class="selo">' + esc(t) + (x.tipos[t] > 1 ? " ×" + x.tipos[t] : "") + "</span>"; }).join(" ") + "</div>" +
           '<div class="peq mudo">Cliente desde <b>' + esc(A.dataSimples(x.desde)) + "</b> · " + x.nServ + " serviço(s) · " + x.nOrc + " orçamento(s)" + (x.aprovado ? " · aprovado " + A.dinheiro(x.aprovado) : "") +
           (x.ultima && x.ultima !== x.desde ? " · última atividade " + esc(A.dataSimples(x.ultima)) : "") + "</div>" +
           (x.tel || x.doc || x.end ? '<div class="peq">' + [x.tel ? (fone.length >= 10 ? '<a href="https://wa.me/' + (fone.length <= 11 ? "55" : "") + fone + '" target="_blank" rel="noopener">📲 ' + esc(x.tel) + "</a>" : esc(x.tel)) : "", x.doc ? esc(x.doc) : "", x.end ? esc(x.end) : ""].filter(Boolean).join(" · ") + "</div>" : "") +
@@ -144,6 +149,7 @@
     }
     $("#cl-busca", c).oninput = function () { filtro.busca = this.value; listar(); };
     $("#cl-tipo", c).onchange = function () { filtro.tipo = this.value; listar(); };
+    $("#cl-ocultos", c).onchange = function () { filtro.ocultos = this.checked; listar(); };
     $("#cl-de", c).onchange = function () { filtro.de = this.value; listar(); };
     $("#cl-ate", c).onchange = function () { filtro.ate = this.value; listar(); };
     $$("[data-tipo]", c).forEach(function (bt) { bt.onclick = function () { filtro.tipo = filtro.tipo === bt.dataset.tipo ? "" : bt.dataset.tipo; $("#cl-tipo", c).value = filtro.tipo; listar(); }; });
@@ -173,7 +179,7 @@
       '<div class="linha" style="margin-top:6px"><input id="cl-outro" maxlength="60" placeholder="Outro tipo (ex.: Ar-condicionado)" style="flex:1"><button class="peq" id="cl-add">+ Acrescentar</button></div>' +
       '<label for="cl-obs">Observações</label><textarea id="cl-obs" rows="3" maxlength="3000"></textarea>' +
       '<p class="peq mudo" id="cl-st" style="margin:8px 0 0">' + (c.novo ? "Escreva o nome para começar a salvar." : "Salva sozinho a cada mudança.") + "</p>" +
-      '<div class="acoes">' + (c.tiposEdit ? '<button id="cl-auto" title="Volta a mostrar os tipos que o painel acha pelos serviços e orçamentos">↺ Tipos automáticos</button>' : "") + '<button class="prim" id="cl-fechar">Fechar</button></div>',
+      '<div class="acoes">' + (c.tiposEdit ? '<button id="cl-auto" title="Volta a mostrar os tipos que o painel acha pelos serviços e orçamentos">↺ Tipos automáticos</button>' : "") + '<button class="prim" id="cl-fechar">Fechar</button>' + (c.novo && !c.k ? "" : c.oculto ? '<button id="cl-apagar" title="Mostra o cliente de novo na lista">↩ Mostrar de novo na lista</button>' : '<button class="perigo" id="cl-apagar">🗑 Apagar</button>') + "</div>",
       { titulo: c.novo ? "Novo cliente" : "Cliente: " + c.nome, semRascunho: true, aoFechar: function () { clearTimeout(timer); if (pend) salvar(); if (raiz) fila.then(function () { ver(raiz, P); }); } });
     var el = j.el, timer = null, pend = false, el_ = el;
     function desenharTipos() {
@@ -207,6 +213,20 @@
     };
     if ($("#cl-auto", el)) $("#cl-auto", el).onclick = function () {
       gravar(c, { tipos: null }).then(function () { c.tiposEdit = null; j.fechar(); }).catch(function (e) { st("Não salvou: " + A.msgErro(e), true); });
+    };
+    if ($("#cl-apagar", el)) $("#cl-apagar", el).onclick = function () {
+      var temReg = (c.itens || []).length > 0 || c.cadastro;
+      if (c.oculto) { gravar(c, { oculto: false }).then(function () { c.oculto = false; j.fechar(); A.avisar("Cliente de volta na lista", "ok"); }).catch(function (e) { st("Não salvou: " + A.msgErro(e), true); }); return; }
+      if (!A.confirmar(temReg
+        ? "Apagar " + c.nome + " da lista de Clientes?\n\nOs serviços e orçamentos dele NÃO são apagados: continuam nas abas deles. Só some desta lista (dá para ver de novo em “Mostrar apagados da lista”)."
+        : "Apagar " + c.nome + " da lista de Clientes?\n\nEste cadastro não tem serviço nem orçamento, então é apagado de vez.")) return;
+      var f = (P.S.fichas || []).filter(function (x) { return x.chave === c.k; })[0];
+      clearTimeout(timer); pend = false;
+      fila = fila.then(function () {
+        if (!temReg) return f ? P.q(P.sb.from("clientes_ficha").delete().eq("id", f.id)).then(function () { P.tirar(P.S.fichas, f.id); }) : null;
+        var d = { chave: c.k, nome: c.nome, oculto: true };
+        return P.q(f ? P.sb.from("clientes_ficha").update(d).eq("id", f.id).select().single() : P.sb.from("clientes_ficha").insert(d).select().single()).then(function (n) { P.trocar(P.S.fichas, n); });
+      }).then(function () { j.fechar(); A.avisar("Apagado da lista de Clientes", "ok"); }).catch(function (e) { st("Não apagou: " + A.msgErro(e), true); });
     };
     $("#cl-fechar", el).onclick = function () { j.fechar(); };
   }
