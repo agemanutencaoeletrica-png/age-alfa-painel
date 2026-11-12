@@ -58,7 +58,8 @@
     });
     // ficha editada por você: vale a data de cadastro e os tipos de serviço que você escolheu; cliente só da ficha também aparece
     (S.fichas || []).forEach(function (f) {
-      var c = mapa[f.chave] || cli(f.nome); if (!c) return;
+      var c = mapa[f.chave] || (mapa[f.chave] = { k: f.chave, nome: String(f.nome || "").trim(), tel: "", doc: "", end: "", desde: "", itens: [] }); if (!c.nome && !f.nome) return;
+      if (f.nome) c.nome = f.nome;   // o nome que você corrigiu vale (os serviços e orçamentos antigos continuam com o nome de antes)
       c.ficha = f; c.manual = !c.cadastro && !c.itens.length;
       if (f.cadastrado_em) c.desde = f.cadastrado_em;
       if (!c.desde) c.desde = dia(f.criado_em);
@@ -159,27 +160,33 @@
   }
 
   // ---------------- editar: salva sozinho a cada mudança ----------------
+  // a ficha não tem "id": a chave (nome sem acento e sem espaços) identifica o cliente
+  function guardarFicha(n) {
+    var i = (P.S.fichas || []).findIndex(function (x) { return x.chave === n.chave; });
+    if (i >= 0) P.S.fichas[i] = n; else P.S.fichas.push(n);
+  }
   function gravar(c, dados) {
-    fila = fila.then(function () {
+    var r = fila.then(function () {
       var f = (P.S.fichas || []).filter(function (x) { return x.chave === c.k; })[0], d = Object.assign({ chave: c.k, nome: c.nome }, dados);
-      return P.q(f ? P.sb.from("clientes_ficha").update(d).eq("id", f.id).select().single() : P.sb.from("clientes_ficha").insert(d).select().single())
-        .then(function (n) { P.trocar(P.S.fichas, n); return n; });
+      return P.q(f ? P.sb.from("clientes_ficha").update(d).eq("chave", c.k).select().single() : P.sb.from("clientes_ficha").insert(d).select().single())
+        .then(function (n) { guardarFicha(n); return n; });
     });
-    return fila;
+    fila = r.catch(function () { /* o erro já vai para quem chamou; a fila segue */ });
+    return r;
   }
   function editar(c) {
     if (P.S.semFichas) { A.avisar("Para editar, rode o supabase.sql no Supabase (tabela clientes_ficha). Depois recarregue o painel.", "erro"); return; }
     var nomes = {}; (P.tiposServico ? P.tiposServico() : []).concat(Object.keys(c.tiposAuto || {}), c.tiposEdit || []).forEach(function (n) { if (n && n !== "Sem tipo") nomes[n] = 1; });
     var marcados = c.tiposEdit ? c.tiposEdit.slice() : Object.keys(c.tiposAuto || {}).filter(function (n) { return n !== "Sem tipo"; });
     marcados.forEach(function (n) { nomes[n] = 1; });
-    var j = A.janela((c.novo ? '<label for="cl-nome">Nome do cliente *</label><input id="cl-nome" maxlength="200" autocomplete="off">' : "") +
+    var j = A.janela(('<label for="cl-nome">Nome do cliente *</label><input id="cl-nome" maxlength="200" autocomplete="off">') +
       '<label for="cl-desde">Cliente desde (data de cadastro)</label><input type="date" id="cl-desde">' +
       '<label for="cl-tel">Telefone / WhatsApp</label><input id="cl-tel" type="tel" maxlength="40">' +
       '<label>Tipos de serviço</label><div id="cl-tipos"></div>' +
       '<div class="linha" style="margin-top:6px"><input id="cl-outro" maxlength="60" placeholder="Outro tipo (ex.: Ar-condicionado)" style="flex:1"><button class="peq" id="cl-add">+ Acrescentar</button></div>' +
       '<label for="cl-obs">Observações</label><textarea id="cl-obs" rows="3" maxlength="3000"></textarea>' +
-      '<p class="peq mudo" id="cl-st" style="margin:8px 0 0">' + (c.novo ? "Escreva o nome para começar a salvar." : "Salva sozinho a cada mudança.") + "</p>" +
-      '<div class="acoes">' + (c.tiposEdit ? '<button id="cl-auto" title="Volta a mostrar os tipos que o painel acha pelos serviços e orçamentos">↺ Tipos automáticos</button>' : "") + '<button class="prim" id="cl-fechar">Fechar</button>' + (c.novo && !c.k ? "" : c.oculto ? '<button id="cl-apagar" title="Mostra o cliente de novo na lista">↩ Mostrar de novo na lista</button>' : '<button class="perigo" id="cl-apagar">🗑 Apagar</button>') + "</div>",
+      '<p class="peq mudo" id="cl-st" style="margin:8px 0 0">' + (c.novo ? "Escreva o nome para começar a salvar." : "Salva sozinho a cada mudança. Se preferir, toque em Salvar.") + "</p>" +
+      '<div class="acoes">' + (c.tiposEdit ? '<button id="cl-auto" title="Volta a mostrar os tipos que o painel acha pelos serviços e orçamentos">↺ Tipos automáticos</button>' : "") + '<button class="prim" id="cl-salvar">💾 Salvar</button><button id="cl-fechar">Fechar</button>' + (c.novo && !c.k ? "" : c.oculto ? '<button id="cl-apagar" title="Mostra o cliente de novo na lista">↩ Mostrar de novo na lista</button>' : '<button class="perigo" id="cl-apagar">🗑 Apagar</button>') + "</div>",
       { titulo: c.novo ? "Novo cliente" : "Cliente: " + c.nome, semRascunho: true, aoFechar: function () { clearTimeout(timer); if (pend) salvar(); if (raiz) fila.then(function () { ver(raiz, P); }); } });
     var el = j.el, timer = null, pend = false, el_ = el;
     function desenharTipos() {
@@ -191,19 +198,18 @@
     function st(txt, erro) { var s = $("#cl-st", el); s.textContent = txt; s.className = "peq " + (erro ? "" : "mudo"); s.style.color = erro ? "var(--critico,#b00020)" : ""; }
     function salvar() {
       pend = false;
-      if (c.novo) {
-        var nm = $("#cl-nome", el).value.trim(); if (!nm) { st("Escreva o nome do cliente."); return fila; }
-        var k = chave(nm); if (!k) { st("Nome inválido.", true); return fila; }
-        if (!c.k) { c.k = k; c.nome = nm; }
-        if (k !== c.k) { c.nome = nm; }   // o nome escrito depois do primeiro salvamento não muda a ficha
-      }
+      var nm = $("#cl-nome", el).value.trim();
+      if (!nm) { st("Escreva o nome do cliente.", true); return Promise.resolve(false); }
+      var k = chave(nm); if (!k) { st("Nome inválido.", true); return Promise.resolve(false); }
+      if (!c.k) c.k = k;   // cliente novo: o primeiro nome escrito vira a chave; depois só muda o nome mostrado
+      c.nome = nm;
       st("Salvando...");
-      return gravar(c, { telefone: $("#cl-tel", el).value.trim() || null, cadastrado_em: $("#cl-desde", el).value || null, tipos: marcados, obs: $("#cl-obs", el).value.trim() || null })
-        .then(function () { c.tiposEdit = marcados; st("✓ Salvo às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })); })
-        .catch(function (e) { st("Não salvou: " + A.msgErro(e), true); });
+      return gravar(c, { nome: nm, telefone: $("#cl-tel", el).value.trim() || null, cadastrado_em: $("#cl-desde", el).value || null, tipos: marcados, obs: $("#cl-obs", el).value.trim() || null })
+        .then(function () { c.tiposEdit = marcados; st("✓ Salvo às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })); return true; })
+        .catch(function (e) { st("Não salvou: " + A.msgErro(e) + ". Toque em Salvar para tentar de novo.", true); return false; });
     }
     function agendar() { pend = true; clearTimeout(timer); timer = setTimeout(salvar, 600); }
-    $("#cl-desde", el).value = c.desde || ""; $("#cl-tel", el).value = c.tel || ""; $("#cl-obs", el).value = c.obs || "";
+    $("#cl-nome", el).value = c.nome || ""; $("#cl-desde", el).value = c.desde || ""; $("#cl-tel", el).value = c.tel || ""; $("#cl-obs", el).value = c.obs || "";
     desenharTipos();
     ["#cl-desde", "#cl-tel", "#cl-obs", "#cl-nome"].forEach(function (s) { if ($(s, el)) { $(s, el).oninput = agendar; $(s, el).onchange = agendar; } });
     $("#cl-add", el).onclick = function () {
@@ -222,12 +228,13 @@
         : "Apagar " + c.nome + " da lista de Clientes?\n\nEste cadastro não tem serviço nem orçamento, então é apagado de vez.")) return;
       var f = (P.S.fichas || []).filter(function (x) { return x.chave === c.k; })[0];
       clearTimeout(timer); pend = false;
-      fila = fila.then(function () {
-        if (!temReg) return f ? P.q(P.sb.from("clientes_ficha").delete().eq("id", f.id)).then(function () { P.tirar(P.S.fichas, f.id); }) : null;
+      fila = fila.catch(function () {}).then(function () {
+        if (!temReg) return f ? P.q(P.sb.from("clientes_ficha").delete().eq("chave", c.k)).then(function () { P.S.fichas = P.S.fichas.filter(function (x) { return x.chave !== c.k; }); }) : null;
         var d = { chave: c.k, nome: c.nome, oculto: true };
-        return P.q(f ? P.sb.from("clientes_ficha").update(d).eq("id", f.id).select().single() : P.sb.from("clientes_ficha").insert(d).select().single()).then(function (n) { P.trocar(P.S.fichas, n); });
+        return P.q(f ? P.sb.from("clientes_ficha").update(d).eq("chave", c.k).select().single() : P.sb.from("clientes_ficha").insert(d).select().single()).then(function (n) { guardarFicha(n); });
       }).then(function () { j.fechar(); A.avisar("Apagado da lista de Clientes", "ok"); }).catch(function (e) { st("Não apagou: " + A.msgErro(e), true); });
     };
+    $("#cl-salvar", el).onclick = function () { clearTimeout(timer); salvar(); };
     $("#cl-fechar", el).onclick = function () { j.fechar(); };
   }
 
