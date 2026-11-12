@@ -209,6 +209,7 @@
         .catch(function (e) { st("Não salvou: " + A.msgErro(e) + ". Toque em Salvar para tentar de novo.", true); return false; });
     }
     function agendar() { pend = true; clearTimeout(timer); timer = setTimeout(salvar, 600); }
+    if (P.ligarNome) { P.ligarNome($("#cl-nome", el)); P.ligarMaiuscula($("#cl-outro", el)); P.ligarMaiuscula($("#cl-obs", el), true); }
     $("#cl-nome", el).value = c.nome || ""; $("#cl-desde", el).value = c.desde || ""; $("#cl-tel", el).value = c.tel || ""; $("#cl-obs", el).value = c.obs || "";
     desenharTipos();
     ["#cl-desde", "#cl-tel", "#cl-obs", "#cl-nome"].forEach(function (s) { if ($(s, el)) { $(s, el).oninput = agendar; $(s, el).onchange = agendar; } });

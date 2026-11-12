@@ -93,6 +93,28 @@
       try { this.setSelectionRange(a, b); } catch (e) { /* campo sem cursor */ }
     });
   }
+  // nome de pessoa/empresa: cada palavra começa com maiúscula (menos de, da, do, das, dos, e); o que já está em maiúscula não muda
+  function nomeProprio(t, fim) {
+    // a 1ª palavra vira maiúscula na hora; as outras quando terminam (espaço depois) ou ao sair do campo, para "da" não virar "Da" enquanto se digita o "d"
+    return String(t || "").replace(/(^|[\s\-\/(])([a-zà-ÿ])([a-zà-ÿ'’]*)(?=[\s\-\/)]|$)?/g, function (m, a, c, resto, pos) {
+      var palavra = c + resto, inicio = pos === 0, seguido = pos + m.length < t.length;
+      if (!inicio && /^(de|da|do|das|dos|e)$/.test(palavra)) return m;
+      if (!inicio && !fim && !seguido) return m;
+      return a + c.toLocaleUpperCase("pt-BR") + resto;
+    });
+  }
+  function ligarNome(inp) {
+    if (!inp) return;
+    inp.setAttribute("autocapitalize", "words");
+    var aplicar = function (fim) {
+      var v = inp.value, n = nomeProprio(v, fim);
+      if (n === v) return;
+      var a = inp.selectionStart, b = inp.selectionEnd; inp.value = n;
+      try { inp.setSelectionRange(a, b); } catch (e) { /* campo sem cursor */ }
+    };
+    inp.addEventListener("input", function () { aplicar(false); });
+    inp.addEventListener("blur", function () { aplicar(true); inp.dispatchEvent(new Event("change", { bubbles: true })); });
+  }
   // 🔀 organizar itens: parecidos juntos (mesma "família", ex.: Cabo PP) e em ordem de medida (2x1,5 → 2x2,5 → 3x1,5...)
   var PALAVRAS_SOLTAS = /^(de|da|do|das|dos|para|p|com|e|em|mm|mm2|a|v|w|kw|cv|m|cm|x|pol|kg|l|un|ou)$/;
   function familiaItem(d) {
@@ -4835,6 +4857,7 @@
       (f ? '<button id="ef-token">🔄 Gerar novo link</button><button id="ef-juntar" title="Passa o ponto, os relatórios e os pagamentos deste cadastro para outro e apaga este">🔀 Juntar com outro funcionário</button><button class="perigo" id="ef-apagar">Apagar</button>' : "") + "</div>",
       { titulo: f ? "Editar funcionário" : "Novo funcionário" });
     var el = j.el;
+    ligarNome($("#ef-nome", el));
     $("#ef-nome", el).value = f ? f.nome : ""; $("#ef-tel", el).value = f ? f.telefone || "" : ""; $("#ef-area", el).value = f ? f.area : "eletrica"; $("#ef-pix", el).value = f ? f.pix || "" : "";
     $("#ef-email", el).value = f ? f.email || "" : ""; $("#ef-desde", el).value = f && f.conta_desde ? String(f.conta_desde).slice(0, 10) : "";
     $("#ef-diaria", el).value = f && f.diaria ? Number(f.diaria).toFixed(2).replace(".", ",") : "";
@@ -4910,7 +4933,7 @@
 
   // o módulo da prefeitura (prefeitura.js) usa as mesmas funções do painel
   var P = {
-    get sb() { return sb; }, S: S, q: q, catNome: catNome,
+    get sb() { return sb; }, S: S, q: q, catNome: catNome, ligarMaiuscula: ligarMaiuscula, ligarNome: ligarNome,
     tiposServico: function () { return Object.keys(CAT_ORC).filter(function (k) { return k !== "eletrica_pintura"; }).map(catNome); }, porId: porId, trocar: trocar, tirar: tirar, falhou: falhou, nomeFunc: nomeFunc, carregando: carregando,
     val: val, nulo: nulo, htmlFoto: htmlFoto, hidratarFotos: hidratarFotos, infoFoto: infoFoto, registrarInfoPonto: registrarInfoPonto,
     opcoesFunc: opcoesFunc, formParte: formParte, botaoZap: botaoZap, seloOS: seloOS, abrirServico: abrirServico, abrirRelatorio: abrirRelatorio,

@@ -203,6 +203,7 @@
       '<div class="acoes"><button class="prim" id="pa-salvar">💾 Salvar</button>' + (novo ? "" : '<button class="perigo" id="pa-apagar">🗑 Excluir</button>') + '<button id="pa-cancelar">Cancelar</button></div>',
       { titulo: novo ? "🤝 Novo parceiro" : "🤝 " + (p.nome || "Parceiro"), larga: true, fixa: true });
     var el = j.el;
+    if (P.ligarNome) { P.ligarNome($("#pa-nome", el)); P.ligarNome($("#pa-emp", el)); P.ligarMaiuscula($("#pa-obs", el), true); }
     $("#pa-nome", el).value = p.nome || ""; $("#pa-emp", el).value = p.empresa || ""; $("#pa-tp", el).value = p.tipo || ""; $("#pa-zap", el).value = p.whatsapp || "";
     $("#pa-tel", el).value = p.telefone || ""; $("#pa-mail", el).value = p.email || ""; $("#pa-cid", el).value = p.cidade || ""; $("#pa-end", el).value = p.endereco || "";
     $("#pa-obs", el).value = p.obs || ""; $("#pa-ativo", el).checked = p.ativo !== false;
