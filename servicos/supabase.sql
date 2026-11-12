@@ -788,6 +788,7 @@ create table if not exists public.clientes_ficha (
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+alter table public.clientes_ficha add column if not exists oculto boolean not null default false;   -- true = apagado da lista de Clientes (os serviços e orçamentos continuam)
 
 do $$
 declare t text;
