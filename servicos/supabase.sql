@@ -788,6 +788,7 @@ create table if not exists public.clientes_ficha (
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+alter table public.clientes_ficha add column if not exists endereco text check (endereco is null or length(endereco) <= 300);   -- endereço do cliente (mapa do Google)
 alter table public.clientes_ficha add column if not exists oculto boolean not null default false;   -- true = apagado da lista de Clientes (os serviços e orçamentos continuam)
 
 -- 🧾 impostos e dívidas da firma: cada parcelamento (ou dívida avulsa) com as suas parcelas, o que já foi pago e o que falta
