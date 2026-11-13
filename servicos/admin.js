@@ -2640,6 +2640,7 @@
       '<div class="duas"><div><label for="eo2-imp-out">Outros impostos (%) — DAS do Simples</label><input id="eo2-imp-out" inputmode="decimal" placeholder="0"></div><div><label>&nbsp;</label><button class="peq" id="eo2-imp-das" type="button">🧮 Usar o DAS do Simples</button></div></div>' +
       '<div id="eo2-imp-msg" class="peq mudo"></div>' +
       '<p class="mudo peq" style="margin:4px 0 0">O município vem do CNPJ do cliente (botão 🔎 Buscar CNPJ). O cliente recebe só o valor total, sem linha de imposto. Percentuais são estimativa: confirme com o contador.</p></details>' +
+      (soMateriais(M) ? "" : '<details class="cartao" id="eo2-parc-cx" style="margin-top:10px"><summary><b>🤝 Parceiro que vai executar</b> <span class="selo">só você vê</span></summary><div id="eo2-parc" style="margin-top:8px"></div></details>') +
       '<div class="cartao" style="margin-top:10px" id="eo2-totais"></div>' +
       '<div class="duas"><div><label for="eo2-pag">Forma de pagamento</label><input id="eo2-pag" maxlength="300"></div><div><label for="eo2-prazo">Prazo de execução</label><input id="eo2-prazo" maxlength="200" placeholder="Ex.: 5 dias úteis"></div></div>' +
       '<div class="linha" style="margin-top:4px"><select id="eo2-cond" aria-label="Condição de pagamento pronta" style="flex:1 1 100%"><option value="">✍️ Manual: eu escrevo a forma de pagamento</option>' +
@@ -2679,6 +2680,17 @@
       if ($("#eo2-vist", el)) { $("#eo2-vist", el).value = M.laudo.vistoria || ""; $("#eo2-sol", el).value = M.laudo.solucao || ""; }
     }
     preencher();
+    var secParc = null;
+    if ($("#eo2-parc", el) && window.AGE_PARCSERV) {
+      var cx = $("#eo2-parc-cx", el);
+      var montarParc = function () {
+        if (secParc) { secParc.atualizar && secParc.atualizar(); return; }
+        secParc = window.AGE_PARCSERV.secaoOrcamento($("#eo2-parc", el), { P: P, orc: function () { return M; },
+          garantirSalvo: function () { lerCampos(); return M.id ? Promise.resolve(M) : salvar(true); }, maoObraCliente: function () { lerCampos(); return calcOrc(M).serv; } });
+      };
+      cx.addEventListener("toggle", function () { if (cx.open) montarParc(); });
+      if (M.id && (S.parcServ || []).some(function (s) { return s.orcamento_id === M.id; })) { cx.open = true; montarParc(); }
+    }
     ["#eo2-cli", "#eo2-end", "#eo2-pag", "#eo2-prazo"].forEach(function (k) { ligarMaiuscula($(k, el)); });
     ["#eo2-obs", "#eo2-vist", "#eo2-sol", "#eo2-escopo"].forEach(function (k) { if ($(k, el)) ligarMaiuscula($(k, el), true); });
 
