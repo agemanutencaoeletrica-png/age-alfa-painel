@@ -14,6 +14,7 @@
   function dias(iso) { var a = new Date(iso + "T12:00:00"), b = new Date(hoje() + "T12:00:00"); return Math.round((a - b) / 864e5); }
   function quando(iso) { var d = dias(iso); return d < 0 ? "atrasada há " + (-d) + " dia" + (d === -1 ? "" : "s") : d === 0 ? "vence hoje" : d === 1 ? "vence amanhã" : "vence em " + d + " dias"; }
   function dinheiro(v) { return A.dinheiro(num(v)); }
+  function placaDe(d) { var v = d.veiculo_id ? P.porId(P.S.veic || [], d.veiculo_id) : null; return v ? v.placa : "veículo"; }
   function dividas() { return (P && P.S.impDividas) || []; }
   function parcelasDe(id) { return ((P && P.S.impParcelas) || []).filter(function (x) { return x.parcelamento_id === id; }).sort(function (a, b) { return a.numero - b.numero; }); }
 
@@ -64,7 +65,7 @@
       });
     });
     proximas.sort(function (a, b) { return a.p.vencimento < b.p.vencimento ? -1 : a.p.vencimento > b.p.vencimento ? 1 : 0; });
-    c.innerHTML = '<div class="cab-secao"><h2>🧾 Impostos e dívidas</h2><span><button class="prim" id="im-novo">+ Parcelamento / dívida</button> <button id="im-tg" title="Aviso no Telegram dois dias antes de vencer">🔔 Lembrete no Telegram</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>🧾 Impostos e dívidas</h2><span><button class="prim" id="im-novo">+ Parcelamento / dívida</button> <button id="im-veic">🚗 + Imposto de veículo</button> <button id="im-tg" title="Aviso no Telegram dois dias antes de vencer">🔔 Lembrete no Telegram</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Cada dívida da firma separada, com as parcelas, o que já foi pago e o que falta. Marque a parcela como paga quando pagar.</p>' +
       (S.semImpostos ? '<div class="aviso">Para usar, rode no Supabase o <b>supabase.sql</b> atualizado (tabelas <b>impostos_parcelamentos</b> e <b>impostos_parcelas</b>) e depois o arquivo de dados iniciais.</div>' : "") +
       '<div class="cartao"><div><b>Em aberto:</b> ' + dinheiro(aberto) + ' · <b>Já pago:</b> ' + dinheiro(pago) + '</div>' +
@@ -75,7 +76,10 @@
       }).join("") + "</div>" : "") + "</div>" +
       '<div id="im-lista"></div>';
     var l = $("#im-lista", c);
-    l.innerHTML = rs.length ? rs.map(function (x) { return cartao(x.d, x.r); }).join("") : '<div class="cartao mudo">Nenhum parcelamento ou dívida cadastrado. Toque em “+ Parcelamento / dívida”.</div>';
+    var firma = rs.filter(function (x) { return x.d.tipo !== "veiculo"; }), veics = rs.filter(function (x) { return x.d.tipo === "veiculo"; });
+    l.innerHTML = (firma.length ? firma.map(function (x) { return cartao(x.d, x.r); }).join("") : '<div class="cartao mudo">Nenhum parcelamento ou dívida da firma cadastrado. Toque em “+ Parcelamento / dívida”.</div>') +
+      '<h3 style="margin:14px 0 8px">🚗 Veículos</h3>' + (veics.length ? veics.map(function (x) { return cartao(x.d, x.r); }).join("") : '<div class="cartao mudo">Nenhum imposto de veículo. Toque em “🚗 + Imposto de veículo” (IPVA, licenciamento, seguro obrigatório, multas).</div>');
+    $("#im-veic", c).onclick = function () { editarVeiculo(); };
     $("#im-novo", c).onclick = function () { editar(null); };
     $("#im-tg", c).onclick = lembrete;
     $$("[data-ed]", l).forEach(function (b) { b.onclick = function () { editar(P.porId(P.S.impDividas, b.dataset.ed)); }; });
@@ -90,7 +94,7 @@
     var pct = r.total ? Math.round(r.pagas / r.total * 100) : 0, prox = r.proxima, dd = prox ? dias(prox.vencimento) : null;
     var comp = [d.principal, d.multa, d.juros].some(function (v) { return v !== null && v !== undefined; });
     return '<div class="cartao"><div style="float:right"><button class="peq" data-ed="' + esc(d.id) + '">✏️ Editar</button> <button class="peq" data-ap="' + esc(d.id) + '" title="Apagar esta dívida e as parcelas dela">🗑</button></div>' +
-      "<div><b>" + esc(d.nome) + "</b> " + (d.tipo === "avulsa" ? '<span class="selo">dívida avulsa</span>' : '<span class="selo">parcelamento</span>') + "</div>" +
+      "<div><b>" + esc(d.nome) + "</b> " + (d.tipo === "veiculo" ? '<span class="selo">🚗 ' + esc(placaDe(d)) + (d.categoria ? " · " + esc(d.categoria) : "") + "</span>" : d.tipo === "avulsa" ? '<span class="selo">dívida avulsa</span>' : '<span class="selo">parcelamento</span>') + "</div>" +
       '<div class="peq mudo">' + [d.orgao ? esc(d.orgao) : "", d.numero ? "nº " + esc(d.numero) : ""].filter(Boolean).join(" · ") + "</div>" +
       '<div style="margin-top:6px"><b>Valor da dívida: ' + (Number(d.valor_total) ? dinheiro(d.valor_total) : '<span class="mudo">não informado</span>') + "</b>" +
       (comp ? ' <span class="peq mudo">· principal ' + dinheiro(d.principal) + " · multa " + dinheiro(d.multa) + " · juros " + dinheiro(d.juros) + "</span>" : "") + "</div>" +
@@ -157,7 +161,7 @@
     var novo = !d;
     var j = A.janela('<label for="id-nome">Nome da dívida *</label><input id="id-nome" maxlength="200" placeholder="Ex.: Parcelamento do Simples Nacional">' +
       '<div class="duas"><div><label for="id-orgao">Órgão</label><input id="id-orgao" maxlength="120" placeholder="Receita, PGFN, Prefeitura..."></div><div><label for="id-num">Número do parcelamento</label><input id="id-num" maxlength="80"></div></div>' +
-      '<div class="duas"><div><label for="id-tipo">Tipo</label><select id="id-tipo"><option value="parcelamento">Parcelamento</option><option value="avulsa">Dívida avulsa (uma guia só)</option></select></div>' +
+      '<div class="duas"><div><label for="id-tipo">Tipo</label><select id="id-tipo"><option value="parcelamento">Parcelamento</option><option value="avulsa">Dívida avulsa (uma guia só)</option>' + (d && d.tipo === "veiculo" ? '<option value="veiculo">Imposto de veículo</option>' : "") + '</select></div>' +
       '<div><label for="id-total">Valor da dívida (R$)</label><input id="id-total" inputmode="decimal" placeholder="Total consolidado"></div></div>' +
       '<div class="duas"><div><label for="id-pri">Principal (R$)</label><input id="id-pri" inputmode="decimal"></div><div><label for="id-mul">Multa (R$)</label><input id="id-mul" inputmode="decimal"></div></div>' +
       '<div class="duas"><div><label for="id-jur">Juros (R$)</label><input id="id-jur" inputmode="decimal"></div><div><label for="id-np" id="id-np-l">Quantidade de parcelas</label><input id="id-np" type="number" min="1" max="200"></div></div>' +
@@ -202,6 +206,38 @@
         if (!parcelas.length) return;
         return P.q(P.sb.from("impostos_parcelas").insert(parcelas.map(function (p) { return Object.assign({ parcelamento_id: n.id }, p); })).select()).then(function (ls) { (ls || []).forEach(function (x) { P.S.impParcelas.push(x); }); });
       }).then(function () { A.ocupado(b, false); j.fechar(); A.avisar("Salvo", "ok"); refrescar(); }).catch(function (e) { A.ocupado(b, false); msg("Não salvou: " + A.msgErro(e)); });
+    };
+  }
+
+  // ---------- imposto de veículo (IPVA, licenciamento, seguro obrigatório, multa...) ----------
+  var CAT_VEIC = ["IPVA", "Licenciamento", "Seguro obrigatório (DPVAT/SPVAT)", "Multa", "Outro"];
+  function editarVeiculo() {
+    var vs = (P.S.veic || []).filter(function (v) { return v.ativo !== false; });
+    if (!vs.length) { A.avisar("Cadastre antes o veículo na aba 🚗 Veículos.", "erro"); return; }
+    var j = A.janela('<label for="iv-veic">Veículo *</label><select id="iv-veic">' + vs.map(function (v) { return '<option value="' + esc(v.id) + '">' + esc(v.placa + (v.modelo ? " — " + v.modelo : "")) + "</option>"; }).join("") + "</select>" +
+      '<div class="duas"><div><label for="iv-cat">O que é *</label><select id="iv-cat">' + CAT_VEIC.map(function (c) { return "<option>" + esc(c) + "</option>"; }).join("") + '</select></div>' +
+      '<div><label for="iv-ref">Ano ou referência</label><input id="iv-ref" maxlength="40" placeholder="Ex.: 2026"></div></div>' +
+      '<div class="duas"><div><label for="iv-total">Valor total (R$) *</label><input id="iv-total" inputmode="decimal"></div><div><label for="iv-np">Em quantas parcelas (cotas)?</label><input id="iv-np" type="number" min="1" max="12" value="1"></div></div>' +
+      '<div class="duas"><div><label for="iv-d1">Vencimento da 1ª (ou única) *</label><input type="date" id="iv-d1"></div><div><label for="iv-regra">Vencimento das demais</label><select id="iv-regra"><option value="mesmo">Mesmo dia de cada mês</option><option value="ultimo">Último dia útil do mês</option></select></div></div>' +
+      '<p class="peq mudo" style="margin:2px 0">As parcelas saem iguais (valor total ÷ parcelas; a última fecha o centavo). Valores e datas: confira na guia do Detran e ajuste na lista de parcelas.</p>' +
+      '<label for="iv-obs">Observações</label><textarea id="iv-obs" rows="2" maxlength="3000"></textarea><p class="peq" id="iv-msg" style="color:var(--critico)"></p>' +
+      '<div class="acoes"><button class="prim" id="iv-salvar">💾 Salvar</button><button id="iv-cancelar">Cancelar</button></div>', { titulo: "🚗 Imposto de veículo", semRascunho: true }), el = j.el;
+    $("#iv-ref", el).value = String(new Date().getFullYear());
+    $("#iv-cancelar", el).onclick = function () { j.fechar(); };
+    $("#iv-salvar", el).onclick = function () {
+      var msg = function (t) { $("#iv-msg", el).textContent = t; }, total = lerValor($("#iv-total", el).value), d1 = $("#iv-d1", el).value, np = parseInt($("#iv-np", el).value, 10) || 1;
+      if (!(total > 0)) return msg("Informe o valor total.");
+      if (!d1) return msg("Informe o vencimento da 1ª parcela.");
+      var vid = $("#iv-veic", el).value, v = P.porId(P.S.veic, vid), cat = $("#iv-cat", el).value, ref = $("#iv-ref", el).value.trim();
+      var base = Math.floor(total / np * 100) / 100, parcelas = [], soma = 0;
+      for (var k = 1; k <= np; k++) { var val = k === np ? num(total - soma) : base; soma += val; parcelas.push({ numero: k, vencimento: k === 1 ? d1 : maisMeses(d1, k - 1, $("#iv-regra", el).value), valor: val }); }
+      var dados = { nome: cat.replace(/ \(.*\)$/, "") + (ref ? " " + ref : "") + " — " + (v ? v.placa : ""), orgao: "Detran / Estado", tipo: "veiculo", categoria: cat.replace(/ \(.*\)$/, ""), veiculo_id: vid,
+        valor_total: total, n_parcelas: np, obs: $("#iv-obs", el).value.trim() || null };
+      var b = this; A.ocupado(b, true, "Salvando...");
+      P.q(P.sb.from("impostos_parcelamentos").insert(dados).select().single()).then(function (n) {
+        P.trocar(P.S.impDividas, n);
+        return P.q(P.sb.from("impostos_parcelas").insert(parcelas.map(function (p) { return Object.assign({ parcelamento_id: n.id }, p); })).select()).then(function (ls) { (ls || []).forEach(function (x) { P.S.impParcelas.push(x); }); });
+      }).then(function () { A.ocupado(b, false); j.fechar(); A.avisar("Salvo", "ok"); refrescar(); }).catch(function (e) { A.ocupado(b, false); msg(/veiculo_id|categoria|impostos_parcelamentos_tipo_check|violates check/i.test(A.msgErro(e)) ? "Rode de novo o impostos.sql no Supabase (novo: impostos de veículos)." : "Não salvou: " + A.msgErro(e)); });
     };
   }
 
