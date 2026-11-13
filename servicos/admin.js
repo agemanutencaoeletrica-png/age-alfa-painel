@@ -573,7 +573,9 @@
       q(sb.from("socio_repasses").select("*").order("pago_em", { ascending: false }).limit(3000)).catch(function () { return null; }),
       q(sb.from("clientes_ficha").select("*").order("nome")).catch(function () { return null; }),
       q(sb.from("impostos_parcelamentos").select("*").order("nome")).catch(function () { return null; }),
-      q(sb.from("impostos_parcelas").select("*").order("vencimento").limit(5000)).catch(function () { return null; })
+      q(sb.from("impostos_parcelas").select("*").order("vencimento").limit(5000)).catch(function () { return null; }),
+      q(sb.from("parceiro_servicos").select("*").order("fechado_em", { ascending: false }).limit(2000)).catch(function () { return null; }),
+      q(sb.from("parceiro_pagamentos").select("*").order("data").limit(10000)).catch(function () { return null; })
     ]).then(function (r) {
       S.func = r[0]; S.obras = r[1]; S.serv = r[2]; S.rel = r[3]; S.orc = r[4]; S.lojas = r[5]; S.rotas = r[6]; ordenarLojas();
       S.semPref = !r[7]; S.pref = r[7] ? r[7][0] : []; S.contr = r[7] ? r[7][1] : []; S.med = r[7] ? r[7][2] : [];
@@ -593,6 +595,7 @@
       S.semOrcLoja = !r[19]; S.orcLoja = r[19] || [];   // 🏪 orçamentos das lojas (cada um separado)
       S.semPropostas = !r[20]; S.propostas = r[20] || [];   // 📑 propostas prontas (orçamentos técnicos guardados)
       S.semParceiros = !r[22]; S.parceiros = r[22] || []; S.tiposParc = r[23] || null;
+      S.semParcServ = !r[30] || !r[31]; S.parcServ = r[30] || []; S.parcPag = r[31] || [];   // 💼 serviços fechados com parceiros
       S.semImpostos = !r[28] || !r[29]; S.impDividas = r[28] || []; S.impParcelas = r[29] || [];   // 🧾 impostos e dívidas
       S.semFichas = !r[27]; S.fichas = r[27] || [];   // 👥 ficha dos clientes (data e tipos de serviço editados)
       S.semSocios = !r[24] || !r[25] || !r[26]; S.socios = r[24] || []; S.socServ = r[25] || []; S.socRep = r[26] || [];   // 👔 sócios   // 🤝 parceiros (contatos para mandar documentos e projetos)

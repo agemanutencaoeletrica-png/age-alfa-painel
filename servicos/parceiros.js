@@ -71,8 +71,9 @@
         '<div class="peq" style="margin-top:4px">' + [tel ? "📱 " + esc(tel) : "", p.email ? "✉ " + esc(p.email) : "", p.cidade ? "📍 " + esc(p.cidade) : ""].filter(Boolean).join(" · ") + "</div>" +
         (p.obs ? '<div class="peq mudo" style="margin-top:2px;white-space:pre-wrap">' + esc(String(p.obs).slice(0, 200)) + (String(p.obs).length > 200 ? "…" : "") + "</div>" : "") +
         (p.ultimo_envio ? '<div class="peq mudo">Último envio: ' + esc(A.data(p.ultimo_envio)) + "</div>" : "") +
+        (function () { var rs = window.AGE_PARCSERV && window.AGE_PARCSERV.resumo(p.id); return rs ? '<div class="peq" style="margin-top:4px">💼 <b>' + rs.n + " serviço(s) fechado(s)</b> · combinado <b>" + A.dinheiro(rs.total) + "</b> · pago " + A.dinheiro(rs.pago) + " · falta pagar <b>" + A.dinheiro(rs.falta) + "</b></div>" : ""; })() +
         '<div class="acoes" style="margin-top:6px"><button class="peq zap" data-pa-zap' + (dig(tel).length >= 10 ? "" : " disabled") + '>📲 WhatsApp</button><button class="peq" data-pa-mail' + (emailOk(p.email) ? "" : " disabled") + '>✉ E-mail</button>' +
-        '<button class="peq prim" data-pa-enviar>📤 Enviar documentos</button><button class="peq" data-pa-editar>✏️ Editar</button></div></div>';
+        '<button class="peq prim" data-pa-enviar>📤 Enviar documentos</button><button class="peq" data-pa-serv>💼 Serviços fechados</button><button class="peq" data-pa-editar>✏️ Editar</button></div></div>';
     }).join("");
     $$("[data-pa]", r).forEach(function (cx) {
       var p = P.porId(lista(), cx.dataset.pa);
@@ -80,6 +81,7 @@
       $("[data-pa-zap]", cx).onclick = function () { A.abrirZap(A.linkZap(fone(p), msgPadrao(primeiro(p), 0))); };
       $("[data-pa-mail]", cx).onclick = function () { location.href = "mailto:" + encodeURIComponent(p.email.trim()); };
       $("[data-pa-enviar]", cx).onclick = function () { enviar([p]); };
+      $("[data-pa-serv]", cx).onclick = function () { window.AGE_PARCSERV.usar(P); window.AGE_PARCSERV.abrir(p, listar); };
       $("[data-pa-editar]", cx).onclick = function () { editar(p); };
     });
   }

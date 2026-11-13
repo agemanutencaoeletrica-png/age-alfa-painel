@@ -822,6 +822,32 @@ create table if not exists public.impostos_parcelas (
 );
 create index if not exists impostos_parcelas_venc_idx on public.impostos_parcelas (vencimento) where pago_em is null;
 
+-- 💼 serviços fechados com cada parceiro: o que foi combinado, o valor e os pagamentos (entrada, adiantamento, restante) com data e horário
+create table if not exists public.parceiro_servicos (
+  id            uuid primary key default gen_random_uuid(),
+  parceiro_id   uuid not null references public.parceiros (id) on delete cascade,
+  descricao     text not null check (length(trim(descricao)) between 1 and 300),
+  valor_total   numeric(12, 2) not null default 0 check (valor_total >= 0),
+  fechado_em    date,
+  status        text not null default 'aberto' check (status in ('aberto', 'concluido', 'cancelado')),
+  obs           text check (obs is null or length(obs) <= 3000),
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create table if not exists public.parceiro_pagamentos (
+  id         uuid primary key default gen_random_uuid(),
+  servico_id uuid not null references public.parceiro_servicos (id) on delete cascade,
+  tipo       text not null default 'parcela' check (tipo in ('entrada', 'adiantamento', 'restante', 'parcela')),
+  valor      numeric(12, 2) not null check (valor >= 0),
+  data       date,
+  hora       time,
+  pago_em    date,
+  obs        text check (obs is null or length(obs) <= 500),
+  criado_em  timestamptz not null default now()
+);
+create index if not exists parceiro_servicos_parc_idx on public.parceiro_servicos (parceiro_id);
+create index if not exists parceiro_pagamentos_serv_idx on public.parceiro_pagamentos (servico_id);
+
 -- 🚗 impostos dos veículos (IPVA, licenciamento, seguro obrigatório, multas) usam as mesmas tabelas, ligados ao veículo
 alter table public.impostos_parcelamentos add column if not exists veiculo_id uuid references public.veiculos (id) on delete set null;
 alter table public.impostos_parcelamentos add column if not exists categoria text check (categoria is null or length(categoria) <= 60);
@@ -867,7 +893,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha', 'impostos_parcelamentos', 'impostos_parcelas', 'lembrete_config'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha', 'impostos_parcelamentos', 'impostos_parcelas', 'lembrete_config', 'parceiro_servicos', 'parceiro_pagamentos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
