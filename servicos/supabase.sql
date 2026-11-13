@@ -822,6 +822,12 @@ create table if not exists public.impostos_parcelas (
 );
 create index if not exists impostos_parcelas_venc_idx on public.impostos_parcelas (vencimento) where pago_em is null;
 
+-- 🚗 impostos dos veículos (IPVA, licenciamento, seguro obrigatório, multas) usam as mesmas tabelas, ligados ao veículo
+alter table public.impostos_parcelamentos add column if not exists veiculo_id uuid references public.veiculos (id) on delete set null;
+alter table public.impostos_parcelamentos add column if not exists categoria text check (categoria is null or length(categoria) <= 60);
+alter table public.impostos_parcelamentos drop constraint if exists impostos_parcelamentos_tipo_check;
+alter table public.impostos_parcelamentos add constraint impostos_parcelamentos_tipo_check check (tipo in ('parcelamento', 'avulsa', 'veiculo'));
+
 -- 🔔 lembrete no Telegram: uma rotina diária (GitHub Actions) pergunta ao banco o que vence em poucos dias.
 -- Ela se identifica com uma chave sua (tabela abaixo, que só você lê); sem a chave o banco não responde.
 create table if not exists public.lembrete_config (
