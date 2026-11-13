@@ -790,12 +790,78 @@ create table if not exists public.clientes_ficha (
 );
 alter table public.clientes_ficha add column if not exists oculto boolean not null default false;   -- true = apagado da lista de Clientes (os serviços e orçamentos continuam)
 
+-- 🧾 impostos e dívidas da firma: cada parcelamento (ou dívida avulsa) com as suas parcelas, o que já foi pago e o que falta
+create table if not exists public.impostos_parcelamentos (
+  id            uuid primary key default gen_random_uuid(),
+  nome          text not null check (length(trim(nome)) between 1 and 200),
+  orgao         text check (orgao is null or length(orgao) <= 120),
+  numero        text check (numero is null or length(numero) <= 80),
+  tipo          text not null default 'parcelamento' check (tipo in ('parcelamento', 'avulsa')),
+  valor_total   numeric(12, 2) not null default 0 check (valor_total >= 0),
+  principal     numeric(12, 2),
+  multa         numeric(12, 2),
+  juros         numeric(12, 2),
+  n_parcelas    integer check (n_parcelas is null or n_parcelas between 1 and 200),   -- total contratado (pode ser maior que as parcelas já cadastradas)
+  detalhes      jsonb,                                                                 -- composição da dívida (períodos, tributos...)
+  obs           text check (obs is null or length(obs) <= 3000),
+  ativo         boolean not null default true,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create table if not exists public.impostos_parcelas (
+  id               uuid primary key default gen_random_uuid(),
+  parcelamento_id  uuid not null references public.impostos_parcelamentos (id) on delete cascade,
+  numero           integer not null check (numero >= 1),
+  vencimento       date not null,
+  valor            numeric(12, 2) not null check (valor >= 0),
+  pago_em          date,
+  valor_pago       numeric(12, 2),
+  lembrete_enviado date,            -- dia em que o aviso foi mandado no Telegram
+  obs              text check (obs is null or length(obs) <= 500),
+  unique (parcelamento_id, numero)
+);
+create index if not exists impostos_parcelas_venc_idx on public.impostos_parcelas (vencimento) where pago_em is null;
+
+-- 🔔 lembrete no Telegram: uma rotina diária (GitHub Actions) pergunta ao banco o que vence em poucos dias.
+-- Ela se identifica com uma chave sua (tabela abaixo, que só você lê); sem a chave o banco não responde.
+create table if not exists public.lembrete_config (
+  id         boolean primary key default true check (id),
+  chave      text not null check (length(chave) >= 32),
+  dias_antes integer not null default 2 check (dias_antes between 0 and 30)
+);
+create or replace function public.lembretes_impostos(p_chave text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare hoje date := (now() at time zone 'America/Sao_Paulo')::date; cfg public.lembrete_config; r jsonb;
+begin
+  select * into cfg from public.lembrete_config where id;
+  if cfg.chave is null or p_chave is distinct from cfg.chave then raise exception 'Chave invalida.'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'nome', d.nome, 'orgao', d.orgao, 'numero', p.numero, 'total', d.n_parcelas,
+           'vencimento', p.vencimento, 'valor', p.valor, 'dias', p.vencimento - hoje) order by p.vencimento, d.nome), '[]'::jsonb) into r
+    from public.impostos_parcelas p join public.impostos_parcelamentos d on d.id = p.parcelamento_id
+   where d.ativo and p.pago_em is null and p.lembrete_enviado is null and p.vencimento <= hoje + cfg.dias_antes;
+  return r;
+end $$;
+create or replace function public.lembrete_marcar(p_chave text, p_ids uuid[]) returns integer
+language plpgsql security definer set search_path = public as $$
+declare cfg public.lembrete_config; n integer;
+begin
+  select * into cfg from public.lembrete_config where id;
+  if cfg.chave is null or p_chave is distinct from cfg.chave then raise exception 'Chave invalida.'; end if;
+  update public.impostos_parcelas set lembrete_enviado = (now() at time zone 'America/Sao_Paulo')::date where id = any (p_ids) and pago_em is null;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function public.lembretes_impostos(text) from public;
+revoke execute on function public.lembrete_marcar(text, uuid[]) from public;
+grant execute on function public.lembretes_impostos(text) to anon, authenticated;
+grant execute on function public.lembrete_marcar(text, uuid[]) to anon, authenticated;
+
 do $$
 declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha', 'impostos_parcelamentos', 'impostos_parcelas', 'lembrete_config'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '

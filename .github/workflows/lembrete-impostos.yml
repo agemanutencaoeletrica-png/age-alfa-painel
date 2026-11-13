@@ -1,0 +1,22 @@
+name: Lembrete de impostos (Telegram)
+
+# Todo dia às 08:00 de Brasília (11:00 UTC). Também dá para rodar na hora: Actions > este fluxo > Run workflow.
+on:
+  schedule:
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lembrar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Avisar no Telegram o que vence em poucos dias
+        run: node scripts/lembrete-impostos.mjs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LEMBRETE_CHAVE: ${{ secrets.LEMBRETE_CHAVE }}
