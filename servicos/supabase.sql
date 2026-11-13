@@ -788,6 +788,7 @@ create table if not exists public.clientes_ficha (
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+alter table public.clientes_ficha add column if not exists endereco text check (endereco is null or length(endereco) <= 300);   -- endereço do cliente (mapa do Google)
 alter table public.clientes_ficha add column if not exists oculto boolean not null default false;   -- true = apagado da lista de Clientes (os serviços e orçamentos continuam)
 
 -- 🧾 impostos e dívidas da firma: cada parcelamento (ou dívida avulsa) com as suas parcelas, o que já foi pago e o que falta
@@ -847,6 +848,10 @@ create table if not exists public.parceiro_pagamentos (
 );
 create index if not exists parceiro_servicos_parc_idx on public.parceiro_servicos (parceiro_id);
 create index if not exists parceiro_pagamentos_serv_idx on public.parceiro_pagamentos (servico_id);
+
+alter table public.parceiro_servicos add column if not exists itens jsonb not null default '[]'::jsonb;   -- linhas do serviço/mão de obra do parceiro: [{descricao, valor}]
+alter table public.parceiro_servicos add column if not exists orcamento_id uuid references public.orcamentos (id) on delete set null;   -- orçamento de onde veio
+create unique index if not exists parceiro_servicos_orc_idx on public.parceiro_servicos (orcamento_id, parceiro_id) where orcamento_id is not null;
 
 -- 🚗 impostos dos veículos (IPVA, licenciamento, seguro obrigatório, multas) usam as mesmas tabelas, ligados ao veículo
 alter table public.impostos_parcelamentos add column if not exists veiculo_id uuid references public.veiculos (id) on delete set null;

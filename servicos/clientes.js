@@ -66,7 +66,7 @@
       c.ficha = f; c.manual = !c.cadastro && !c.itens.length;
       if (f.cadastrado_em) c.desde = f.cadastrado_em;
       if (!c.desde) c.desde = dia(f.criado_em);
-      c.tel = f.telefone || c.tel; c.obs = f.obs || "";
+      c.tel = f.telefone || c.tel; c.obs = f.obs || ""; c.end = f.endereco || c.end;
       if (Array.isArray(f.tipos)) c.tiposEdit = f.tipos;
       c.oculto = !!f.oculto;
     });
@@ -97,6 +97,23 @@
     a.href = URL.createObjectURL(new Blob(["﻿" + linhas.map(function (l) { return l.map(cel).join(";"); }).join("\r\n")], { type: "text/csv;charset=utf-8" }));
     a.download = "clientes-" + A.isoLocal(new Date()) + ".csv";
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  }
+
+  // ---------------- endereço no Google Maps: abrir, copiar o link e compartilhar ----------------
+  function linkMapa(end) { return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(String(end || "").trim()); }
+  function semEndereco(end) { if (String(end || "").trim()) return false; A.avisar("Escreva o endereço do cliente primeiro.", "erro"); return true; }
+  function abrirMapa(end) { if (semEndereco(end)) return; window.open(linkMapa(end), "_blank", "noopener"); }
+  function copiarMapa(end) {
+    if (semEndereco(end)) return;
+    var url = linkMapa(end);
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(function () { A.avisar("Link do mapa copiado", "ok"); }, function () { window.prompt("Copie o link:", url); });
+    else window.prompt("Copie o link:", url);
+  }
+  function compartilharMapa(nome, end) {
+    if (semEndereco(end)) return;
+    var url = linkMapa(end), texto = (nome ? nome + "\n" : "") + String(end).trim() + "\n" + url;
+    if (navigator.share) navigator.share({ title: "Endereço" + (nome ? " — " + nome : ""), text: (nome ? nome + " — " : "") + String(end).trim(), url: url }).catch(function () { /* cancelado */ });
+    else window.open("https://wa.me/?text=" + encodeURIComponent(texto), "_blank", "noopener");
   }
 
   function ver(c, ctx) {
@@ -143,12 +160,17 @@
         return '<div class="cartao"><div style="float:right"><button class="peq" data-ed="' + esc(x.k) + '">✏️ Editar</button></div><div><b>' + esc(nm(x.nome)) + "</b> " + (x.oculto ? '<span class="selo atencao">apagado da lista</span> ' : "") + Object.keys(x.tipos).map(function (t) { return '<span class="selo">' + esc(t) + (x.tipos[t] > 1 ? " ×" + x.tipos[t] : "") + "</span>"; }).join(" ") + "</div>" +
           '<div class="peq mudo">Cliente desde <b>' + esc(A.dataSimples(x.desde)) + "</b> · " + x.nServ + " serviço(s) · " + x.nOrc + " orçamento(s)" + (x.aprovado ? " · aprovado " + A.dinheiro(x.aprovado) : "") +
           (x.ultima && x.ultima !== x.desde ? " · última atividade " + esc(A.dataSimples(x.ultima)) : "") + "</div>" +
-          (x.tel || x.doc || x.end ? '<div class="peq">' + [x.tel ? (fone.length >= 10 ? '<a href="https://wa.me/' + (fone.length <= 11 ? "55" : "") + fone + '" target="_blank" rel="noopener">📲 ' + esc(x.tel) + "</a>" : esc(x.tel)) : "", x.doc ? esc(x.doc) : "", x.end ? esc(x.end) : ""].filter(Boolean).join(" · ") + "</div>" : "") +
+          (x.tel || x.doc || x.end ? '<div class="peq">' + [x.tel ? (fone.length >= 10 ? '<a href="https://wa.me/' + (fone.length <= 11 ? "55" : "") + fone + '" target="_blank" rel="noopener">📲 ' + esc(x.tel) + "</a>" : esc(x.tel)) : "", x.doc ? esc(x.doc) : "", x.end ? "📍 " + esc(x.end) : ""].filter(Boolean).join(" · ") + "</div>" : "") +
+          (x.end ? '<div class="acoes" style="margin-top:4px"><button class="peq" data-mapa="' + esc(x.k) + '">📍 Mapa</button><button class="peq" data-copiar="' + esc(x.k) + '">📋 Copiar link</button><button class="peq" data-comp="' + esc(x.k) + '">📤 Compartilhar endereço</button></div>' : "") +
           (x.obs ? '<div class="obs-destaque">📌 ' + esc(ob(x.obs)) + "</div>" : "") +
           (x.itens.length ? '<details class="peq" style="margin-top:6px"><summary>Ver o que pediu</summary>' + x.itens.map(function (i) {
             return "<div>" + esc(A.dataSimples(i.data)) + " · <b>" + esc(i.tipo) + "</b> · " + esc(i.origem) + (i.texto ? " · " + esc(i.texto) : "") + (i.status ? " · " + esc(i.status) : "") + "</div>";
           }).join("") + "</details>" : "") + "</div>";
       }).join("");
+      var achar = function (k) { return ls.filter(function (y) { return y.k === k; })[0]; };
+      $$("[data-mapa]", r).forEach(function (bt) { bt.onclick = function () { abrirMapa(achar(bt.dataset.mapa).end); }; });
+      $$("[data-copiar]", r).forEach(function (bt) { bt.onclick = function () { copiarMapa(achar(bt.dataset.copiar).end); }; });
+      $$("[data-comp]", r).forEach(function (bt) { bt.onclick = function () { var y = achar(bt.dataset.comp); compartilharMapa(nm(y.nome), y.end); }; });
       $$("[data-ed]", r).forEach(function (bt) { bt.onclick = function () { editar(ls.filter(function (y) { return y.k === bt.dataset.ed; })[0]); }; });
     }
     $("#cl-busca", c).oninput = function () { filtro.busca = this.value; listar(); };
@@ -185,6 +207,8 @@
     var j = A.janela(('<label for="cl-nome">Nome do cliente *</label><input id="cl-nome" maxlength="200" autocomplete="off">') +
       '<label for="cl-desde">Cliente desde (data de cadastro)</label><input type="date" id="cl-desde">' +
       '<label for="cl-tel">Telefone / WhatsApp</label><input id="cl-tel" type="tel" maxlength="40">' +
+      '<label for="cl-end">Endereço do cliente</label><input id="cl-end" maxlength="300" placeholder="Rua, número, bairro, cidade" autocomplete="off">' +
+      '<div class="linha" style="margin:4px 0 0"><button type="button" class="peq" id="cl-mapa">📍 Abrir no Google Maps</button><button type="button" class="peq" id="cl-copiar">📋 Copiar link do mapa</button><button type="button" class="peq" id="cl-comp">📤 Compartilhar</button></div>' +
       '<label>Tipos de serviço</label><div id="cl-tipos"></div>' +
       '<div class="linha" style="margin-top:6px"><input id="cl-outro" maxlength="60" placeholder="Outro tipo (ex.: Ar-condicionado)" style="flex:1"><button class="peq" id="cl-add">+ Acrescentar</button></div>' +
       '<label for="cl-obs">Observações</label><textarea id="cl-obs" rows="3" maxlength="3000"></textarea>' +
@@ -207,15 +231,15 @@
       if (!c.k) c.k = k;   // cliente novo: o primeiro nome escrito vira a chave; depois só muda o nome mostrado
       c.nome = nm;
       st("Salvando...");
-      return gravar(c, { nome: nm, telefone: $("#cl-tel", el).value.trim() || null, cadastrado_em: $("#cl-desde", el).value || null, tipos: marcados, obs: $("#cl-obs", el).value.trim() || null })
+      return gravar(c, { nome: nm, telefone: $("#cl-tel", el).value.trim() || null, endereco: $("#cl-end", el).value.trim() || null, cadastrado_em: $("#cl-desde", el).value || null, tipos: marcados, obs: $("#cl-obs", el).value.trim() || null })
         .then(function () { c.tiposEdit = marcados; st("✓ Salvo às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })); return true; })
         .catch(function (e) { st("Não salvou: " + A.msgErro(e) + ". Toque em Salvar para tentar de novo.", true); return false; });
     }
     function agendar() { pend = true; clearTimeout(timer); timer = setTimeout(salvar, 600); }
     if (P.ligarNome) { P.ligarNome($("#cl-nome", el)); P.ligarMaiuscula($("#cl-outro", el)); P.ligarMaiuscula($("#cl-obs", el), true); }
-    $("#cl-nome", el).value = nm(c.nome); $("#cl-desde", el).value = c.desde || ""; $("#cl-tel", el).value = c.tel || ""; $("#cl-obs", el).value = ob(c.obs);
+    $("#cl-nome", el).value = nm(c.nome); $("#cl-desde", el).value = c.desde || ""; $("#cl-tel", el).value = c.tel || ""; $("#cl-end", el).value = c.end || ""; $("#cl-obs", el).value = ob(c.obs);
     desenharTipos();
-    ["#cl-desde", "#cl-tel", "#cl-obs", "#cl-nome"].forEach(function (s) { if ($(s, el)) { $(s, el).oninput = agendar; $(s, el).onchange = agendar; } });
+    ["#cl-desde", "#cl-tel", "#cl-end", "#cl-obs", "#cl-nome"].forEach(function (s) { if ($(s, el)) { $(s, el).oninput = agendar; $(s, el).onchange = agendar; } });
     $("#cl-add", el).onclick = function () {
       var n = $("#cl-outro", el).value.trim(); if (!n) return;
       n = n.charAt(0).toUpperCase() + n.slice(1); nomes[n] = 1; if (marcados.indexOf(n) < 0) marcados.push(n);
@@ -238,6 +262,10 @@
         return P.q(f ? P.sb.from("clientes_ficha").update(d).eq("chave", c.k).select().single() : P.sb.from("clientes_ficha").insert(d).select().single()).then(function (n) { guardarFicha(n); });
       }).then(function () { j.fechar(); A.avisar("Apagado da lista de Clientes", "ok"); }).catch(function (e) { st("Não apagou: " + A.msgErro(e), true); });
     };
+    if (P.ligarMaiuscula) P.ligarMaiuscula($("#cl-end", el));
+    $("#cl-mapa", el).onclick = function () { abrirMapa($("#cl-end", el).value); };
+    $("#cl-copiar", el).onclick = function () { copiarMapa($("#cl-end", el).value); };
+    $("#cl-comp", el).onclick = function () { compartilharMapa(c.nome, $("#cl-end", el).value); };
     $("#cl-salvar", el).onclick = function () { clearTimeout(timer); salvar(); };
     $("#cl-fechar", el).onclick = function () { j.fechar(); };
   }
