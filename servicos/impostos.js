@@ -285,16 +285,114 @@
     var L = P.S.impComprov || [];
     return L.filter(function (x) { return (hash && x.arquivo_hash === hash) || (c && c.autenticacao && x.autenticacao === c.autenticacao) || (c && c.identificador && x.identificador === c.identificador); })[0] || null;
   }
+  // ---------- núcleo: analisar e lançar (usado pelas janelas manuais e pelo modo automático) ----------
+  function abertasAgora() { var l = []; dividas().filter(function (d) { return d.ativo !== false; }).forEach(function (d) { parcelasDe(d.id).filter(function (p) { return !p.pago_em; }).forEach(function (p) { l.push({ d: d, p: p }); }); }); return l; }
+  function novoLote() { return { vistos: {}, usadas: {}, hashes: {} }; }
+  function diasEntre(a, b) { return Math.abs(Math.round((new Date(a + "T12:00:00") - new Date(b + "T12:00:00")) / 864e5)); }
+  function proximoNumero(did) { var ps = parcelasDe(did); return ps.length ? ps[ps.length - 1].numero + 1 : 1; }
+  function nomeNova(g) { return g.tipo === "DARF" ? "DARF" + (g.codigo ? " código " + g.codigo : "") : g.parcela ? "Parcelamento (DAS" + (g.parcelamento ? " nº " + g.parcelamento : "") + ")" : "DAS do Simples Nacional"; }
+  function parcelaExistente(e) { return e.dividaId && e.numero ? parcelasDe(e.dividaId).filter(function (p) { return p.numero === e.numero && !p.pago_em; })[0] || null : null; }
+
+  function analisarComprovante(f, lote) {
+    var e = { tipo: "comprovante", arquivo: f, nome: f.name || "comprovante" };
+    return hashArquivo(f).then(function (h) {
+      e.hash = h;
+      var rep = h && jaLido(null, h);
+      if (rep || (h && lote.vistos[h])) { e.repetido = "este arquivo já foi usado" + (rep && rep.pago_em ? " (pago em " + A.dataSimples(rep.pago_em) + ")" : "") + "."; return e; }
+      if (h) lote.vistos[h] = true;
+      return textoDe(f).then(function (r) {
+        e.c = lerComprovante(r.texto);
+        var rep2 = jaLido(e.c, null) || (e.c.autenticacao && lote.vistos["a" + e.c.autenticacao] && { pago_em: null }) || (e.c.identificador && lote.vistos["i" + e.c.identificador] && { pago_em: null });
+        if (rep2) { e.repetido = "a mesma autenticação/documento já foi lançado" + (rep2.pago_em ? " (pago em " + A.dataSimples(rep2.pago_em) + ")" : "") + "."; return e; }
+        if (e.c.autenticacao) lote.vistos["a" + e.c.autenticacao] = true; if (e.c.identificador) lote.vistos["i" + e.c.identificador] = true;
+        if (e.c.valor === null) { e.aviso = "Não consegui ler o valor. Escolha a parcela à mão."; }
+        else if (!e.c.data) { e.aviso = "Não consegui ler a data: vale a de hoje se você confirmar."; }
+        var ach = e.c.valor !== null ? acharParcela(e.c, abertasAgora(), lote.usadas) : null;
+        if (ach) { e.parcelaId = ach.x.p.id; e.como = ach.como; lote.usadas[ach.x.p.id] = true; if (ach.varias) e.aviso = "Há parcelas com o mesmo valor: confira se é esta."; }
+        else if (e.c.valor !== null) e.aviso = "Não achei parcela em aberto com " + dinheiro(e.c.valor) + ". Escolha à mão ou deixe sem baixa.";
+        // seguro para lançar sozinho: valor e data lidos, uma só parcela possível e (nº da guia igual OU valor exato com a data perto do vencimento)
+        var par = e.parcelaId ? P.porId(P.S.impParcelas, e.parcelaId) : null;
+        e.seguro = !!(par && !e.aviso && e.c.valor !== null && e.c.data && (e.como === "pelo nº da guia" || (e.como === "pelo valor" && diasEntre(e.c.data, par.vencimento) <= 40)));
+        return e;
+      }, function (er) { e.erro = A.msgErro(er); return e; });
+    });
+  }
+  function aplicarComprovante(e) {
+    var p = P.porId(P.S.impParcelas, e.parcelaId), c = e.c || {}, data = c.data || hoje(), val = c.valor !== null && c.valor !== undefined ? c.valor : Number(p.valor);
+    var antes = { pago_em: p.pago_em || null, valor_pago: p.valor_pago === undefined ? null : p.valor_pago, forma: p.forma || null };
+    return P.q(P.sb.from("impostos_comprovantes").insert({ parcela_id: p.id, arquivo_hash: e.hash || null, identificador: c.identificador || null, autenticacao: c.autenticacao || null, valor: val, pago_em: data, hora: c.hora || null }).select().single())
+      .then(function (n) { P.S.impComprov.push(n); e.undo = { comprovId: n.id, parcelaId: p.id, antes: antes }; return gravarParcela(p.id, { pago_em: data, valor_pago: val, forma: c.boleto ? "Boleto" : p.forma || null }); })
+      .then(function () { e.salvo = true; e.resultado = "baixa na parcela " + p.numero + " de “" + (P.porId(P.S.impDividas, p.parcelamento_id) || {}).nome + "” (" + dinheiro(val) + ", pago em " + A.dataSimples(data) + ")."; return e; })
+      .catch(function (er) { e.erro = /duplicate|unique|23505/i.test(A.msgErro(er) + " " + (er && er.code)) ? "Comprovante repetido (já lançado antes)." : A.msgErro(er); return e; });
+  }
+
+  function analisarGuia(f, lote) {
+    var e = { tipo: "guia", arquivo: f, nome: f.name || "guia" };
+    return hashArquivo(f).then(function (h) {
+      if (h && lote.hashes[h]) { e.repetida = "este arquivo já está na lista."; return e; } if (h) lote.hashes[h] = true;
+      return textoDe(f).then(function (r) {
+        var g = lerGuia(r.texto); e.g = g;
+        if (!g.documento && g.valor === null) { e.erro = "Não consegui ler esta guia (sem nº de documento nem valor). Tente o PDF original."; return e; }
+        var rep = g.documento ? (P.S.impParcelas || []).filter(function (p) { return soDig(p.documento) === soDig(g.documento); })[0] : null;
+        var ach = dividaDaGuia(g); if (ach) { e.dividaId = ach.d.id; e.como = ach.como; }
+        if (rep && rep.id) { e.dividaId = rep.parcelamento_id; e.numero = rep.numero; e.como = "pela guia já cadastrada"; }
+        else e.numero = g.parcela || (e.dividaId ? null : 1);
+        if (e.dividaId && !e.numero) {
+          var igual = parcelasDe(e.dividaId).filter(function (p) { return !p.pago_em && g.valor !== null && Math.abs(Number(p.valor) - g.valor) < 0.005 && (!g.vencimento || p.vencimento === g.vencimento); })[0];
+          e.numero = igual ? igual.numero : proximoNumero(e.dividaId);
+        }
+        e.existente = parcelaExistente(e);
+        if (rep && rep.pago_em) e.repetida = "a guia " + g.documento + " já foi cadastrada e está paga (parcela " + rep.numero + ").";
+        // seguro para cadastrar sozinho: valor, vencimento e nº da parcela lidos, e a dívida achada (ou guia nova com tipo e nº de documento claros)
+        e.seguro = !!(!e.repetida && g.valor > 0 && g.vencimento && e.numero && (e.dividaId || (g.tipo && g.documento)));
+        return e;
+      }, function (er) { e.erro = A.msgErro(er); return e; });
+    });
+  }
+  function aplicarGuia(e) {
+    var g = e.g, num = e.numero;
+    function daParcela(did, criouDivida) {
+      var atual = parcelasDe(did).filter(function (p) { return p.numero === num; })[0];
+      var dados = { vencimento: g.vencimento, valor: g.valor, documento: g.documento || null };
+      if (atual) {
+        if (atual.pago_em) throw new Error("A parcela " + num + " já está paga. Escolha outro nº.");
+        e.undo = { dividaId: did, criouDivida: !!criouDivida, parcelaId: atual.id, criouParcela: false, antes: { vencimento: atual.vencimento, valor: atual.valor, documento: atual.documento || null } };
+        return gravarParcela(atual.id, dados).then(function () { e.resultado = "parcela " + num + " atualizada (" + dinheiro(g.valor) + ", vence " + A.dataSimples(g.vencimento) + ")."; });
+      }
+      return P.q(P.sb.from("impostos_parcelas").insert(Object.assign({ parcelamento_id: did, numero: num }, dados)).select().single()).then(function (n) {
+        P.S.impParcelas.push(n); e.undo = { dividaId: did, criouDivida: !!criouDivida, parcelaId: n.id, criouParcela: true };
+        e.resultado = "parcela " + num + " criada (" + dinheiro(g.valor) + ", vence " + A.dataSimples(g.vencimento) + ").";
+      });
+    }
+    return Promise.resolve().then(function () {
+      if (e.dividaId) return daParcela(e.dividaId, false);
+      var nova = { nome: nomeNova(g), orgao: g.sispar ? "PGFN" : "Receita Federal", numero: g.sispar ? "PGFN-SISPAR " + g.sispar : g.parcelamento ? "DAS nº " + g.parcelamento : g.darfRef || null, tipo: g.parcelas || g.parcelamento || g.sispar ? "parcelamento" : "avulsa", valor_total: g.parcelas ? 0 : g.valor, n_parcelas: g.parcelas || (g.parcelamento || g.sispar ? null : 1) };
+      return P.q(P.sb.from("impostos_parcelamentos").insert(nova).select().single()).then(function (n) { P.trocar(P.S.impDividas, n); e.dividaId = n.id; return daParcela(n.id, true).then(function () { e.resultado = "nova dívida “" + n.nome + "”, " + e.resultado; }); });
+    }).then(function () { e.salvo = true; return e; })
+      .catch(function (er) { e.erro = A.msgErro(er) + (/documento|column|schema cache/i.test(A.msgErro(er)) ? " — rode de novo o impostos.sql no Supabase." : ""); return e; });
+  }
+  // desfaz um lançamento automático: volta a parcela como estava (ou apaga o que foi criado)
+  function desfazer(e) {
+    var u = e.undo; if (!u) return Promise.resolve(e);
+    var ps;
+    if (e.tipo === "comprovante") {
+      ps = P.q(P.sb.from("impostos_comprovantes").delete().eq("id", u.comprovId)).then(function () { P.S.impComprov = P.S.impComprov.filter(function (x) { return x.id !== u.comprovId; }); return gravarParcela(u.parcelaId, u.antes); });
+    } else if (u.criouParcela) {
+      ps = P.q(P.sb.from("impostos_parcelas").delete().eq("id", u.parcelaId)).then(function () { P.tirar(P.S.impParcelas, u.parcelaId);
+        if (u.criouDivida && !parcelasDe(u.dividaId).length) return P.q(P.sb.from("impostos_parcelamentos").delete().eq("id", u.dividaId)).then(function () { P.tirar(P.S.impDividas, u.dividaId); }); });
+    } else ps = gravarParcela(u.parcelaId, u.antes);
+    return ps.then(function () { e.desfeito = true; e.salvo = false; return e; });
+  }
+
   function lerComprovantes(arquivosIni, depois) {
     if (P.S.semComprov || P.S.semImpostos) { A.avisar("Para ler comprovantes, rode de novo o impostos.sql no Supabase (tabela impostos_comprovantes).", "erro"); return; }
     if (!window.AGE_PAG || !window.AGE_PAG.lerArquivo) { A.avisar("O leitor de comprovantes não carregou. Atualize a página.", "erro"); return; }
-    var ents = [], vistos = {}, usadas = {};
-    var abertas = []; dividas().filter(function (d) { return d.ativo !== false; }).forEach(function (d) { parcelasDe(d.id).filter(function (p) { return !p.pago_em; }).forEach(function (p) { abertas.push({ d: d, p: p }); }); });
+    var ents = [], lote = novoLote();
     var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">Escolha os comprovantes (print, foto ou PDF). O app lê o valor e a data, acha a parcela e <b>você confere antes de dar baixa</b>. Comprovante repetido é recusado.</p>' +
       '<div class="acoes"><button class="prim" id="lc-esc">📎 Escolher comprovantes</button></div><input type="file" id="lc-arq" accept="image/*,application/pdf" multiple class="oculto">' +
       '<div id="lc-st" class="peq" style="margin:8px 0"></div><div id="lc-lista"></div><p class="peq" id="lc-msg" style="color:var(--critico)"></p>' +
       '<div class="acoes"><button class="prim" id="lc-ok" disabled>✅ Dar baixa nas parcelas marcadas</button><button id="lc-fechar">Fechar</button></div>', { titulo: "📎 Ler comprovantes", larga: true, semRascunho: true, aoFechar: function () { refrescar(); if (depois) depois(); } }), el = j.el;
-    function opcoes(sel) { return '<option value="">— não dar baixa —</option>' + abertas.map(function (x) { return '<option value="' + esc(x.p.id) + '"' + (sel === x.p.id ? " selected" : "") + ">" + esc((x.d.nome.length > 36 ? x.d.nome.slice(0, 35) + "…" : x.d.nome) + " · parcela " + x.p.numero + " · " + A.dataSimples(x.p.vencimento) + " · " + dinheiro(x.p.valor)) + "</option>"; }).join(""); }
+    function opcoes(sel) { return '<option value="">— não dar baixa —</option>' + abertasAgora().map(function (x) { return '<option value="' + esc(x.p.id) + '"' + (sel === x.p.id ? " selected" : "") + ">" + esc((x.d.nome.length > 36 ? x.d.nome.slice(0, 35) + "…" : x.d.nome) + " · parcela " + x.p.numero + " · " + A.dataSimples(x.p.vencimento) + " · " + dinheiro(x.p.valor)) + "</option>"; }).join(""); }
     function desenhar() {
       $("#lc-lista", el).innerHTML = ents.map(function (e, i) {
         var estado = e.erro ? '<span style="color:var(--critico)">⚠ ' + esc(e.erro) + "</span>" : e.repetido ? '<span style="color:var(--critico)">⛔ Comprovante repetido: ' + esc(e.repetido) + "</span>" : e.salvo ? "✅ Baixa dada" : e.aviso ? '<span style="color:var(--atencao)">⚠ ' + esc(e.aviso) + "</span>" : "";
@@ -306,31 +404,10 @@
       atualizarOk();
     }
     function atualizarOk() { var n = ents.filter(function (e) { return e.parcelaId && !e.erro && !e.repetido && !e.salvo; }).length; $("#lc-ok", el).disabled = !n; $("#lc-ok", el).textContent = n ? "✅ Dar baixa em " + n + " parcela(s)" : "✅ Dar baixa nas parcelas marcadas"; }
-    function processar(f) {
-      var e = { nome: f.name || "comprovante" };
-      return hashArquivo(f).then(function (h) {
-        e.hash = h;
-        var rep = h && jaLido(null, h);
-        if (rep || (h && vistos[h])) { e.repetido = "este arquivo já foi usado" + (rep && rep.pago_em ? " (pago em " + A.dataSimples(rep.pago_em) + ")" : "") + "."; ents.push(e); return; }
-        if (h) vistos[h] = true;
-        return textoDe(f).then(function (r) {
-          e.c = lerComprovante(r.texto);
-          var rep2 = jaLido(e.c, null) || (e.c.autenticacao && vistos["a" + e.c.autenticacao] && { pago_em: null }) || (e.c.identificador && vistos["i" + e.c.identificador] && { pago_em: null });
-          if (rep2) { e.repetido = "a mesma autenticação/documento já foi lançado" + (rep2.pago_em ? " (pago em " + A.dataSimples(rep2.pago_em) + ")" : "") + "."; ents.push(e); return; }
-          if (e.c.autenticacao) vistos["a" + e.c.autenticacao] = true; if (e.c.identificador) vistos["i" + e.c.identificador] = true;
-          if (e.c.valor === null) { e.aviso = "Não consegui ler o valor. Escolha a parcela à mão."; }
-          else if (!e.c.data) { e.aviso = "Não consegui ler a data: vale a de hoje se você confirmar."; }
-          var ach = e.c.valor !== null ? acharParcela(e.c, abertas, usadas) : null;
-          if (ach) { e.parcelaId = ach.x.p.id; e.como = ach.como; usadas[ach.x.p.id] = true; if (ach.varias) e.aviso = "Há parcelas com o mesmo valor: confira se é esta."; }
-          else if (e.c.valor !== null) e.aviso = "Não achei parcela em aberto com " + dinheiro(e.c.valor) + ". Escolha à mão ou deixe sem baixa.";
-          ents.push(e);
-        }, function (er) { e.erro = A.msgErro(er); ents.push(e); });
-      });
-    }
     $("#lc-esc", el).onclick = function () { $("#lc-arq", el).value = ""; $("#lc-arq", el).click(); };
     function iniciar(fs) {
       if (!fs.length) return;
-      fs.reduce(function (pr, f, i) { return pr.then(function () { $("#lc-st", el).textContent = "📖 Lendo o comprovante " + (i + 1) + " de " + fs.length + "... (a 1ª vez demora um pouco)"; return processar(f); }); }, Promise.resolve())
+      fs.reduce(function (pr, f, i) { return pr.then(function () { $("#lc-st", el).textContent = "📖 Lendo o comprovante " + (i + 1) + " de " + fs.length + "... (a 1ª vez demora um pouco)"; return analisarComprovante(f, lote).then(function (e) { ents.push(e); }); }); }, Promise.resolve())
         .then(function () { $("#lc-st", el).textContent = "Confira e toque em dar baixa."; desenhar(); });
     }
     $("#lc-arq", el).onchange = function () { iniciar(Array.prototype.slice.call(this.files || []).slice(0, 20)); };
@@ -341,17 +418,10 @@
       var alvo = ents.filter(function (e) { return e.parcelaId && !e.erro && !e.repetido && !e.salvo; }), escolhidas = {}, dup = false;
       alvo.forEach(function (e) { if (escolhidas[e.parcelaId]) dup = true; escolhidas[e.parcelaId] = true; });
       if (dup) { A.ocupado(b, false); msg.textContent = "Dois comprovantes estão na mesma parcela. Deixe um deles sem baixa."; return; }
-      alvo.reduce(function (pr, e) {
-        return pr.then(function () {
-          var p = P.porId(P.S.impParcelas, e.parcelaId), c = e.c || {}, data = c.data || hoje(), val = c.valor !== null && c.valor !== undefined ? c.valor : Number(p.valor);
-          return P.q(P.sb.from("impostos_comprovantes").insert({ parcela_id: p.id, arquivo_hash: e.hash || null, identificador: c.identificador || null, autenticacao: c.autenticacao || null, valor: val, pago_em: data, hora: c.hora || null }).select().single())
-            .then(function (n) { P.S.impComprov.push(n); return gravarParcela(p.id, { pago_em: data, valor_pago: val, forma: c.boleto ? "Boleto" : p.forma || null }); })
-            .then(function () { e.salvo = true; })
-            .catch(function (er) { e.erro = /duplicate|unique|23505/i.test(A.msgErro(er) + " " + (er && er.code)) ? "Comprovante repetido (já lançado antes)." : A.msgErro(er); });
-        });
-      }, Promise.resolve()).then(function () { A.ocupado(b, false); var ok = ents.filter(function (e) { return e.salvo; }).length; $("#lc-st", el).textContent = ok ? "✅ " + ok + " baixa(s) dada(s)." : ""; desenhar(); refrescarFundo(); }).catch(function (er) { A.ocupado(b, false); msg.textContent = A.msgErro(er); });
+      alvo.reduce(function (pr, e) { return pr.then(function () { return aplicarComprovante(e); }); }, Promise.resolve())
+        .then(function () { A.ocupado(b, false); var ok = ents.filter(function (e) { return e.salvo; }).length; $("#lc-st", el).textContent = ok ? "✅ " + ok + " baixa(s) dada(s)." : ""; desenhar(); })
+        .catch(function (er) { A.ocupado(b, false); msg.textContent = A.msgErro(er); });
     };
-    function refrescarFundo() { /* a lista de trás atualiza ao fechar a janela */ }
   }
 
   // ---------- 📄 ler guia (DAS, DARF, DAS de parcelamento, dívida ativa) e cadastrar ----------
@@ -388,14 +458,12 @@
   function lerGuias(arquivosIni, depois) {
     if (P.S.semImpostos) { A.avisar("Para usar, rode o impostos.sql atualizado no Supabase.", "erro"); return; }
     if (!window.AGE_PAG || !window.AGE_PAG.lerArquivo) { A.avisar("O leitor de arquivos não carregou. Atualize a página.", "erro"); return; }
-    var ents = [], hashes = {};
+    var ents = [], lote = novoLote();
     var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">Escolha a guia (DAS, DARF, DAS de parcelamento, dívida ativa) em <b>PDF ou foto</b>. O app lê o número da guia, o valor e o vencimento e <b>cadastra a parcela</b> na dívida certa, ou cria a dívida se for nova. Você confere antes.</p>' +
       '<div class="acoes"><button class="prim" id="lg-esc">📄 Escolher guias</button></div><input type="file" id="lg-arq" accept="application/pdf,image/*" multiple class="oculto">' +
       '<div id="lg-st" class="peq" style="margin:8px 0"></div><div id="lg-lista"></div><p class="peq" id="lg-msg" style="color:var(--critico)"></p>' +
       '<div class="acoes"><button class="prim" id="lg-ok" disabled>💾 Cadastrar</button><button id="lg-fechar">Fechar</button></div>', { titulo: "📄 Ler guia de imposto", larga: true, semRascunho: true, aoFechar: function () { refrescar(); if (depois) depois(); } }), el = j.el;
     function opcoesDiv(sel) { return '<option value="">➕ Criar dívida nova</option>' + dividas().filter(function (d) { return d.ativo !== false; }).map(function (d) { return '<option value="' + esc(d.id) + '"' + (sel === d.id ? " selected" : "") + ">" + esc(d.nome.length > 40 ? d.nome.slice(0, 39) + "…" : d.nome) + "</option>"; }).join(""); }
-    function proximoNumero(did) { var ps = parcelasDe(did); return ps.length ? ps[ps.length - 1].numero + 1 : 1; }
-    function nomeNova(g) { return g.tipo === "DARF" ? "DARF" + (g.codigo ? " código " + g.codigo : "") : g.parcela ? "Parcelamento (DAS" + (g.parcelamento ? " nº " + g.parcelamento : "") + ")" : "DAS do Simples Nacional"; }
     function desenhar() {
       $("#lg-lista", el).innerHTML = ents.map(function (e, i) {
         if (e.erro) return '<div class="cartao"><b>' + esc(e.nome) + '</b><div class="peq" style="color:var(--critico)">⚠ ' + esc(e.erro) + "</div></div>";
@@ -417,33 +485,11 @@
       });
       var n = ents.filter(function (e) { return !e.erro && !e.salvo && !e.repetida; }).length; $("#lg-ok", el).disabled = !n; $("#lg-ok", el).textContent = n ? "💾 Cadastrar " + n + " guia(s)" : "💾 Cadastrar";
     }
-    function achar(e) { e.existente = e.dividaId && e.numero ? parcelasDe(e.dividaId).filter(function (p) { return p.numero === e.numero && !p.pago_em; })[0] || null : null; }
-    function processar(f) {
-      var e = { nome: f.name || "guia" };
-      return hashArquivo(f).then(function (h) {
-        if (h && hashes[h]) { e.repetida = "este arquivo já está na lista."; ents.push(e); return; } if (h) hashes[h] = true;
-        return textoDe(f).then(function (r) {
-          var g = lerGuia(r.texto); e.g = g;
-          if (!g.documento && g.valor === null) { e.erro = "Não consegui ler esta guia (sem nº de documento nem valor). Tente o PDF original."; ents.push(e); return; }
-          var rep = g.documento ? (P.S.impParcelas || []).filter(function (p) { return soDig(p.documento) === soDig(g.documento); })[0] : null;
-          var ach = dividaDaGuia(g); if (ach) { e.dividaId = ach.d.id; e.como = ach.como; }
-          // guia que já está cadastrada (mesmo nº) não vira duplicada: só confere/atualiza
-          if (rep && rep.id) { e.dividaId = rep.parcelamento_id; e.numero = rep.numero; e.como = "pela guia já cadastrada"; }
-          else e.numero = g.parcela || (e.dividaId ? null : 1);
-          if (e.dividaId && !e.numero) {   // sem nº de parcela na guia: procura a parcela em aberto com o mesmo valor e vencimento; senão será a próxima
-            var igual = parcelasDe(e.dividaId).filter(function (p) { return !p.pago_em && g.valor !== null && Math.abs(Number(p.valor) - g.valor) < 0.005 && (!g.vencimento || p.vencimento === g.vencimento); })[0];
-            e.numero = igual ? igual.numero : proximoNumero(e.dividaId);
-          }
-          achar(e);
-          if (rep && rep.pago_em) { e.repetida = "a guia " + g.documento + " já foi cadastrada e está paga (parcela " + rep.numero + ")."; }
-          ents.push(e);
-        }, function (er) { e.erro = A.msgErro(er); ents.push(e); });
-      });
-    }
+    function achar(e) { e.existente = parcelaExistente(e); }
     $("#lg-esc", el).onclick = function () { $("#lg-arq", el).value = ""; $("#lg-arq", el).click(); };
     function iniciar(fs) {
       if (!fs.length) return;
-      fs.reduce(function (pr, f, i) { return pr.then(function () { $("#lg-st", el).textContent = "📖 Lendo a guia " + (i + 1) + " de " + fs.length + "..."; return processar(f); }); }, Promise.resolve())
+      fs.reduce(function (pr, f, i) { return pr.then(function () { $("#lg-st", el).textContent = "📖 Lendo a guia " + (i + 1) + " de " + fs.length + "..."; return analisarGuia(f, lote).then(function (e) { ents.push(e); }); }); }, Promise.resolve())
         .then(function () { $("#lg-st", el).textContent = "Confira e toque em Cadastrar."; desenhar(); });
     }
     $("#lg-arq", el).onchange = function () { iniciar(Array.prototype.slice.call(this.files || []).slice(0, 20)); };
@@ -457,23 +503,8 @@
         if (!alvo[k].numero) { msg.textContent = "Informe o nº da parcela de “" + alvo[k].nome + "”."; return; }
       }
       A.ocupado(b, true, "Cadastrando...");
-      alvo.reduce(function (pr, e) {
-        return pr.then(function () {
-          var g = e.g, num = e.numero;
-          function daParcela(did) {
-            var atual = parcelasDe(did).filter(function (p) { return p.numero === num; })[0];
-            var dados = { vencimento: g.vencimento, valor: g.valor, documento: g.documento || null };
-            if (atual) {
-              if (atual.pago_em) throw new Error("A parcela " + num + " já está paga. Escolha outro nº.");
-              return gravarParcela(atual.id, dados).then(function () { e.resultado = "parcela " + num + " atualizada (" + dinheiro(g.valor) + ", vence " + A.dataSimples(g.vencimento) + ")."; });
-            }
-            return P.q(P.sb.from("impostos_parcelas").insert(Object.assign({ parcelamento_id: did, numero: num }, dados)).select().single()).then(function (n) { P.S.impParcelas.push(n); e.resultado = "parcela " + num + " criada (" + dinheiro(g.valor) + ", vence " + A.dataSimples(g.vencimento) + ")."; });
-          }
-          if (e.dividaId) return daParcela(e.dividaId);
-          var nova = { nome: nomeNova(g), orgao: g.sispar ? "PGFN" : "Receita Federal", numero: g.sispar ? "PGFN-SISPAR " + g.sispar : g.parcelamento ? "DAS nº " + g.parcelamento : g.darfRef || null, tipo: g.parcelas || g.parcelamento || g.sispar ? "parcelamento" : "avulsa", valor_total: g.parcelas ? 0 : g.valor, n_parcelas: g.parcelas || (g.parcelamento || g.sispar ? null : 1) };
-          return P.q(P.sb.from("impostos_parcelamentos").insert(nova).select().single()).then(function (n) { P.trocar(P.S.impDividas, n); e.dividaId = n.id; return daParcela(n.id).then(function () { e.resultado = "nova dívida “" + n.nome + "”, " + e.resultado; }); });
-        }).catch(function (er) { e.erro = A.msgErro(er) + (/documento|column|schema cache/i.test(A.msgErro(er)) ? " — rode de novo o impostos.sql no Supabase." : ""); });
-      }, Promise.resolve()).then(function () { A.ocupado(b, false); alvo.forEach(function (e) { if (!e.erro) e.salvo = true; }); var ok = ents.filter(function (e) { return e.salvo; }).length; $("#lg-st", el).textContent = ok ? "✅ " + ok + " guia(s) cadastrada(s)." : ""; desenhar(); });
+      alvo.reduce(function (pr, e) { return pr.then(function () { return aplicarGuia(e); }); }, Promise.resolve())
+        .then(function () { A.ocupado(b, false); var ok = ents.filter(function (e) { return e.salvo; }).length; $("#lg-st", el).textContent = ok ? "✅ " + ok + " guia(s) cadastrada(s)." : ""; desenhar(); });
     };
   }
 
@@ -487,18 +518,31 @@
     if (/identificador|autentica[cç][aã]o|valor\s+total\s+do\s+pagamento/i.test(t) && /R\$\s*\d/.test(t)) return "comprovante";
     return null;
   }
+  function tipoDoc(texto) {
+    var t = String(texto || "");
+    if (/comprovante/i.test(t) || /pagamento\s+(?:realizado|efetuado|conclu[ií]do)/i.test(t) || /pago\s+com\s+sucesso/i.test(t)) return "comprovante";
+    if (/documento\s+de\s+arrecada/i.test(t) || /\bDARF\b/.test(t)) return "guia";
+    if (/identificador|autentica[cç][aã]o|valor\s+total\s+do\s+pagamento/i.test(t) && /R\$\s*\d/.test(t)) return "comprovante";
+    return null;
+  }
   function escanear() {
     if (P.S.semImpostos) { A.avisar("Para usar, rode o impostos.sql atualizado no Supabase.", "erro"); return; }
     if (!window.AGE_PAG || !window.AGE_PAG.lerArquivo) { A.avisar("O leitor de arquivos não carregou. Atualize a página.", "erro"); return; }
-    var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">Tire a <b>foto</b> do documento ou escolha os <b>arquivos</b> (PDF, print, foto). O app separa o que é <b>guia</b> (DAS, DARF) e o que é <b>comprovante</b>, lê tudo e mostra para você conferir antes de salvar.</p>' +
+    var auto = true; try { auto = localStorage.getItem("age_imp_auto") !== "0"; } catch (e0) { /* sem armazenamento */ }
+    var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">Tire a <b>foto</b> do documento ou escolha os <b>arquivos</b> (PDF, print, foto). O app separa o que é <b>guia</b> (DAS, DARF) e o que é <b>comprovante</b>, lê tudo e <b>lança sozinho o que tiver certeza</b>. O que tiver dúvida fica para você conferir. Tudo pode ser desfeito.</p>' +
       '<div class="acoes"><button class="prim" id="es-foto">📷 Tirar foto</button><button id="es-esc">📁 Escolher arquivos</button></div>' +
       '<input type="file" id="es-cam" accept="image/*" capture="environment" class="oculto"><input type="file" id="es-arq" accept="application/pdf,image/*" multiple class="oculto">' +
+      '<label class="marca-linha" style="font-weight:400;margin-top:8px"><input type="checkbox" id="es-auto"> Lançar sozinho o que tiver certeza (desmarque para conferir tudo antes)</label>' +
       '<div id="es-st" class="peq" style="margin:8px 0"></div><div id="es-lista"></div>' +
       '<div class="acoes"><button class="prim" id="es-ok" disabled>Continuar</button><button id="es-fechar">Fechar</button></div>', { titulo: "📷 Escanear guias e comprovantes", larga: true, semRascunho: true }), el = j.el;
+    $("#es-auto", el).checked = auto;
+    $("#es-auto", el).onchange = function () { try { localStorage.setItem("age_imp_auto", this.checked ? "1" : "0"); } catch (e0) { /* sem armazenamento */ } resumo(); };
     var guias = [], comps = [], sem = [];
     function resumo() {
+      var automatico = $("#es-auto", el).checked;
       $("#es-lista", el).innerHTML = '<div class="cartao"><b>' + guias.length + "</b> guia(s) · <b>" + comps.length + "</b> comprovante(s)" + (sem.length ? ' · <span style="color:var(--atencao)"><b>' + sem.length + "</b> não identificado(s): " + sem.map(function (f) { return esc(f.name || "arquivo"); }).join(", ") + "</span>" : "") + "</div>";
-      $("#es-ok", el).disabled = !(guias.length || comps.length); $("#es-ok", el).textContent = guias.length ? "Continuar: conferir as guias" + (comps.length ? " e depois os comprovantes" : "") : comps.length ? "Continuar: conferir os comprovantes" : "Continuar";
+      $("#es-ok", el).disabled = !(guias.length || comps.length);
+      $("#es-ok", el).textContent = automatico ? "⚡ Lançar agora" : guias.length ? "Continuar: conferir as guias" + (comps.length ? " e depois os comprovantes" : "") : comps.length ? "Continuar: conferir os comprovantes" : "Continuar";
     }
     function ler(fs) {
       fs = fs.slice(0, 20); if (!fs.length) return;
@@ -515,9 +559,46 @@
     $("#es-arq", el).onchange = function () { ler(Array.prototype.slice.call(this.files || [])); };
     $("#es-fechar", el).onclick = function () { j.fechar(); };
     $("#es-ok", el).onclick = function () {
-      var g = guias.slice(), c = comps.slice(); j.fechar();
-      if (g.length) lerGuias(g, c.length ? function () { lerComprovantes(c); } : null); else lerComprovantes(c);
+      var g = guias.slice(), c = comps.slice(), n = sem.slice(), automatico = $("#es-auto", el).checked;
+      if (!automatico) { j.fechar(); if (g.length) lerGuias(g, c.length ? function () { lerComprovantes(c); } : null); else lerComprovantes(c); return; }
+      $("#es-ok", el).disabled = true; $("#es-st", el).textContent = "⚡ Lançando...";
+      lancarAuto(g, c, n).then(function (res) { j.fechar(); mostrarResultado(res); }, function (er) { $("#es-st", el).textContent = "⚠ " + A.msgErro(er); $("#es-ok", el).disabled = false; });
     };
+  }
+  // modo automático: guias primeiro (para existirem as parcelas), depois os comprovantes; só lança o que tem certeza
+  function lancarAuto(guias, comps, sem) {
+    var lote = novoLote(), res = { feitos: [], conferir: [], repetidos: [], sem: sem };
+    function triagem(e, aplicar) {
+      if (e.repetida || e.repetido) { res.repetidos.push(e); return Promise.resolve(); }
+      if (e.erro || !e.seguro) { res.conferir.push(e); return Promise.resolve(); }
+      return aplicar(e).then(function () { (e.erro ? res.conferir : res.feitos).push(e); });
+    }
+    var comprovOk = !P.S.semComprov;
+    return guias.reduce(function (pr, f) { return pr.then(function () { return analisarGuia(f, lote).then(function (e) { return triagem(e, aplicarGuia); }); }); }, Promise.resolve())
+      .then(function () { return comps.reduce(function (pr, f) { return pr.then(function () { return analisarComprovante(f, lote).then(function (e) { if (!comprovOk) { e.erro = "rode de novo o impostos.sql no Supabase (tabela impostos_comprovantes)"; } return triagem(e, aplicarComprovante); }); }); }, Promise.resolve()); })
+      .then(function () { return res; });
+  }
+  function mostrarResultado(res) {
+    var j = A.janela('<div id="rs-corpo"></div><div class="acoes"><button class="prim" id="rs-fechar">Fechar</button></div>', { titulo: "⚡ Resultado do escaneamento", larga: true, semRascunho: true, aoFechar: function () { refrescar(); } }), el = j.el;
+    function linha(e) { return '<div class="cartao"><b>' + esc(e.nome) + "</b>"; }
+    function desenhar() {
+      var h = "";
+      var feitos = res.feitos.filter(function (e) { return !e.desfeito; });
+      h += '<div class="cartao"><b>✅ ' + feitos.length + " lançado(s) automaticamente</b> · " + res.conferir.length + " para conferir · " + res.repetidos.length + " repetido(s) recusado(s)" + (res.sem.length ? " · " + res.sem.length + " não identificado(s)" : "") + "</div>";
+      res.feitos.forEach(function (e, i) {
+        h += linha(e) + ' <span class="selo">' + (e.tipo === "guia" ? "guia" : "comprovante") + "</span>" + (e.desfeito ? '<div class="peq mudo">↩ Desfeito.</div>' : '<div class="peq">✅ ' + esc(e.resultado || "") + ' <button class="peq" data-des="' + i + '">↩ Desfazer</button></div>') + "</div>";
+      });
+      res.conferir.forEach(function (e, i) {
+        h += linha(e) + ' <span class="selo atencao">conferir</span><div class="peq" style="color:var(--atencao)">⚠ ' + esc(e.erro || e.aviso || "Não tive certeza: confira na tela.") + ' <button class="peq prim" data-conf="' + i + '">Conferir</button></div></div>';
+      });
+      res.repetidos.forEach(function (e) { h += linha(e) + '<div class="peq" style="color:var(--critico)">⛔ Repetido: ' + esc(e.repetido || e.repetida) + "</div></div>"; });
+      res.sem.forEach(function (f) { h += '<div class="cartao"><b>' + esc(f.name || "arquivo") + '</b><div class="peq mudo">❓ Não identifiquei se é guia ou comprovante. Tente o PDF original ou use 📄 Ler guia / 📎 Ler comprovantes.</div></div>'; });
+      $("#rs-corpo", el).innerHTML = h;
+      $$("[data-des]", el).forEach(function (b) { b.onclick = function () { var e = res.feitos[Number(b.dataset.des)]; if (!A.confirmar("Desfazer este lançamento?")) return; b.disabled = true; desfazer(e).then(desenhar).catch(function (er) { A.avisar(A.msgErro(er), "erro"); desenhar(); }); }; });
+      $$("[data-conf]", el).forEach(function (b) { b.onclick = function () { var e = res.conferir[Number(b.dataset.conf)]; j.fechar(); if (e.tipo === "guia") lerGuias([e.arquivo]); else lerComprovantes([e.arquivo]); }; });
+    }
+    $("#rs-fechar", el).onclick = function () { j.fechar(); };
+    desenhar();
   }
 
   // ---------- imposto de veículo (IPVA, licenciamento, seguro obrigatório, multa...) ----------
