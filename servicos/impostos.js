@@ -245,7 +245,7 @@
 
   // ---------- 📎 ler comprovantes e dar baixa ----------
   function reaisDe(s) { return A.lerNumero(String(s).replace(/\s/g, "")); }
-  var RE_REAL = /R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/;
+  var RE_REAL = /R[$S5]\s*(\d{1,3}(?:\.\d{3})*,\d{2})/;
   function aposRotulo(t, rot, alcance) { var m = new RegExp(rot, "i").exec(t); if (!m) return null; var r = RE_REAL.exec(t.slice(m.index + m[0].length, m.index + m[0].length + (alcance || 60))); return r ? reaisDe(r[1]) : null; }
   // lê o que importa de um comprovante (texto do PDF ou da foto): valor, data, hora, nº do documento e autenticação
   function lerComprovante(texto) {
@@ -254,7 +254,7 @@
     if (r.valor === null) { var m = RE_REAL.exec(t); if (m) r.valor = reaisDe(m[1]); }
     var d = /(\d{2})\/(\d{2})\/(\d{4})/.exec(t); if (d && Number(d[2]) >= 1 && Number(d[2]) <= 12) r.data = d[3] + "-" + d[2] + "-" + d[1];
     var h = /(\d{2}:\d{2})(?::\d{2})?/.exec(t); if (h) r.hora = h[1];
-    var id = /identificador\s*[:\-]?\s*([0-9][0-9\s]{19,60})/i.exec(t); if (id) r.identificador = id[1].replace(/\D/g, "");
+    var id = /identificador\s*[:\-]?\s*([0-9][0-9\s\/.\-]{19,70})/i.exec(t); if (id) r.identificador = id[1].replace(/\D/g, "");
     if (!r.identificador) { var lg = /\b\d{25,48}\b/.exec(t); if (lg) r.identificador = lg[0]; }
     var au = /autentica[cç][aã]o\s*[:\-]?\s*((?:[0-9A-F]{4}-){2,}[0-9A-F]{4})/i.exec(t); if (au) r.autenticacao = au[1].toUpperCase();
     var bn = /quem\s+vai\s+receber[\s\S]{0,30}?nome\s*:?\s*([^\n]+)/i.exec(t); if (bn) r.beneficiario = bn[1].trim();
@@ -264,7 +264,7 @@
   function acharParcela(c, abertas, usadas) {
     var livres = abertas.filter(function (x) { return !usadas[x.p.id]; });
     if (c.identificador) {
-      var porDoc = livres.filter(function (x) { var dg = String(x.p.documento || "").replace(/\D/g, ""); return dg.length >= 12 && c.identificador.indexOf(dg) === 0; });
+      var porDoc = livres.filter(function (x) { var dg = String(x.p.documento || "").replace(/\D/g, ""); return dg.length >= 12 && (c.identificador.indexOf(dg) === 0 || c.identificador.indexOf(dg.slice(0, 12)) === 0); });
       if (porDoc.length === 1) return { x: porDoc[0], como: "pelo nº da guia" };
     }
     var porValor = livres.filter(function (x) { return c.valor !== null && Math.abs(Number(x.p.valor) - c.valor) < 0.005; });
@@ -276,7 +276,21 @@
     return null;
   }
   var cacheTxt = typeof WeakMap !== "undefined" ? new WeakMap() : null;
-  function textoDe(f) { if (!cacheTxt) return window.AGE_PAG.lerArquivo(f); if (!cacheTxt.has(f)) cacheTxt.set(f, window.AGE_PAG.lerArquivo(f)); return cacheTxt.get(f); }
+  function temValor(tx) { return /(\d{1,3}(?:\.\d{3})*,\d{2})/.test(String(tx || "").replace(/(\d)\s*,\s*(\d{2})\b/g, "$1,$2")); }
+  function lerMelhor(f) {
+    return window.AGE_PAG.lerArquivo(f).then(function (r) {
+      if (!/^image\//.test(f.type || "") || temValor(r.texto)) return r;
+      // sem nenhum valor: refaz em outros modos de leitura (página inteira, colunas, cinza) e fica com o primeiro que achar
+      var modos = [{ psm: "4" }, { psm: "3" }, { psm: "11" }, { cinza: true, psm: "4" }];
+      return modos.reduce(function (pr, op) {
+        return pr.then(function (melhor) {
+          if (temValor(melhor.texto)) return melhor;
+          return window.AGE_PAG.lerArquivo(f, Object.assign({ giro: r.giro }, op)).then(function (r2) { return temValor(r2.texto) ? r2 : melhor; }, function () { return melhor; });
+        });
+      }, Promise.resolve(r));
+    });
+  }
+  function textoDe(f) { if (!cacheTxt) return lerMelhor(f); if (!cacheTxt.has(f)) cacheTxt.set(f, lerMelhor(f)); return cacheTxt.get(f); }
   function hashArquivo(f) {
     if (!(window.crypto && crypto.subtle && f && f.arrayBuffer)) return Promise.resolve(null);
     return f.arrayBuffer().then(function (b) { return crypto.subtle.digest("SHA-256", b); }).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return x.toString(16).padStart(2, "0"); }).join(""); }).catch(function () { return null; });
