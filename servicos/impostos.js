@@ -65,7 +65,7 @@
       });
     });
     proximas.sort(function (a, b) { return a.p.vencimento < b.p.vencimento ? -1 : a.p.vencimento > b.p.vencimento ? 1 : 0; });
-    c.innerHTML = '<div class="cab-secao"><h2>🧾 Impostos e dívidas</h2><span><button class="prim" id="im-novo">+ Parcelamento / dívida</button> <button id="im-veic">🚗 + Imposto de veículo</button> <button id="im-tg" title="Aviso no Telegram dois dias antes de vencer">🔔 Lembrete no Telegram</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>🧾 Impostos e dívidas</h2><span><button class="prim" id="im-novo">+ Parcelamento / dívida</button> <button id="im-comp" title="Dá baixa nas parcelas lendo o comprovante (foto, print ou PDF)">📎 Ler comprovantes</button> <button id="im-veic">🚗 + Imposto de veículo</button> <button id="im-tg" title="Aviso no Telegram dois dias antes de vencer">🔔 Lembrete no Telegram</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Cada dívida da firma separada, com as parcelas, o que já foi pago e o que falta. Marque a parcela como paga quando pagar.</p>' +
       (S.semImpostos ? '<div class="aviso">Para usar, rode no Supabase o <b>supabase.sql</b> atualizado (tabelas <b>impostos_parcelamentos</b> e <b>impostos_parcelas</b>) e depois o arquivo de dados iniciais.</div>' : "") +
       '<div class="cartao"><div><b>Em aberto:</b> ' + dinheiro(aberto) + ' · <b>Já pago:</b> ' + dinheiro(pago) + '</div>' +
@@ -80,6 +80,7 @@
     l.innerHTML = (firma.length ? firma.map(function (x) { return cartao(x.d, x.r); }).join("") : '<div class="cartao mudo">Nenhum parcelamento ou dívida da firma cadastrado. Toque em “+ Parcelamento / dívida”.</div>') +
       '<h3 style="margin:14px 0 8px">🚗 Veículos</h3>' + (veics.length ? veics.map(function (x) { return cartao(x.d, x.r); }).join("") : '<div class="cartao mudo">Nenhum imposto de veículo. Toque em “🚗 + Imposto de veículo” (IPVA, licenciamento, seguro obrigatório, multas).</div>');
     $("#im-veic", c).onclick = function () { editarVeiculo(); };
+    $("#im-comp", c).onclick = lerComprovantes;
     $("#im-novo", c).onclick = function () { editar(null); };
     $("#im-tg", c).onclick = lembrete;
     $$("[data-ed]", l).forEach(function (b) { b.onclick = function () { editar(P.porId(P.S.impDividas, b.dataset.ed)); }; });
@@ -106,7 +107,7 @@
         : '<div style="margin-top:6px" class="mudo">' + (r.ps.length ? "Todas as parcelas cadastradas estão pagas." : "Sem parcelas cadastradas.") + "</div>") +
       (d.obs ? '<div class="peq mudo" style="margin-top:6px;white-space:pre-line">' + esc(d.obs) + "</div>" : "") +
       '<details class="peq" data-det="' + esc(d.id) + '"' + (abertos[d.id] ? " open" : "") + ' style="margin-top:8px"><summary>Ver as parcelas (' + r.ps.length + ")</summary>" +
-      '<div class="tabela-caixa"><table style="width:100%;margin-top:6px"><thead><tr><th>Nº</th><th>Vencimento</th><th>Valor</th><th>Paga</th><th>Aviso</th><th></th></tr></thead><tbody>' + r.ps.map(linha).join("") + "</tbody></table></div>" +
+      '<div class="tabela-caixa"><table style="width:100%;margin-top:6px"><thead><tr><th>Nº</th><th>Vencimento</th><th>Valor</th><th>Guia nº</th><th>Paga</th><th>Aviso</th><th></th></tr></thead><tbody>' + r.ps.map(linha).join("") + "</tbody></table></div>" +
       '<div style="margin-top:6px"><button class="peq" data-mais="' + esc(d.id) + '">+ Parcela</button> <span class="mudo">Mude a data ou o valor direto na linha: salva sozinho.</span></div></details></div>';
   }
 
@@ -114,7 +115,8 @@
     var atras = !p.pago_em && dias(p.vencimento) < 0;
     return '<tr data-pid="' + esc(p.id) + '"' + (atras ? ' style="background:var(--critico-f)"' : "") + "><td>" + p.numero + '</td><td><input type="date" class="ip-venc" value="' + esc(p.vencimento) + '"></td>' +
       '<td><input class="ip-val" inputmode="decimal" style="width:96px" value="' + campo(p.valor) + '"></td>' +
-      '<td><label class="marca-linha" style="font-weight:400"><input type="checkbox" class="ip-pago"' + (p.pago_em ? " checked" : "") + '> ' + (p.pago_em ? esc(A.dataSimples(p.pago_em)) : "") + "</label></td>" +
+      '<td><input class="ip-doc" style="width:150px" maxlength="60" placeholder="DAS / guia" title="Número da guia: ajuda a casar o comprovante com a parcela" value="' + esc(p.documento || "") + '"></td>' +
+      '<td><label class="marca-linha" style="font-weight:400"><input type="checkbox" class="ip-pago"' + (p.pago_em ? " checked" : "") + '> ' + (p.pago_em ? esc(A.dataSimples(p.pago_em)) + (p.forma ? " · " + esc(p.forma) : "") + (p.valor_pago !== null && p.valor_pago !== undefined && Math.abs(Number(p.valor_pago) - Number(p.valor)) >= 0.005 ? " · pagou " + dinheiro(p.valor_pago) : "") : "") + "</label>" + (p.pago_em ? ' <button class="peq ip-edpag" title="Editar o pagamento">✏️</button>' : "") + "</td>" +
       '<td class="peq">' + (p.lembrete_enviado ? "🔔 " + esc(A.dataSimples(p.lembrete_enviado)) : "") + '</td><td><button class="peq ip-del" title="Apagar esta parcela">✕</button></td></tr>';
   }
 
@@ -126,7 +128,12 @@
       gravarParcela(id, { vencimento: venc, valor: val }).then(function () { A.avisar("✓ Salvo", "ok"); refrescar(); }).catch(P.falhou);
     }
     $(".ip-venc", tr).onchange = salvar; $(".ip-val", tr).onchange = salvar;
+    $(".ip-doc", tr).onchange = function () {
+      gravarParcela(id, { documento: this.value.trim() || null }).then(function () { A.avisar("✓ Guia salva", "ok"); })
+        .catch(function (e) { A.avisar(/documento|column|schema cache/i.test(A.msgErro(e)) ? "Rode de novo o impostos.sql no Supabase (novo: leitura de comprovantes)." : A.msgErro(e), "erro"); });
+    };
     $(".ip-pago", tr).onchange = function () { alternarPago(id, this.checked); };
+    if ($(".ip-edpag", tr)) $(".ip-edpag", tr).onclick = function () { lancarPagamento(P.porId(P.S.impParcelas, id)); };
     $(".ip-del", tr).onclick = function () {
       var p = P.porId(P.S.impParcelas, id); if (!p || !A.confirmar("Apagar a parcela " + p.numero + " (" + A.dataSimples(p.vencimento) + ", " + dinheiro(p.valor) + ")?")) return;
       P.q(P.sb.from("impostos_parcelas").delete().eq("id", id)).then(function () { P.tirar(P.S.impParcelas, id); refrescar(); }).catch(P.falhou);
@@ -134,10 +141,35 @@
   }
   function refrescar() { if (raiz) ver(raiz, P); }
 
+  // marcar como paga abre o lançamento do pagamento: data, valor realmente pago e forma
+  var FORMAS = ["Pix", "Boleto", "Débito automático", "Cartão", "Dinheiro", "Outra"];
   function alternarPago(id, pago) {
     var p = P.porId(P.S.impParcelas, id); if (!p) return;
-    gravarParcela(id, pago ? { pago_em: hoje(), valor_pago: Number(p.valor) } : { pago_em: null, valor_pago: null })
-      .then(function () { A.avisar(pago ? "✅ Parcela " + p.numero + " marcada como paga" : "Parcela " + p.numero + " voltou para em aberto", "ok"); refrescar(); }).catch(P.falhou);
+    if (pago) { lancarPagamento(p); return; }
+    if (!A.confirmar("Voltar a parcela " + p.numero + " para “em aberto”? O pagamento lançado (" + (p.pago_em ? A.dataSimples(p.pago_em) : "") + ") será apagado.")) { refrescar(); return; }
+    gravarParcela(id, { pago_em: null, valor_pago: null, forma: null })
+      .then(function () { A.avisar("Parcela " + p.numero + " voltou para em aberto", "ok"); refrescar(); }).catch(P.falhou);
+  }
+  function lancarPagamento(p) {
+    var d = P.porId(P.S.impDividas, p.parcelamento_id), editando = !!p.pago_em;
+    var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">' + esc(d ? d.nome : "") + " · parcela " + p.numero + " · vencimento " + esc(A.dataSimples(p.vencimento)) + " · valor " + dinheiro(p.valor) + "</p>" +
+      '<div class="duas"><div><label for="lp-data">Data do pagamento *</label><input type="date" id="lp-data"></div><div><label for="lp-valor">Valor pago (R$) *</label><input id="lp-valor" inputmode="decimal"></div></div>' +
+      '<label for="lp-forma">Forma de pagamento</label><select id="lp-forma"><option value="">—</option>' + FORMAS.map(function (f) { return "<option>" + esc(f) + "</option>"; }).join("") + "</select>" +
+      '<label for="lp-obs">Observação (opcional)</label><input id="lp-obs" maxlength="200" placeholder="Ex.: comprovante no e-mail, pago no app do banco">' +
+      '<p class="peq" id="lp-msg" style="color:var(--critico)"></p><div class="acoes"><button class="prim" id="lp-ok">✅ Lançar pagamento</button><button id="lp-cancelar">Cancelar</button></div>',
+      { titulo: editando ? "Editar pagamento" : "Lançar pagamento", semRascunho: true, aoFechar: function () { refrescar(); } }), el = j.el;
+    $("#lp-data", el).value = p.pago_em || hoje(); $("#lp-valor", el).value = campo(p.valor_pago !== null && p.valor_pago !== undefined ? p.valor_pago : p.valor); $("#lp-forma", el).value = p.forma || "";
+    $("#lp-cancelar", el).onclick = function () { j.fechar(); };
+    $("#lp-ok", el).onclick = function () {
+      var data = $("#lp-data", el).value, val = lerValor($("#lp-valor", el).value), msg = $("#lp-msg", el);
+      if (!data) { msg.textContent = "Informe a data do pagamento."; return; }
+      if (val === null || !(val > 0)) { msg.textContent = "Informe o valor pago."; return; }
+      var nova = ($("#lp-obs", el).value || "").trim(), dados = { pago_em: data, valor_pago: val, forma: $("#lp-forma", el).value || null };
+      if (nova) dados.obs = ((p.obs ? p.obs + " · " : "") + nova).slice(0, 500);
+      var b = this; A.ocupado(b, true, "Salvando...");
+      gravarParcela(p.id, dados).then(function () { A.ocupado(b, false); j.fechar(); A.avisar("✅ Pagamento da parcela " + p.numero + " lançado", "ok"); })
+        .catch(function (e) { A.ocupado(b, false); msg.textContent = "Não salvou: " + (/forma|column|schema cache/i.test(A.msgErro(e)) ? "rode de novo o impostos.sql no Supabase. " : "") + A.msgErro(e); });
+    };
   }
 
   function maisParcela(did) {
@@ -207,6 +239,113 @@
         return P.q(P.sb.from("impostos_parcelas").insert(parcelas.map(function (p) { return Object.assign({ parcelamento_id: n.id }, p); })).select()).then(function (ls) { (ls || []).forEach(function (x) { P.S.impParcelas.push(x); }); });
       }).then(function () { A.ocupado(b, false); j.fechar(); A.avisar("Salvo", "ok"); refrescar(); }).catch(function (e) { A.ocupado(b, false); msg("Não salvou: " + A.msgErro(e)); });
     };
+  }
+
+  // ---------- 📎 ler comprovantes e dar baixa ----------
+  function reaisDe(s) { return A.lerNumero(String(s).replace(/\s/g, "")); }
+  var RE_REAL = /R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/;
+  function aposRotulo(t, rot, alcance) { var m = new RegExp(rot, "i").exec(t); if (!m) return null; var r = RE_REAL.exec(t.slice(m.index + m[0].length, m.index + m[0].length + (alcance || 60))); return r ? reaisDe(r[1]) : null; }
+  // lê o que importa de um comprovante (texto do PDF ou da foto): valor, data, hora, nº do documento e autenticação
+  function lerComprovante(texto) {
+    var t = String(texto || "").replace(/\r/g, ""), r = { valor: null, data: null, hora: null, identificador: null, autenticacao: null, boleto: /boleto|c[oó]digo de barras/i.test(t), beneficiario: "" };
+    r.valor = aposRotulo(t, "valor\\s+total\\s+do\\s+pagamento") || aposRotulo(t, "pagamento\\s+realizado") || aposRotulo(t, "comprovante\\s+(?:de\\s+)?pagamento");
+    if (r.valor === null) { var m = RE_REAL.exec(t); if (m) r.valor = reaisDe(m[1]); }
+    var d = /(\d{2})\/(\d{2})\/(\d{4})/.exec(t); if (d && Number(d[2]) >= 1 && Number(d[2]) <= 12) r.data = d[3] + "-" + d[2] + "-" + d[1];
+    var h = /(\d{2}:\d{2})(?::\d{2})?/.exec(t); if (h) r.hora = h[1];
+    var id = /identificador\s*[:\-]?\s*([0-9][0-9\s]{19,60})/i.exec(t); if (id) r.identificador = id[1].replace(/\D/g, "");
+    if (!r.identificador) { var lg = /\b\d{25,48}\b/.exec(t); if (lg) r.identificador = lg[0]; }
+    var au = /autentica[cç][aã]o\s*[:\-]?\s*((?:[0-9A-F]{4}-){2,}[0-9A-F]{4})/i.exec(t); if (au) r.autenticacao = au[1].toUpperCase();
+    var bn = /quem\s+vai\s+receber[\s\S]{0,30}?nome\s*:?\s*([^\n]+)/i.exec(t); if (bn) r.beneficiario = bn[1].trim();
+    return r;
+  }
+  // acha a parcela em aberto do comprovante: 1º pelo nº da guia, depois pelo valor (e a data mais próxima do vencimento)
+  function acharParcela(c, abertas, usadas) {
+    var livres = abertas.filter(function (x) { return !usadas[x.p.id]; });
+    if (c.identificador) {
+      var porDoc = livres.filter(function (x) { var dg = String(x.p.documento || "").replace(/\D/g, ""); return dg.length >= 12 && c.identificador.indexOf(dg) === 0; });
+      if (porDoc.length === 1) return { x: porDoc[0], como: "pelo nº da guia" };
+    }
+    var porValor = livres.filter(function (x) { return c.valor !== null && Math.abs(Number(x.p.valor) - c.valor) < 0.005; });
+    if (porValor.length === 1) return { x: porValor[0], como: "pelo valor" };
+    if (porValor.length > 1 && c.data) {
+      porValor.sort(function (a, b) { return Math.abs(new Date(a.p.vencimento) - new Date(c.data)) - Math.abs(new Date(b.p.vencimento) - new Date(c.data)); });
+      return { x: porValor[0], como: "pelo valor e pela data", varias: true };
+    }
+    return null;
+  }
+  function hashArquivo(f) {
+    if (!(window.crypto && crypto.subtle && f && f.arrayBuffer)) return Promise.resolve(null);
+    return f.arrayBuffer().then(function (b) { return crypto.subtle.digest("SHA-256", b); }).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return x.toString(16).padStart(2, "0"); }).join(""); }).catch(function () { return null; });
+  }
+  function jaLido(c, hash) {
+    var L = P.S.impComprov || [];
+    return L.filter(function (x) { return (hash && x.arquivo_hash === hash) || (c && c.autenticacao && x.autenticacao === c.autenticacao) || (c && c.identificador && x.identificador === c.identificador); })[0] || null;
+  }
+  function lerComprovantes() {
+    if (P.S.semComprov || P.S.semImpostos) { A.avisar("Para ler comprovantes, rode de novo o impostos.sql no Supabase (tabela impostos_comprovantes).", "erro"); return; }
+    if (!window.AGE_PAG || !window.AGE_PAG.lerArquivo) { A.avisar("O leitor de comprovantes não carregou. Atualize a página.", "erro"); return; }
+    var ents = [], vistos = {}, usadas = {};
+    var abertas = []; dividas().filter(function (d) { return d.ativo !== false; }).forEach(function (d) { parcelasDe(d.id).filter(function (p) { return !p.pago_em; }).forEach(function (p) { abertas.push({ d: d, p: p }); }); });
+    var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">Escolha os comprovantes (print, foto ou PDF). O app lê o valor e a data, acha a parcela e <b>você confere antes de dar baixa</b>. Comprovante repetido é recusado.</p>' +
+      '<div class="acoes"><button class="prim" id="lc-esc">📎 Escolher comprovantes</button></div><input type="file" id="lc-arq" accept="image/*,application/pdf" multiple class="oculto">' +
+      '<div id="lc-st" class="peq" style="margin:8px 0"></div><div id="lc-lista"></div><p class="peq" id="lc-msg" style="color:var(--critico)"></p>' +
+      '<div class="acoes"><button class="prim" id="lc-ok" disabled>✅ Dar baixa nas parcelas marcadas</button><button id="lc-fechar">Fechar</button></div>', { titulo: "📎 Ler comprovantes", larga: true, semRascunho: true, aoFechar: function () { refrescar(); } }), el = j.el;
+    function opcoes(sel) { return '<option value="">— não dar baixa —</option>' + abertas.map(function (x) { return '<option value="' + esc(x.p.id) + '"' + (sel === x.p.id ? " selected" : "") + ">" + esc((x.d.nome.length > 36 ? x.d.nome.slice(0, 35) + "…" : x.d.nome) + " · parcela " + x.p.numero + " · " + A.dataSimples(x.p.vencimento) + " · " + dinheiro(x.p.valor)) + "</option>"; }).join(""); }
+    function desenhar() {
+      $("#lc-lista", el).innerHTML = ents.map(function (e, i) {
+        var estado = e.erro ? '<span style="color:var(--critico)">⚠ ' + esc(e.erro) + "</span>" : e.repetido ? '<span style="color:var(--critico)">⛔ Comprovante repetido: ' + esc(e.repetido) + "</span>" : e.salvo ? "✅ Baixa dada" : e.aviso ? '<span style="color:var(--atencao)">⚠ ' + esc(e.aviso) + "</span>" : "";
+        return '<div class="cartao"><b>' + esc(e.nome) + "</b><div class=\"peq\">" + (e.c ? "Valor " + (e.c.valor !== null ? dinheiro(e.c.valor) : "?") + " · data " + (e.c.data ? esc(A.dataSimples(e.c.data)) : "?") + (e.c.hora ? " " + esc(e.c.hora) : "") + (e.c.autenticacao ? " · aut. " + esc(e.c.autenticacao) : "") : "") + "</div>" +
+          (e.erro || e.repetido || e.salvo ? "" : '<label class="peq">Dar baixa em: <select data-i="' + i + '" class="lc-sel" style="max-width:100%">' + opcoes(e.parcelaId) + "</select></label>") +
+          '<div class="peq" style="margin-top:4px">' + estado + (e.como && !e.salvo && !e.repetido && !e.erro ? ' <span class="mudo">(achou ' + esc(e.como) + ")</span>" : "") + "</div></div>";
+      }).join("");
+      $$(".lc-sel", el).forEach(function (s) { s.onchange = function () { ents[Number(s.dataset.i)].parcelaId = s.value || null; atualizarOk(); }; });
+      atualizarOk();
+    }
+    function atualizarOk() { var n = ents.filter(function (e) { return e.parcelaId && !e.erro && !e.repetido && !e.salvo; }).length; $("#lc-ok", el).disabled = !n; $("#lc-ok", el).textContent = n ? "✅ Dar baixa em " + n + " parcela(s)" : "✅ Dar baixa nas parcelas marcadas"; }
+    function processar(f) {
+      var e = { nome: f.name || "comprovante" };
+      return hashArquivo(f).then(function (h) {
+        e.hash = h;
+        var rep = h && jaLido(null, h);
+        if (rep || (h && vistos[h])) { e.repetido = "este arquivo já foi usado" + (rep && rep.pago_em ? " (pago em " + A.dataSimples(rep.pago_em) + ")" : "") + "."; ents.push(e); return; }
+        if (h) vistos[h] = true;
+        return window.AGE_PAG.lerArquivo(f).then(function (r) {
+          e.c = lerComprovante(r.texto);
+          var rep2 = jaLido(e.c, null) || (e.c.autenticacao && vistos["a" + e.c.autenticacao] && { pago_em: null }) || (e.c.identificador && vistos["i" + e.c.identificador] && { pago_em: null });
+          if (rep2) { e.repetido = "a mesma autenticação/documento já foi lançado" + (rep2.pago_em ? " (pago em " + A.dataSimples(rep2.pago_em) + ")" : "") + "."; ents.push(e); return; }
+          if (e.c.autenticacao) vistos["a" + e.c.autenticacao] = true; if (e.c.identificador) vistos["i" + e.c.identificador] = true;
+          if (e.c.valor === null) { e.aviso = "Não consegui ler o valor. Escolha a parcela à mão."; }
+          else if (!e.c.data) { e.aviso = "Não consegui ler a data: vale a de hoje se você confirmar."; }
+          var ach = e.c.valor !== null ? acharParcela(e.c, abertas, usadas) : null;
+          if (ach) { e.parcelaId = ach.x.p.id; e.como = ach.como; usadas[ach.x.p.id] = true; if (ach.varias) e.aviso = "Há parcelas com o mesmo valor: confira se é esta."; }
+          else if (e.c.valor !== null) e.aviso = "Não achei parcela em aberto com " + dinheiro(e.c.valor) + ". Escolha à mão ou deixe sem baixa.";
+          ents.push(e);
+        }, function (er) { e.erro = A.msgErro(er); ents.push(e); });
+      });
+    }
+    $("#lc-esc", el).onclick = function () { $("#lc-arq", el).value = ""; $("#lc-arq", el).click(); };
+    $("#lc-arq", el).onchange = function () {
+      var fs = Array.prototype.slice.call(this.files || []).slice(0, 20); if (!fs.length) return;
+      fs.reduce(function (pr, f, i) { return pr.then(function () { $("#lc-st", el).textContent = "📖 Lendo o comprovante " + (i + 1) + " de " + fs.length + "... (a 1ª vez demora um pouco)"; return processar(f); }); }, Promise.resolve())
+        .then(function () { $("#lc-st", el).textContent = "Confira e toque em dar baixa."; desenhar(); });
+    };
+    $("#lc-fechar", el).onclick = function () { j.fechar(); };
+    $("#lc-ok", el).onclick = function () {
+      var b = this, msg = $("#lc-msg", el); msg.textContent = ""; A.ocupado(b, true, "Dando baixa...");
+      var alvo = ents.filter(function (e) { return e.parcelaId && !e.erro && !e.repetido && !e.salvo; }), escolhidas = {}, dup = false;
+      alvo.forEach(function (e) { if (escolhidas[e.parcelaId]) dup = true; escolhidas[e.parcelaId] = true; });
+      if (dup) { A.ocupado(b, false); msg.textContent = "Dois comprovantes estão na mesma parcela. Deixe um deles sem baixa."; return; }
+      alvo.reduce(function (pr, e) {
+        return pr.then(function () {
+          var p = P.porId(P.S.impParcelas, e.parcelaId), c = e.c || {}, data = c.data || hoje(), val = c.valor !== null && c.valor !== undefined ? c.valor : Number(p.valor);
+          return P.q(P.sb.from("impostos_comprovantes").insert({ parcela_id: p.id, arquivo_hash: e.hash || null, identificador: c.identificador || null, autenticacao: c.autenticacao || null, valor: val, pago_em: data, hora: c.hora || null }).select().single())
+            .then(function (n) { P.S.impComprov.push(n); return gravarParcela(p.id, { pago_em: data, valor_pago: val, forma: c.boleto ? "Boleto" : p.forma || null }); })
+            .then(function () { e.salvo = true; })
+            .catch(function (er) { e.erro = /duplicate|unique|23505/i.test(A.msgErro(er) + " " + (er && er.code)) ? "Comprovante repetido (já lançado antes)." : A.msgErro(er); });
+        });
+      }, Promise.resolve()).then(function () { A.ocupado(b, false); var ok = ents.filter(function (e) { return e.salvo; }).length; $("#lc-st", el).textContent = ok ? "✅ " + ok + " baixa(s) dada(s)." : ""; desenhar(); refrescarFundo(); }).catch(function (er) { A.ocupado(b, false); msg.textContent = A.msgErro(er); });
+    };
+    function refrescarFundo() { /* a lista de trás atualiza ao fechar a janela */ }
   }
 
   // ---------- imposto de veículo (IPVA, licenciamento, seguro obrigatório, multa...) ----------
