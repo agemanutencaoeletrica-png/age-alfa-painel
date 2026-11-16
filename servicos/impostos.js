@@ -65,7 +65,7 @@
       });
     });
     proximas.sort(function (a, b) { return a.p.vencimento < b.p.vencimento ? -1 : a.p.vencimento > b.p.vencimento ? 1 : 0; });
-    c.innerHTML = '<div class="cab-secao"><h2>🧾 Impostos e dívidas</h2><span><button class="prim" id="im-novo">+ Parcelamento / dívida</button> <button id="im-guia" title="Lê a guia (DAS, DARF ou boleto de imposto) em PDF ou foto e cadastra a parcela ou a dívida">📄 Ler guia</button> <button id="im-comp" title="Dá baixa nas parcelas lendo o comprovante (foto, print ou PDF)">📎 Ler comprovantes</button> <button id="im-veic">🚗 + Imposto de veículo</button> <button id="im-tg" title="Aviso no Telegram dois dias antes de vencer">🔔 Lembrete no Telegram</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>🧾 Impostos e dívidas</h2><span><button class="prim" id="im-novo">+ Parcelamento / dívida</button> <button class="prim" id="im-esc" title="Tira a foto ou escolhe os arquivos: o app separa o que é guia e o que é comprovante e lê tudo">📷 Escanear</button> <button id="im-guia" title="Lê a guia (DAS, DARF ou boleto de imposto) em PDF ou foto e cadastra a parcela ou a dívida">📄 Ler guia</button> <button id="im-comp" title="Dá baixa nas parcelas lendo o comprovante (foto, print ou PDF)">📎 Ler comprovantes</button> <button id="im-veic">🚗 + Imposto de veículo</button> <button id="im-tg" title="Aviso no Telegram dois dias antes de vencer">🔔 Lembrete no Telegram</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Cada dívida da firma separada, com as parcelas, o que já foi pago e o que falta. Marque a parcela como paga quando pagar.</p>' +
       (S.semImpostos ? '<div class="aviso">Para usar, rode no Supabase o <b>supabase.sql</b> atualizado (tabelas <b>impostos_parcelamentos</b> e <b>impostos_parcelas</b>) e depois o arquivo de dados iniciais.</div>' : "") +
       '<div class="cartao"><div><b>Em aberto:</b> ' + dinheiro(aberto) + ' · <b>Já pago:</b> ' + dinheiro(pago) + '</div>' +
@@ -80,8 +80,9 @@
     l.innerHTML = (firma.length ? firma.map(function (x) { return cartao(x.d, x.r); }).join("") : '<div class="cartao mudo">Nenhum parcelamento ou dívida da firma cadastrado. Toque em “+ Parcelamento / dívida”.</div>') +
       '<h3 style="margin:14px 0 8px">🚗 Veículos</h3>' + (veics.length ? veics.map(function (x) { return cartao(x.d, x.r); }).join("") : '<div class="cartao mudo">Nenhum imposto de veículo. Toque em “🚗 + Imposto de veículo” (IPVA, licenciamento, seguro obrigatório, multas).</div>');
     $("#im-veic", c).onclick = function () { editarVeiculo(); };
-    $("#im-comp", c).onclick = lerComprovantes;
-    $("#im-guia", c).onclick = lerGuias;
+    $("#im-comp", c).onclick = function () { lerComprovantes(); };
+    $("#im-guia", c).onclick = function () { lerGuias(); };
+    $("#im-esc", c).onclick = escanear;
     $("#im-novo", c).onclick = function () { editar(null); };
     $("#im-tg", c).onclick = lembrete;
     $$("[data-ed]", l).forEach(function (b) { b.onclick = function () { editar(P.porId(P.S.impDividas, b.dataset.ed)); }; });
@@ -274,6 +275,8 @@
     }
     return null;
   }
+  var cacheTxt = typeof WeakMap !== "undefined" ? new WeakMap() : null;
+  function textoDe(f) { if (!cacheTxt) return window.AGE_PAG.lerArquivo(f); if (!cacheTxt.has(f)) cacheTxt.set(f, window.AGE_PAG.lerArquivo(f)); return cacheTxt.get(f); }
   function hashArquivo(f) {
     if (!(window.crypto && crypto.subtle && f && f.arrayBuffer)) return Promise.resolve(null);
     return f.arrayBuffer().then(function (b) { return crypto.subtle.digest("SHA-256", b); }).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return x.toString(16).padStart(2, "0"); }).join(""); }).catch(function () { return null; });
@@ -282,7 +285,7 @@
     var L = P.S.impComprov || [];
     return L.filter(function (x) { return (hash && x.arquivo_hash === hash) || (c && c.autenticacao && x.autenticacao === c.autenticacao) || (c && c.identificador && x.identificador === c.identificador); })[0] || null;
   }
-  function lerComprovantes() {
+  function lerComprovantes(arquivosIni, depois) {
     if (P.S.semComprov || P.S.semImpostos) { A.avisar("Para ler comprovantes, rode de novo o impostos.sql no Supabase (tabela impostos_comprovantes).", "erro"); return; }
     if (!window.AGE_PAG || !window.AGE_PAG.lerArquivo) { A.avisar("O leitor de comprovantes não carregou. Atualize a página.", "erro"); return; }
     var ents = [], vistos = {}, usadas = {};
@@ -290,7 +293,7 @@
     var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">Escolha os comprovantes (print, foto ou PDF). O app lê o valor e a data, acha a parcela e <b>você confere antes de dar baixa</b>. Comprovante repetido é recusado.</p>' +
       '<div class="acoes"><button class="prim" id="lc-esc">📎 Escolher comprovantes</button></div><input type="file" id="lc-arq" accept="image/*,application/pdf" multiple class="oculto">' +
       '<div id="lc-st" class="peq" style="margin:8px 0"></div><div id="lc-lista"></div><p class="peq" id="lc-msg" style="color:var(--critico)"></p>' +
-      '<div class="acoes"><button class="prim" id="lc-ok" disabled>✅ Dar baixa nas parcelas marcadas</button><button id="lc-fechar">Fechar</button></div>', { titulo: "📎 Ler comprovantes", larga: true, semRascunho: true, aoFechar: function () { refrescar(); } }), el = j.el;
+      '<div class="acoes"><button class="prim" id="lc-ok" disabled>✅ Dar baixa nas parcelas marcadas</button><button id="lc-fechar">Fechar</button></div>', { titulo: "📎 Ler comprovantes", larga: true, semRascunho: true, aoFechar: function () { refrescar(); if (depois) depois(); } }), el = j.el;
     function opcoes(sel) { return '<option value="">— não dar baixa —</option>' + abertas.map(function (x) { return '<option value="' + esc(x.p.id) + '"' + (sel === x.p.id ? " selected" : "") + ">" + esc((x.d.nome.length > 36 ? x.d.nome.slice(0, 35) + "…" : x.d.nome) + " · parcela " + x.p.numero + " · " + A.dataSimples(x.p.vencimento) + " · " + dinheiro(x.p.valor)) + "</option>"; }).join(""); }
     function desenhar() {
       $("#lc-lista", el).innerHTML = ents.map(function (e, i) {
@@ -310,7 +313,7 @@
         var rep = h && jaLido(null, h);
         if (rep || (h && vistos[h])) { e.repetido = "este arquivo já foi usado" + (rep && rep.pago_em ? " (pago em " + A.dataSimples(rep.pago_em) + ")" : "") + "."; ents.push(e); return; }
         if (h) vistos[h] = true;
-        return window.AGE_PAG.lerArquivo(f).then(function (r) {
+        return textoDe(f).then(function (r) {
           e.c = lerComprovante(r.texto);
           var rep2 = jaLido(e.c, null) || (e.c.autenticacao && vistos["a" + e.c.autenticacao] && { pago_em: null }) || (e.c.identificador && vistos["i" + e.c.identificador] && { pago_em: null });
           if (rep2) { e.repetido = "a mesma autenticação/documento já foi lançado" + (rep2.pago_em ? " (pago em " + A.dataSimples(rep2.pago_em) + ")" : "") + "."; ents.push(e); return; }
@@ -325,11 +328,13 @@
       });
     }
     $("#lc-esc", el).onclick = function () { $("#lc-arq", el).value = ""; $("#lc-arq", el).click(); };
-    $("#lc-arq", el).onchange = function () {
-      var fs = Array.prototype.slice.call(this.files || []).slice(0, 20); if (!fs.length) return;
+    function iniciar(fs) {
+      if (!fs.length) return;
       fs.reduce(function (pr, f, i) { return pr.then(function () { $("#lc-st", el).textContent = "📖 Lendo o comprovante " + (i + 1) + " de " + fs.length + "... (a 1ª vez demora um pouco)"; return processar(f); }); }, Promise.resolve())
         .then(function () { $("#lc-st", el).textContent = "Confira e toque em dar baixa."; desenhar(); });
-    };
+    }
+    $("#lc-arq", el).onchange = function () { iniciar(Array.prototype.slice.call(this.files || []).slice(0, 20)); };
+    if (arquivosIni && arquivosIni.length) iniciar(arquivosIni);
     $("#lc-fechar", el).onclick = function () { j.fechar(); };
     $("#lc-ok", el).onclick = function () {
       var b = this, msg = $("#lc-msg", el); msg.textContent = ""; A.ocupado(b, true, "Dando baixa...");
@@ -380,14 +385,14 @@
     if (g.parcelamento && g.tipo === "DAS") { var c = ds.filter(function (d) { return new RegExp("PARCSN\\s*" + g.parcelamento + "\\b", "i").test(d.numero || ""); })[0]; if (c) return { d: c, como: "pelo nº do parcelamento (PARCSN " + g.parcelamento + ")" }; }
     return null;
   }
-  function lerGuias() {
+  function lerGuias(arquivosIni, depois) {
     if (P.S.semImpostos) { A.avisar("Para usar, rode o impostos.sql atualizado no Supabase.", "erro"); return; }
     if (!window.AGE_PAG || !window.AGE_PAG.lerArquivo) { A.avisar("O leitor de arquivos não carregou. Atualize a página.", "erro"); return; }
     var ents = [], hashes = {};
     var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">Escolha a guia (DAS, DARF, DAS de parcelamento, dívida ativa) em <b>PDF ou foto</b>. O app lê o número da guia, o valor e o vencimento e <b>cadastra a parcela</b> na dívida certa, ou cria a dívida se for nova. Você confere antes.</p>' +
       '<div class="acoes"><button class="prim" id="lg-esc">📄 Escolher guias</button></div><input type="file" id="lg-arq" accept="application/pdf,image/*" multiple class="oculto">' +
       '<div id="lg-st" class="peq" style="margin:8px 0"></div><div id="lg-lista"></div><p class="peq" id="lg-msg" style="color:var(--critico)"></p>' +
-      '<div class="acoes"><button class="prim" id="lg-ok" disabled>💾 Cadastrar</button><button id="lg-fechar">Fechar</button></div>', { titulo: "📄 Ler guia de imposto", larga: true, semRascunho: true, aoFechar: function () { refrescar(); } }), el = j.el;
+      '<div class="acoes"><button class="prim" id="lg-ok" disabled>💾 Cadastrar</button><button id="lg-fechar">Fechar</button></div>', { titulo: "📄 Ler guia de imposto", larga: true, semRascunho: true, aoFechar: function () { refrescar(); if (depois) depois(); } }), el = j.el;
     function opcoesDiv(sel) { return '<option value="">➕ Criar dívida nova</option>' + dividas().filter(function (d) { return d.ativo !== false; }).map(function (d) { return '<option value="' + esc(d.id) + '"' + (sel === d.id ? " selected" : "") + ">" + esc(d.nome.length > 40 ? d.nome.slice(0, 39) + "…" : d.nome) + "</option>"; }).join(""); }
     function proximoNumero(did) { var ps = parcelasDe(did); return ps.length ? ps[ps.length - 1].numero + 1 : 1; }
     function nomeNova(g) { return g.tipo === "DARF" ? "DARF" + (g.codigo ? " código " + g.codigo : "") : g.parcela ? "Parcelamento (DAS" + (g.parcelamento ? " nº " + g.parcelamento : "") + ")" : "DAS do Simples Nacional"; }
@@ -417,7 +422,7 @@
       var e = { nome: f.name || "guia" };
       return hashArquivo(f).then(function (h) {
         if (h && hashes[h]) { e.repetida = "este arquivo já está na lista."; ents.push(e); return; } if (h) hashes[h] = true;
-        return window.AGE_PAG.lerArquivo(f).then(function (r) {
+        return textoDe(f).then(function (r) {
           var g = lerGuia(r.texto); e.g = g;
           if (!g.documento && g.valor === null) { e.erro = "Não consegui ler esta guia (sem nº de documento nem valor). Tente o PDF original."; ents.push(e); return; }
           var rep = g.documento ? (P.S.impParcelas || []).filter(function (p) { return soDig(p.documento) === soDig(g.documento); })[0] : null;
@@ -436,11 +441,13 @@
       });
     }
     $("#lg-esc", el).onclick = function () { $("#lg-arq", el).value = ""; $("#lg-arq", el).click(); };
-    $("#lg-arq", el).onchange = function () {
-      var fs = Array.prototype.slice.call(this.files || []).slice(0, 20); if (!fs.length) return;
+    function iniciar(fs) {
+      if (!fs.length) return;
       fs.reduce(function (pr, f, i) { return pr.then(function () { $("#lg-st", el).textContent = "📖 Lendo a guia " + (i + 1) + " de " + fs.length + "..."; return processar(f); }); }, Promise.resolve())
         .then(function () { $("#lg-st", el).textContent = "Confira e toque em Cadastrar."; desenhar(); });
-    };
+    }
+    $("#lg-arq", el).onchange = function () { iniciar(Array.prototype.slice.call(this.files || []).slice(0, 20)); };
+    if (arquivosIni && arquivosIni.length) iniciar(arquivosIni);
     $("#lg-fechar", el).onclick = function () { j.fechar(); };
     $("#lg-ok", el).onclick = function () {
       var b = this, msg = $("#lg-msg", el); msg.textContent = "";
@@ -467,6 +474,49 @@
           return P.q(P.sb.from("impostos_parcelamentos").insert(nova).select().single()).then(function (n) { P.trocar(P.S.impDividas, n); e.dividaId = n.id; return daParcela(n.id).then(function () { e.resultado = "nova dívida “" + n.nome + "”, " + e.resultado; }); });
         }).catch(function (er) { e.erro = A.msgErro(er) + (/documento|column|schema cache/i.test(A.msgErro(er)) ? " — rode de novo o impostos.sql no Supabase." : ""); });
       }, Promise.resolve()).then(function () { A.ocupado(b, false); alvo.forEach(function (e) { if (!e.erro) e.salvo = true; }); var ok = ents.filter(function (e) { return e.salvo; }).length; $("#lg-st", el).textContent = ok ? "✅ " + ok + " guia(s) cadastrada(s)." : ""; desenhar(); });
+    };
+  }
+
+  // ---------- 📷 escanear: foto ou arquivos de guias e comprovantes, o app separa e lê ----------
+  // guia (DAS/DARF) tem o cabeçalho "Documento de Arrecadação"; comprovante diz "comprovante" ou "pagamento realizado". A guia traz um campo
+  // "autenticação bancária" em branco: por isso o cabeçalho da guia vale primeiro.
+  function tipoDoc(texto) {
+    var t = String(texto || "");
+    if (/comprovante/i.test(t) || /pagamento\s+(?:realizado|efetuado|conclu[ií]do)/i.test(t) || /pago\s+com\s+sucesso/i.test(t)) return "comprovante";
+    if (/documento\s+de\s+arrecada/i.test(t) || /\bDARF\b/.test(t)) return "guia";
+    if (/identificador|autentica[cç][aã]o|valor\s+total\s+do\s+pagamento/i.test(t) && /R\$\s*\d/.test(t)) return "comprovante";
+    return null;
+  }
+  function escanear() {
+    if (P.S.semImpostos) { A.avisar("Para usar, rode o impostos.sql atualizado no Supabase.", "erro"); return; }
+    if (!window.AGE_PAG || !window.AGE_PAG.lerArquivo) { A.avisar("O leitor de arquivos não carregou. Atualize a página.", "erro"); return; }
+    var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">Tire a <b>foto</b> do documento ou escolha os <b>arquivos</b> (PDF, print, foto). O app separa o que é <b>guia</b> (DAS, DARF) e o que é <b>comprovante</b>, lê tudo e mostra para você conferir antes de salvar.</p>' +
+      '<div class="acoes"><button class="prim" id="es-foto">📷 Tirar foto</button><button id="es-esc">📁 Escolher arquivos</button></div>' +
+      '<input type="file" id="es-cam" accept="image/*" capture="environment" class="oculto"><input type="file" id="es-arq" accept="application/pdf,image/*" multiple class="oculto">' +
+      '<div id="es-st" class="peq" style="margin:8px 0"></div><div id="es-lista"></div>' +
+      '<div class="acoes"><button class="prim" id="es-ok" disabled>Continuar</button><button id="es-fechar">Fechar</button></div>', { titulo: "📷 Escanear guias e comprovantes", larga: true, semRascunho: true }), el = j.el;
+    var guias = [], comps = [], sem = [];
+    function resumo() {
+      $("#es-lista", el).innerHTML = '<div class="cartao"><b>' + guias.length + "</b> guia(s) · <b>" + comps.length + "</b> comprovante(s)" + (sem.length ? ' · <span style="color:var(--atencao)"><b>' + sem.length + "</b> não identificado(s): " + sem.map(function (f) { return esc(f.name || "arquivo"); }).join(", ") + "</span>" : "") + "</div>";
+      $("#es-ok", el).disabled = !(guias.length || comps.length); $("#es-ok", el).textContent = guias.length ? "Continuar: conferir as guias" + (comps.length ? " e depois os comprovantes" : "") : comps.length ? "Continuar: conferir os comprovantes" : "Continuar";
+    }
+    function ler(fs) {
+      fs = fs.slice(0, 20); if (!fs.length) return;
+      fs.reduce(function (pr, f, i) {
+        return pr.then(function () {
+          $("#es-st", el).textContent = "📖 Lendo " + (i + 1) + " de " + fs.length + "... (a 1ª vez demora um pouco)";
+          return textoDe(f).then(function (r) { var tp = tipoDoc(r.texto); (tp === "guia" ? guias : tp === "comprovante" ? comps : sem).push(f); }, function () { sem.push(f); });
+        });
+      }, Promise.resolve()).then(function () { $("#es-st", el).textContent = "Pronto."; resumo(); });
+    }
+    $("#es-foto", el).onclick = function () { $("#es-cam", el).value = ""; $("#es-cam", el).click(); };
+    $("#es-esc", el).onclick = function () { $("#es-arq", el).value = ""; $("#es-arq", el).click(); };
+    $("#es-cam", el).onchange = function () { ler(Array.prototype.slice.call(this.files || [])); };
+    $("#es-arq", el).onchange = function () { ler(Array.prototype.slice.call(this.files || [])); };
+    $("#es-fechar", el).onclick = function () { j.fechar(); };
+    $("#es-ok", el).onclick = function () {
+      var g = guias.slice(), c = comps.slice(); j.fechar();
+      if (g.length) lerGuias(g, c.length ? function () { lerComprovantes(c); } : null); else lerComprovantes(c);
     };
   }
 
