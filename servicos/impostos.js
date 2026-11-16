@@ -264,7 +264,7 @@
   function acharParcela(c, abertas, usadas) {
     var livres = abertas.filter(function (x) { return !usadas[x.p.id]; });
     if (c.identificador) {
-      var porDoc = livres.filter(function (x) { var dg = String(x.p.documento || "").replace(/\D/g, ""); return dg.length >= 12 && (c.identificador.indexOf(dg) === 0 || c.identificador.indexOf(dg.slice(0, 12)) === 0); });
+      var porDoc = livres.filter(function (x) { var dg = String(x.p.documento || "").replace(/\D/g, ""); return dg.length >= 12 && (c.identificador.indexOf(dg) >= 0 || c.identificador.indexOf(dg.slice(0, 12)) >= 0); });
       if (porDoc.length === 1) return { x: porDoc[0], como: "pelo nº da guia" };
     }
     var porValor = livres.filter(function (x) { return c.valor !== null && Math.abs(Number(x.p.valor) - c.valor) < 0.005; });
@@ -304,7 +304,7 @@
   function novoLote() { return { vistos: {}, usadas: {}, hashes: {} }; }
   function diasEntre(a, b) { return Math.abs(Math.round((new Date(a + "T12:00:00") - new Date(b + "T12:00:00")) / 864e5)); }
   function proximoNumero(did) { var ps = parcelasDe(did); return ps.length ? ps[ps.length - 1].numero + 1 : 1; }
-  function nomeNova(g) { return g.tipo === "DARF" ? "DARF" + (g.codigo ? " código " + g.codigo : "") : g.parcela ? "Parcelamento (DAS" + (g.parcelamento ? " nº " + g.parcelamento : "") + ")" : "DAS do Simples Nacional"; }
+  function nomeNova(g) { if (g.nomeDivida) return g.nomeDivida; return g.tipo === "DARF" ? "DARF" + (g.codigo ? " código " + g.codigo : "") : g.parcela ? "Parcelamento (DAS" + (g.parcelamento ? " nº " + g.parcelamento : "") + ")" : "DAS do Simples Nacional"; }
   function parcelaExistente(e) { return e.dividaId && e.numero ? parcelasDe(e.dividaId).filter(function (p) { return p.numero === e.numero && !p.pago_em; })[0] || null : null; }
 
   function analisarComprovante(f, lote) {
@@ -380,6 +380,11 @@
     }
     return Promise.resolve().then(function () {
       if (e.dividaId) return daParcela(e.dividaId, false);
+      if (g.ehDram) {
+        var nd = { nome: nomeNova(g), orgao: g.orgao, numero: g.numeroDivida || null, tipo: g.parcelas > 1 ? "parcelamento" : "avulsa", valor_total: g.totalDivida || g.valor, n_parcelas: g.parcelas || 1,
+          obs: g.totalDivida ? "Guia " + (g.documento || "") + ": entrada de " + dinheiro(g.valor) + (g.valorParcela ? " e mais " + ((g.parcelas || 1) - 1) + " parcelas de " + dinheiro(g.valorParcela) + " (o vencimento das parcelas segue o dia do pagamento da entrada: lance as datas quando a prefeitura informar)." : ".") : null };
+        return P.q(P.sb.from("impostos_parcelamentos").insert(nd).select().single()).then(function (n) { P.trocar(P.S.impDividas, n); e.dividaId = n.id; return daParcela(n.id, true).then(function () { e.resultado = "nova dívida “" + n.nome + "”, " + e.resultado; }); });
+      }
       var nova = { nome: nomeNova(g), orgao: g.sispar ? "PGFN" : "Receita Federal", numero: g.sispar ? "PGFN-SISPAR " + g.sispar : g.parcelamento ? "DAS nº " + g.parcelamento : g.darfRef || null, tipo: g.parcelas || g.parcelamento || g.sispar ? "parcelamento" : "avulsa", valor_total: g.parcelas ? 0 : g.valor, n_parcelas: g.parcelas || (g.parcelamento || g.sispar ? null : 1) };
       return P.q(P.sb.from("impostos_parcelamentos").insert(nova).select().single()).then(function (n) { P.trocar(P.S.impDividas, n); e.dividaId = n.id; return daParcela(n.id, true).then(function () { e.resultado = "nova dívida “" + n.nome + "”, " + e.resultado; }); });
     }).then(function () { e.salvo = true; return e; })
@@ -441,8 +446,49 @@
   // ---------- 📄 ler guia (DAS, DARF, DAS de parcelamento, dívida ativa) e cadastrar ----------
   function moedas(t) { var l = [], re = /(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d\/])/g, m; while ((m = re.exec(t))) l.push(reaisDe(m[1])); return l; }
   function maisFrequente(l) { var n = {}, melhor = null; l.forEach(function (v) { n[v] = (n[v] || 0) + 1; }); Object.keys(n).forEach(function (k) { if (melhor === null || n[k] > n[melhor] || (n[k] === n[melhor] && Number(k) > Number(melhor))) melhor = k; }); return melhor === null ? null : Number(melhor); }
+  // linha digitável do código de barras de arrecadação (4 blocos de 11 dígitos + DV): traz valor, empresa e o campo livre (vencimento + nº do documento)
+  function linhaDigitavel(t) {
+    var m = /(8\d{10})\s*-?\s*\d\s+(\d{11})\s*-?\s*\d\s+(\d{11})\s*-?\s*\d\s+(\d{11})\s*-?\s*\d/.exec(String(t).replace(/[|]/g, " "));
+    if (!m) return null;
+    var b1 = m[1], b2 = m[2], b3 = m[3], b4 = m[4], livre = b2.slice(8) + b3 + b4, v = parseInt(b1.slice(4) + b2.slice(0, 4), 10) / 100;
+    var dd = livre.slice(0, 8), venc = /^20\d{6}$/.test(dd) && Number(dd.slice(4, 6)) >= 1 && Number(dd.slice(4, 6)) <= 12 && Number(dd.slice(6, 8)) >= 1 && Number(dd.slice(6, 8)) <= 31 ? dd.slice(0, 4) + "-" + dd.slice(4, 6) + "-" + dd.slice(6, 8) : null;
+    var d13 = livre.slice(8, 21), doc = /^\d{13}$/.test(d13) ? d13.slice(0, 2) + "." + d13.slice(2, 4) + "." + d13.slice(4, 11) + "." + d13.slice(11, 13) : null;
+    return { valor: v > 0 ? v : null, vencimento: venc, documento: doc, livre: livre };
+  }
+  // DRAM: Documento de Recolhimento e Arrecadação Municipal (Prefeitura de BH): TFLF, dívida ativa, IPTU...
+  function lerDram(t) {
+    var tt = t.replace(/\s+/g, " "), g = { tipo: "DRAM", documento: null, valor: null, vencimento: null, parcela: null, parcelas: null, parcelamento: null, sispar: null, darfRef: null, codigo: null, orgao: "Prefeitura de Belo Horizonte" };
+    var ld = linhaDigitavel(t);
+    var dc = /\b(\d{2}\.\d{2}\.\d{7}\.\d{2})\b/.exec(tt); g.documento = dc ? dc[1] : (ld && ld.documento) || null;
+    var pl = /(\d{1,2})\s*[ªº°o]?\s*PARCELA\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(tt);
+    var vt = /valor\s+a\s+pagar\s*:?\s*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(tt) || /valor\s+total\s*:?\s*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(tt);
+    g.valor = ld && ld.valor ? ld.valor : vt ? reaisDe(vt[1]) : pl ? reaisDe(pl[3]) : null;
+    var nr = /n[aã]o\s+receber\s+ap[oó]s\s+(\d{2})\/(\d{2})\/(\d{4})/i.exec(tt);
+    g.vencimento = nr ? nr[3] + "-" + nr[2] + "-" + nr[1] : ld && ld.vencimento ? ld.vencimento : null;
+    var divAtiva = /d[ií]vida\s+ativa/i.test(tt) && /dep[oó]sito\s+inicial/i.test(tt);
+    if (divAtiva) {
+      var ps = /(\d{1,3})\s*X\s*R?\$?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(tt), tot = tt.match(/=\s*R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/g);
+      g.parcela = 1; g.parcelas = ps ? Number(ps[1]) + 1 : null;
+      g.totalDivida = tot ? reaisDe(/(\d{1,3}(?:\.\d{3})*,\d{2})/.exec(tot[tot.length - 1])[1]) : null;
+      var mid = g.documento ? g.documento.split(".")[2] : null;
+      var pm = /parcelamento\s*:?\s*(\d{6,8})\s*\/\s*(\d{4})/i.exec(tt);
+      g.parcelamento = mid ? mid + "/" + (pm ? pm[2] : "20" + g.documento.split(".")[1]) : pm ? pm[1] + "/" + pm[2] : null;
+      g.numeroDivida = g.parcelamento ? "PBH parcelamento " + g.parcelamento : null;
+      g.nomeDivida = "Dívida ativa" + (/issqn/i.test(tt) ? " ISSQN" : "") + " Simples Nacional (Prefeitura de BH)";
+      g.valorParcela = ps ? reaisDe(ps[2]) : null;
+    } else {
+      var tf = /\bTFLF\b/.test(tt), lc = /lan[cç]amento\s*:?\s*(\d{2}\.\d{3}\.\d{2}\.\d{7})/i.exec(tt), rf = /refer[eê]ncia\s*:?\s*(\d{2}\/\d{4})/i.exec(tt);
+      g.parcela = pl ? Number(pl[1]) : 1; g.parcelas = 1;
+      g.nomeDivida = (tf ? "TFLF — Taxa de Fiscalização (Prefeitura de BH)" : "Taxa/imposto da Prefeitura de BH") + (rf ? " " + rf[1] : "");
+      g.numeroDivida = (tf ? "TFLF " : "DRAM ") + (lc ? lc[1] : g.documento || "");
+    }
+    g.ehDram = true;
+    return g;
+  }
   function lerGuia(texto) {
-    var t = String(texto || "").replace(/\r/g, ""), g = { tipo: null, documento: null, valor: null, vencimento: null, parcela: null, parcelas: null, parcelamento: null, sispar: null, darfRef: null, codigo: null };
+    var tx0 = String(texto || "").replace(/\r/g, "");
+    if (/recolhimento\s+e\s+arrecada[cç][aã]o\s+municipal|\bDRAM\b/i.test(tx0)) return lerDram(tx0);
+    var t = tx0, g = { tipo: null, documento: null, valor: null, vencimento: null, parcela: null, parcelas: null, parcelamento: null, sispar: null, darfRef: null, codigo: null };
     if (/simples\s+nacional/i.test(t) && /documento\s+de\s+arrecada/i.test(t)) g.tipo = "DAS"; else if (/\bDARF\b/.test(t)) g.tipo = "DARF"; else if (/documento\s+de\s+arrecada/i.test(t)) g.tipo = "DAS";
     var dc = /n[uú]mero\s+do\s+documento\s*:?\s*(\d{2}\.\d{2}\.\d{5}\.\d{7}-\d)/i.exec(t) || /\b(\d{2}\.\d{2}\.\d{5}\.\d{7}-\d)\b/.exec(t); if (dc) g.documento = dc[1];
     var px = /\bvalor\s*:\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(t.replace(/\s+/g, " "));   // bloco "Pague com o PIX": Valor: 1.844,56
@@ -464,6 +510,7 @@
     var ds = dividas().filter(function (d) { return d.ativo !== false; });
     var porDoc = g.documento ? (P.S.impParcelas || []).filter(function (p) { return soDig(p.documento) === soDig(g.documento); })[0] : null;
     if (porDoc) return { d: P.porId(P.S.impDividas, porDoc.parcelamento_id), como: "pela guia já cadastrada" };
+    if (g.numeroDivida) { var nd0 = ds.filter(function (d) { return String(d.numero || "").replace(/\s+/g, "").toLowerCase() === String(g.numeroDivida).replace(/\s+/g, "").toLowerCase(); })[0]; if (nd0) return { d: nd0, como: "pelo nº do parcelamento/lançamento" }; }
     if (g.darfRef) { var a = ds.filter(function (d) { return soDig(d.numero) === g.darfRef; })[0]; if (a) return { d: a, como: "pelo nº do parcelamento" }; }
     if (g.sispar) { var b = ds.filter(function (d) { return soDig(d.numero).indexOf(g.sispar) >= 0; })[0]; if (b) return { d: b, como: "pelo nº SISPAR da PGFN" }; }
     if (g.parcelamento && g.tipo === "DAS") { var c = ds.filter(function (d) { return new RegExp("PARCSN\\s*" + g.parcelamento + "\\b", "i").test(d.numero || ""); })[0]; if (c) return { d: c, como: "pelo nº do parcelamento (PARCSN " + g.parcelamento + ")" }; }
@@ -528,14 +575,7 @@
   function tipoDoc(texto) {
     var t = String(texto || "");
     if (/comprovante/i.test(t) || /pagamento\s+(?:realizado|efetuado|conclu[ií]do)/i.test(t) || /pago\s+com\s+sucesso/i.test(t)) return "comprovante";
-    if (/documento\s+de\s+arrecada/i.test(t) || /\bDARF\b/.test(t)) return "guia";
-    if (/identificador|autentica[cç][aã]o|valor\s+total\s+do\s+pagamento/i.test(t) && /R\$\s*\d/.test(t)) return "comprovante";
-    return null;
-  }
-  function tipoDoc(texto) {
-    var t = String(texto || "");
-    if (/comprovante/i.test(t) || /pagamento\s+(?:realizado|efetuado|conclu[ií]do)/i.test(t) || /pago\s+com\s+sucesso/i.test(t)) return "comprovante";
-    if (/documento\s+de\s+arrecada/i.test(t) || /\bDARF\b/.test(t)) return "guia";
+    if (/documento\s+de\s+arrecada/i.test(t) || /recolhimento\s+e\s+arrecada[cç][aã]o\s+municipal/i.test(t) || /\bDARF\b/.test(t) || /\bDRAM\b/.test(t)) return "guia";
     if (/identificador|autentica[cç][aã]o|valor\s+total\s+do\s+pagamento/i.test(t) && /R\$\s*\d/.test(t)) return "comprovante";
     return null;
   }
