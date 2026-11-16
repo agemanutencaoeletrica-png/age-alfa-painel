@@ -602,3 +602,11 @@ No orçamento (não no de materiais), a área **🤝 Parceiro que vai executar**
 
 ## 📍 Endereço do cliente e Google Maps
 Em **Clientes › ✏️ Editar** há o campo **Endereço do cliente** (salva sozinho; já vem preenchido com o endereço dos orçamentos, se tiver). Na lista e na edição: **📍 Abrir no Google Maps**, **📋 Copiar link do mapa** e **📤 Compartilhar** (no celular abre o menu do telefone com nome, endereço e link; no computador abre o WhatsApp com a mensagem pronta). O link é a pesquisa do endereço no Google Maps. Rode de novo o `clientes-ficha.sql` (nova coluna `endereco`).
+
+## 📎 Lançar pagamento e ler comprovantes (Impostos e dívidas)
+- **✅ Marcar como paga** agora abre o **lançamento do pagamento**: data, valor realmente pago, forma (Pix, boleto, débito automático...) e observação. O ✏️ da linha edita o que foi lançado; desmarcar a caixa volta a parcela para "em aberto" (pede confirmação).
+- **📎 Ler comprovantes** (botão no topo da aba): escolha prints, fotos ou PDFs de comprovantes (até 20 de uma vez). O app lê **valor, data, hora, nº do documento e autenticação**, acha a parcela em aberto (primeiro pelo **nº da guia (DAS)**, depois pelo valor e pela data) e mostra tudo para você **conferir**. Só dá baixa quando você toca em **Dar baixa**. Se não achar ou houver dúvida, você escolhe a parcela na lista ou deixa sem baixa.
+- **Não aceita comprovante repetido:** recusa o **mesmo arquivo** (impressão digital), o **mesmo comprovante em outro print** (mesma autenticação) e o **mesmo documento** já lançado. O banco também barra (índices únicos).
+- **Guia nº:** coluna nova na lista de parcelas (DAS ou guia). Com o número preenchido, o comprovante casa com a parcela certa mesmo com valor diferente. As guias PARCSN 1ª parcela e PGFN já vêm no `impostos.sql`.
+- O app **não acessa o banco**: cada comprovante precisa ser escolhido por você. A leitura de foto/print usa reconhecimento de texto (OCR) e pode errar: confira sempre antes de dar baixa. Os comprovantes não são guardados no app, só a leitura (valor, data, autenticação e a impressão digital do arquivo).
+- Rode de novo o `impostos.sql` (novas colunas `forma` e `documento` e a tabela `impostos_comprovantes`).

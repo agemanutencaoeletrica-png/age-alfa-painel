@@ -821,6 +821,23 @@ create table if not exists public.impostos_parcelas (
   obs              text check (obs is null or length(obs) <= 500),
   unique (parcelamento_id, numero)
 );
+alter table public.impostos_parcelas add column if not exists forma text check (forma is null or length(forma) <= 40);   -- como foi paga: Pix, boleto, débito automático...
+alter table public.impostos_parcelas add column if not exists documento text check (documento is null or length(documento) <= 60);   -- nº da guia (DAS) para casar com o comprovante
+-- comprovantes de pagamento já lidos: o mesmo arquivo, a mesma autenticação ou o mesmo documento nunca valem duas vezes
+create table if not exists public.impostos_comprovantes (
+  id            uuid primary key default gen_random_uuid(),
+  parcela_id    uuid references public.impostos_parcelas (id) on delete set null,
+  arquivo_hash  text,        -- impressão digital (SHA-256) do arquivo
+  identificador text,        -- nº do documento pago, como vem no comprovante
+  autenticacao  text,
+  valor         numeric(12, 2),
+  pago_em       date,
+  hora          text,
+  lido_em       timestamptz not null default now()
+);
+create unique index if not exists impostos_comprov_hash_idx on public.impostos_comprovantes (arquivo_hash) where arquivo_hash is not null;
+create unique index if not exists impostos_comprov_aut_idx on public.impostos_comprovantes (autenticacao) where autenticacao is not null;
+create unique index if not exists impostos_comprov_ident_idx on public.impostos_comprovantes (identificador) where identificador is not null;
 create index if not exists impostos_parcelas_venc_idx on public.impostos_parcelas (vencimento) where pago_em is null;
 
 -- 💼 serviços fechados com cada parceiro: o que foi combinado, o valor e os pagamentos (entrada, adiantamento, restante) com data e horário
@@ -898,7 +915,7 @@ declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha', 'impostos_parcelamentos', 'impostos_parcelas', 'lembrete_config', 'parceiro_servicos', 'parceiro_pagamentos'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha', 'impostos_parcelamentos', 'impostos_parcelas', 'lembrete_config', 'parceiro_servicos', 'parceiro_pagamentos', 'impostos_comprovantes'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
