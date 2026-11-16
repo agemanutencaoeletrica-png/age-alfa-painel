@@ -355,6 +355,16 @@
           cv.width = vp.width; cv.height = vp.height;
           return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise.then(function () {
             return new Promise(function (ok) { cv.toBlob(function (b) { ok({ texto: linhas.join("\n"), imagem: b, tabela: tabela, pecas: pecas }); }, "image/jpeg", 0.85); });
+          }).then(function (r) {
+            // PDF sem camada de texto (guias da prefeitura, scans): o texto está desenhado como imagem. Renderiza a página maior e lê por OCR.
+            if (String(r.texto || "").replace(/\s+/g, "").length >= 60) return r;
+            var vp2 = pg.getViewport({ scale: 3 }), cv2 = document.createElement("canvas"); cv2.width = vp2.width; cv2.height = vp2.height;
+            return pg.render({ canvasContext: cv2.getContext("2d"), viewport: vp2 }).promise.then(function () {
+              return new Promise(function (ok) { cv2.toBlob(function (b2) { ok(b2); }, "image/png"); });
+            }).then(function (b2) {
+              var arq = new File([b2], (f.name || "pagina") + ".png", { type: "image/png" });
+              return ocr(arq, { psm: "4", giro: 0 }).then(function (o) { r.texto = o.texto || ""; r.porOcr = true; return r; });
+            }).catch(function () { return r; });
           });
         });
       });
