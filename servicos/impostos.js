@@ -65,7 +65,7 @@
       });
     });
     proximas.sort(function (a, b) { return a.p.vencimento < b.p.vencimento ? -1 : a.p.vencimento > b.p.vencimento ? 1 : 0; });
-    c.innerHTML = '<div class="cab-secao"><h2>🧾 Impostos e dívidas</h2><span><button class="prim" id="im-novo">+ Parcelamento / dívida</button> <button id="im-comp" title="Dá baixa nas parcelas lendo o comprovante (foto, print ou PDF)">📎 Ler comprovantes</button> <button id="im-veic">🚗 + Imposto de veículo</button> <button id="im-tg" title="Aviso no Telegram dois dias antes de vencer">🔔 Lembrete no Telegram</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>🧾 Impostos e dívidas</h2><span><button class="prim" id="im-novo">+ Parcelamento / dívida</button> <button id="im-guia" title="Lê a guia (DAS, DARF ou boleto de imposto) em PDF ou foto e cadastra a parcela ou a dívida">📄 Ler guia</button> <button id="im-comp" title="Dá baixa nas parcelas lendo o comprovante (foto, print ou PDF)">📎 Ler comprovantes</button> <button id="im-veic">🚗 + Imposto de veículo</button> <button id="im-tg" title="Aviso no Telegram dois dias antes de vencer">🔔 Lembrete no Telegram</button></span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Cada dívida da firma separada, com as parcelas, o que já foi pago e o que falta. Marque a parcela como paga quando pagar.</p>' +
       (S.semImpostos ? '<div class="aviso">Para usar, rode no Supabase o <b>supabase.sql</b> atualizado (tabelas <b>impostos_parcelamentos</b> e <b>impostos_parcelas</b>) e depois o arquivo de dados iniciais.</div>' : "") +
       '<div class="cartao"><div><b>Em aberto:</b> ' + dinheiro(aberto) + ' · <b>Já pago:</b> ' + dinheiro(pago) + '</div>' +
@@ -81,6 +81,7 @@
       '<h3 style="margin:14px 0 8px">🚗 Veículos</h3>' + (veics.length ? veics.map(function (x) { return cartao(x.d, x.r); }).join("") : '<div class="cartao mudo">Nenhum imposto de veículo. Toque em “🚗 + Imposto de veículo” (IPVA, licenciamento, seguro obrigatório, multas).</div>');
     $("#im-veic", c).onclick = function () { editarVeiculo(); };
     $("#im-comp", c).onclick = lerComprovantes;
+    $("#im-guia", c).onclick = lerGuias;
     $("#im-novo", c).onclick = function () { editar(null); };
     $("#im-tg", c).onclick = lembrete;
     $$("[data-ed]", l).forEach(function (b) { b.onclick = function () { editar(P.porId(P.S.impDividas, b.dataset.ed)); }; });
@@ -346,6 +347,127 @@
       }, Promise.resolve()).then(function () { A.ocupado(b, false); var ok = ents.filter(function (e) { return e.salvo; }).length; $("#lc-st", el).textContent = ok ? "✅ " + ok + " baixa(s) dada(s)." : ""; desenhar(); refrescarFundo(); }).catch(function (er) { A.ocupado(b, false); msg.textContent = A.msgErro(er); });
     };
     function refrescarFundo() { /* a lista de trás atualiza ao fechar a janela */ }
+  }
+
+  // ---------- 📄 ler guia (DAS, DARF, DAS de parcelamento, dívida ativa) e cadastrar ----------
+  function moedas(t) { var l = [], re = /(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d\/])/g, m; while ((m = re.exec(t))) l.push(reaisDe(m[1])); return l; }
+  function maisFrequente(l) { var n = {}, melhor = null; l.forEach(function (v) { n[v] = (n[v] || 0) + 1; }); Object.keys(n).forEach(function (k) { if (melhor === null || n[k] > n[melhor] || (n[k] === n[melhor] && Number(k) > Number(melhor))) melhor = k; }); return melhor === null ? null : Number(melhor); }
+  function lerGuia(texto) {
+    var t = String(texto || "").replace(/\r/g, ""), g = { tipo: null, documento: null, valor: null, vencimento: null, parcela: null, parcelas: null, parcelamento: null, sispar: null, darfRef: null, codigo: null };
+    if (/simples\s+nacional/i.test(t) && /documento\s+de\s+arrecada/i.test(t)) g.tipo = "DAS"; else if (/\bDARF\b/.test(t)) g.tipo = "DARF"; else if (/documento\s+de\s+arrecada/i.test(t)) g.tipo = "DAS";
+    var dc = /n[uú]mero\s+do\s+documento\s*:?\s*(\d{2}\.\d{2}\.\d{5}\.\d{7}-\d)/i.exec(t) || /\b(\d{2}\.\d{2}\.\d{5}\.\d{7}-\d)\b/.exec(t); if (dc) g.documento = dc[1];
+    var px = /\bvalor\s*:\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(t.replace(/\s+/g, " "));   // bloco "Pague com o PIX": Valor: 1.844,56
+    g.valor = px ? reaisDe(px[1]) : maisFrequente(moedas(t));
+    var datas = [], rd = /(\d{2})\/(\d{2})\/(\d{4})(?!\s*[-–]?\s*\d{2}:\d{2})/g, m;
+    while ((m = rd.exec(t))) { if (Number(m[2]) >= 1 && Number(m[2]) <= 12 && Number(m[1]) >= 1 && Number(m[1]) <= 31) { var sufixo = t.slice(rd.lastIndex, rd.lastIndex + 12); if (!/^\s*\d{2}:\d{2}/.test(sufixo)) datas.push(m[3] + "-" + m[2] + "-" + m[1]); } }
+    var ap = /pagar\s+(?:este\s+documento\s+)?at[eé]\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i.exec(t.replace(/\s+/g, " "));
+    g.vencimento = ap ? ap[3] + "-" + ap[2] + "-" + ap[1] : (function () { var n = {}, b = null; datas.forEach(function (d) { n[d] = (n[d] || 0) + 1; }); Object.keys(n).forEach(function (k) { if (b === null || n[k] > n[b]) b = k; }); return b; })();
+    var pc = /parcela\s*:?\s*(\d{1,3})\s*\/\s*(\d{1,3})/i.exec(t); if (pc) { g.parcela = Number(pc[1]); g.parcelas = Number(pc[2]); }
+    var np = /n[uú]mero\s+do\s+parcelamento\s*:?\s*(\d+)/i.exec(t); if (np) g.parcelamento = np[1];
+    var sp = /PGFN[\s\-]*SISPAR\s*:?\s*(\d{6,})/i.exec(t); if (sp) g.sispar = sp[1];
+    var dr = /\b(\d{23})\b/.exec(t); if (dr) g.darfRef = dr[1];
+    var cr = /c[oó]digo\s+da\s+receita[\s\S]{0,40}?\b(\d{4})\b/i.exec(t); if (cr) g.codigo = cr[1];
+    return g;
+  }
+  var soDig = function (s) { return String(s || "").replace(/\D/g, ""); };
+  // acha a dívida a que a guia pertence: nº do parcelamento da Receita/DARF, SISPAR da PGFN, PARCSN ou outra parcela que já tenha a mesma guia
+  function dividaDaGuia(g) {
+    var ds = dividas().filter(function (d) { return d.ativo !== false; });
+    var porDoc = g.documento ? (P.S.impParcelas || []).filter(function (p) { return soDig(p.documento) === soDig(g.documento); })[0] : null;
+    if (porDoc) return { d: P.porId(P.S.impDividas, porDoc.parcelamento_id), como: "pela guia já cadastrada" };
+    if (g.darfRef) { var a = ds.filter(function (d) { return soDig(d.numero) === g.darfRef; })[0]; if (a) return { d: a, como: "pelo nº do parcelamento" }; }
+    if (g.sispar) { var b = ds.filter(function (d) { return soDig(d.numero).indexOf(g.sispar) >= 0; })[0]; if (b) return { d: b, como: "pelo nº SISPAR da PGFN" }; }
+    if (g.parcelamento && g.tipo === "DAS") { var c = ds.filter(function (d) { return new RegExp("PARCSN\\s*" + g.parcelamento + "\\b", "i").test(d.numero || ""); })[0]; if (c) return { d: c, como: "pelo nº do parcelamento (PARCSN " + g.parcelamento + ")" }; }
+    return null;
+  }
+  function lerGuias() {
+    if (P.S.semImpostos) { A.avisar("Para usar, rode o impostos.sql atualizado no Supabase.", "erro"); return; }
+    if (!window.AGE_PAG || !window.AGE_PAG.lerArquivo) { A.avisar("O leitor de arquivos não carregou. Atualize a página.", "erro"); return; }
+    var ents = [], hashes = {};
+    var j = A.janela('<p class="peq mudo" style="margin:0 0 8px">Escolha a guia (DAS, DARF, DAS de parcelamento, dívida ativa) em <b>PDF ou foto</b>. O app lê o número da guia, o valor e o vencimento e <b>cadastra a parcela</b> na dívida certa, ou cria a dívida se for nova. Você confere antes.</p>' +
+      '<div class="acoes"><button class="prim" id="lg-esc">📄 Escolher guias</button></div><input type="file" id="lg-arq" accept="application/pdf,image/*" multiple class="oculto">' +
+      '<div id="lg-st" class="peq" style="margin:8px 0"></div><div id="lg-lista"></div><p class="peq" id="lg-msg" style="color:var(--critico)"></p>' +
+      '<div class="acoes"><button class="prim" id="lg-ok" disabled>💾 Cadastrar</button><button id="lg-fechar">Fechar</button></div>', { titulo: "📄 Ler guia de imposto", larga: true, semRascunho: true, aoFechar: function () { refrescar(); } }), el = j.el;
+    function opcoesDiv(sel) { return '<option value="">➕ Criar dívida nova</option>' + dividas().filter(function (d) { return d.ativo !== false; }).map(function (d) { return '<option value="' + esc(d.id) + '"' + (sel === d.id ? " selected" : "") + ">" + esc(d.nome.length > 40 ? d.nome.slice(0, 39) + "…" : d.nome) + "</option>"; }).join(""); }
+    function proximoNumero(did) { var ps = parcelasDe(did); return ps.length ? ps[ps.length - 1].numero + 1 : 1; }
+    function nomeNova(g) { return g.tipo === "DARF" ? "DARF" + (g.codigo ? " código " + g.codigo : "") : g.parcela ? "Parcelamento (DAS" + (g.parcelamento ? " nº " + g.parcelamento : "") + ")" : "DAS do Simples Nacional"; }
+    function desenhar() {
+      $("#lg-lista", el).innerHTML = ents.map(function (e, i) {
+        if (e.erro) return '<div class="cartao"><b>' + esc(e.nome) + '</b><div class="peq" style="color:var(--critico)">⚠ ' + esc(e.erro) + "</div></div>";
+        if (e.salvo) return '<div class="cartao"><b>' + esc(e.nome) + '</b><div class="peq">✅ Cadastrada: ' + esc(e.resultado) + "</div></div>";
+        if (e.repetida) return '<div class="cartao"><b>' + esc(e.nome) + '</b><div class="peq" style="color:var(--critico)">⛔ Guia repetida: ' + esc(e.repetida) + "</div></div>";
+        var g = e.g;
+        return '<div class="cartao" data-e="' + i + '"><b>' + esc(e.nome) + '</b> <span class="selo">' + esc(g.tipo || "guia") + "</span>" +
+          '<div class="peq">' + (g.documento ? "Guia nº " + esc(g.documento) : '<span style="color:var(--atencao)">⚠ não li o nº da guia</span>') + (g.codigo ? " · código da receita " + esc(g.codigo) : "") + (g.sispar ? " · PGFN SISPAR " + esc(g.sispar) : "") + (g.parcelamento ? " · parcelamento nº " + esc(g.parcelamento) : "") + "</div>" +
+          '<div class="duas"><div><label>Dívida</label><select class="lg-div">' + opcoesDiv(e.dividaId) + "</select></div><div><label>Nº da parcela</label><input class=\"lg-num\" type=\"number\" min=\"1\" max=\"200\" value=\"" + (e.numero || "") + "\"></div></div>" +
+          '<div class="duas"><div><label>Valor (R$)</label><input class="lg-val" inputmode="decimal" value="' + campo(g.valor) + '"></div><div><label>Vencimento</label><input type="date" class="lg-venc" value="' + esc(g.vencimento || "") + '"></div></div>' +
+          '<div class="peq mudo">' + (e.como ? "Dívida achada " + esc(e.como) + ". " : "Não achei a dívida: será criada uma nova (ou escolha uma). ") + (e.existente ? "Já existe a parcela " + e.existente.numero + " em aberto nessa dívida: ela será atualizada com esta guia." : "") + "</div></div>";
+      }).join("");
+      $$("[data-e]", el).forEach(function (cx) {
+        var e = ents[Number(cx.dataset.e)];
+        $(".lg-div", cx).onchange = function () { e.dividaId = this.value || null; e.como = null; e.numero = e.dividaId ? (e.g.parcela || proximoNumero(e.dividaId)) : (e.g.parcela || 1); achar(e); desenhar(); };
+        $(".lg-num", cx).onchange = function () { e.numero = parseInt(this.value, 10) || null; achar(e); desenhar(); };
+        $(".lg-val", cx).onchange = function () { e.g.valor = lerValor(this.value); };
+        $(".lg-venc", cx).onchange = function () { e.g.vencimento = this.value || null; };
+      });
+      var n = ents.filter(function (e) { return !e.erro && !e.salvo && !e.repetida; }).length; $("#lg-ok", el).disabled = !n; $("#lg-ok", el).textContent = n ? "💾 Cadastrar " + n + " guia(s)" : "💾 Cadastrar";
+    }
+    function achar(e) { e.existente = e.dividaId && e.numero ? parcelasDe(e.dividaId).filter(function (p) { return p.numero === e.numero && !p.pago_em; })[0] || null : null; }
+    function processar(f) {
+      var e = { nome: f.name || "guia" };
+      return hashArquivo(f).then(function (h) {
+        if (h && hashes[h]) { e.repetida = "este arquivo já está na lista."; ents.push(e); return; } if (h) hashes[h] = true;
+        return window.AGE_PAG.lerArquivo(f).then(function (r) {
+          var g = lerGuia(r.texto); e.g = g;
+          if (!g.documento && g.valor === null) { e.erro = "Não consegui ler esta guia (sem nº de documento nem valor). Tente o PDF original."; ents.push(e); return; }
+          var rep = g.documento ? (P.S.impParcelas || []).filter(function (p) { return soDig(p.documento) === soDig(g.documento); })[0] : null;
+          var ach = dividaDaGuia(g); if (ach) { e.dividaId = ach.d.id; e.como = ach.como; }
+          // guia que já está cadastrada (mesmo nº) não vira duplicada: só confere/atualiza
+          if (rep && rep.id) { e.dividaId = rep.parcelamento_id; e.numero = rep.numero; e.como = "pela guia já cadastrada"; }
+          else e.numero = g.parcela || (e.dividaId ? null : 1);
+          if (e.dividaId && !e.numero) {   // sem nº de parcela na guia: procura a parcela em aberto com o mesmo valor e vencimento; senão será a próxima
+            var igual = parcelasDe(e.dividaId).filter(function (p) { return !p.pago_em && g.valor !== null && Math.abs(Number(p.valor) - g.valor) < 0.005 && (!g.vencimento || p.vencimento === g.vencimento); })[0];
+            e.numero = igual ? igual.numero : proximoNumero(e.dividaId);
+          }
+          achar(e);
+          if (rep && rep.pago_em) { e.repetida = "a guia " + g.documento + " já foi cadastrada e está paga (parcela " + rep.numero + ")."; }
+          ents.push(e);
+        }, function (er) { e.erro = A.msgErro(er); ents.push(e); });
+      });
+    }
+    $("#lg-esc", el).onclick = function () { $("#lg-arq", el).value = ""; $("#lg-arq", el).click(); };
+    $("#lg-arq", el).onchange = function () {
+      var fs = Array.prototype.slice.call(this.files || []).slice(0, 20); if (!fs.length) return;
+      fs.reduce(function (pr, f, i) { return pr.then(function () { $("#lg-st", el).textContent = "📖 Lendo a guia " + (i + 1) + " de " + fs.length + "..."; return processar(f); }); }, Promise.resolve())
+        .then(function () { $("#lg-st", el).textContent = "Confira e toque em Cadastrar."; desenhar(); });
+    };
+    $("#lg-fechar", el).onclick = function () { j.fechar(); };
+    $("#lg-ok", el).onclick = function () {
+      var b = this, msg = $("#lg-msg", el); msg.textContent = "";
+      var alvo = ents.filter(function (e) { return !e.erro && !e.salvo && !e.repetida; });
+      for (var k = 0; k < alvo.length; k++) {
+        var g = alvo[k].g; if (!(g.valor > 0) || !g.vencimento) { msg.textContent = "Preencha o valor e o vencimento de “" + alvo[k].nome + "”."; return; }
+        if (!alvo[k].numero) { msg.textContent = "Informe o nº da parcela de “" + alvo[k].nome + "”."; return; }
+      }
+      A.ocupado(b, true, "Cadastrando...");
+      alvo.reduce(function (pr, e) {
+        return pr.then(function () {
+          var g = e.g, num = e.numero;
+          function daParcela(did) {
+            var atual = parcelasDe(did).filter(function (p) { return p.numero === num; })[0];
+            var dados = { vencimento: g.vencimento, valor: g.valor, documento: g.documento || null };
+            if (atual) {
+              if (atual.pago_em) throw new Error("A parcela " + num + " já está paga. Escolha outro nº.");
+              return gravarParcela(atual.id, dados).then(function () { e.resultado = "parcela " + num + " atualizada (" + dinheiro(g.valor) + ", vence " + A.dataSimples(g.vencimento) + ")."; });
+            }
+            return P.q(P.sb.from("impostos_parcelas").insert(Object.assign({ parcelamento_id: did, numero: num }, dados)).select().single()).then(function (n) { P.S.impParcelas.push(n); e.resultado = "parcela " + num + " criada (" + dinheiro(g.valor) + ", vence " + A.dataSimples(g.vencimento) + ")."; });
+          }
+          if (e.dividaId) return daParcela(e.dividaId);
+          var nova = { nome: nomeNova(g), orgao: g.sispar ? "PGFN" : "Receita Federal", numero: g.sispar ? "PGFN-SISPAR " + g.sispar : g.parcelamento ? "DAS nº " + g.parcelamento : g.darfRef || null, tipo: g.parcelas || g.parcelamento || g.sispar ? "parcelamento" : "avulsa", valor_total: g.parcelas ? 0 : g.valor, n_parcelas: g.parcelas || (g.parcelamento || g.sispar ? null : 1) };
+          return P.q(P.sb.from("impostos_parcelamentos").insert(nova).select().single()).then(function (n) { P.trocar(P.S.impDividas, n); e.dividaId = n.id; return daParcela(n.id).then(function () { e.resultado = "nova dívida “" + n.nome + "”, " + e.resultado; }); });
+        }).catch(function (er) { e.erro = A.msgErro(er) + (/documento|column|schema cache/i.test(A.msgErro(er)) ? " — rode de novo o impostos.sql no Supabase." : ""); });
+      }, Promise.resolve()).then(function () { A.ocupado(b, false); alvo.forEach(function (e) { if (!e.erro) e.salvo = true; }); var ok = ents.filter(function (e) { return e.salvo; }).length; $("#lg-st", el).textContent = ok ? "✅ " + ok + " guia(s) cadastrada(s)." : ""; desenhar(); });
+    };
   }
 
   // ---------- imposto de veículo (IPVA, licenciamento, seguro obrigatório, multa...) ----------
