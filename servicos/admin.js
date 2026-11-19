@@ -35,6 +35,7 @@
   // ✍ corretor de português (acentos, erros comuns, espaços e pontuação): corretor.js. Corrige ao sair dos campos de texto livre
   function corrigirTexto(t) { return window.AGE_CORR.corrigir(t); }
   window.AGE_CORR.automatico("#eo2-obs, #eo2-pag, #eo2-prazo, [id^='ns-'][id$='-desc'], #ns-obs, #eo-obs, #es-desc, #dv-leg, #os-obs, #md-obs, #kc-obs, #kc-obj, #lc-obj, #lc-obs, .pp-tit, .pp-intro, .pp-esc, .pp-cond, .it-desc, #pa-obs, #en-msg", A.avisar);
+  window.AGE_CORR.global(A.avisar);   // correção automática em todos os campos de texto do app
   // 🔍 laudo técnico do orçamento (vistoria e solução): modelo pronto + os que o dono salvar
   var MODELOS_LAUDO = [{
     id: "padrao-rede-chuveiro", padrao: true, titulo: "Rede principal e chuveiro com cabo inadequado",
