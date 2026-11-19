@@ -42,6 +42,7 @@
     eletronica: "eletrônica", eletronicas: "eletrônicas", eletronicos: "eletrônicos", termico: "térmico", termica: "térmica", magnetico: "magnético", magnetica: "magnética",
     aluminio: "alumínio", aco: "aço", plastico: "plástico", plastica: "plástica", analogico: "analógico", telefonico: "telefônico", especifico: "específico", especifica: "específica",
     economico: "econômico", economica: "econômica", publico: "público", publica: "pública", mecanicas: "mecânicas", hidraulicas: "hidráulicas", tecnicos: "técnicos", tecnicas: "técnicas",
+    video: "vídeo", videos: "vídeos", audio: "áudio", ramal: "ramal", ramais: "ramais", extencao: "extensão", extenção: "extensão", extensoes: "extensões",
     nivel: "nível", niveis: "níveis", acao: "ação", acoes: "ações", corretiva: "corretiva", visita: "visita", vistoria: "vistoria", fechadura: "fechadura", porteiro: "porteiro", visor: "visor", botoeira: "botoeira"
   };
   var DIC = {};
@@ -51,6 +52,8 @@
 
   // regras gerais (só para palavras com 4 ou mais letras, para não mexer em siglas)
   var REGRAS = [
+    // letra dobrada depois de consoante: extenssão, tenssão, persssão -> extensão, tensão
+    [/^([a-zà-ÿ]*[bcdfghjklmnpqrtvwxz])ss(ão|ões)$/, "$1s$2"], [/^([a-zà-ÿ]*[bcdfghjklmnpqrtvwxz])ssao$/, "$1são"], [/^([a-zà-ÿ]*[bcdfghjklmnpqrtvwxz])ssoes$/, "$1sões"],
     [/^([a-zà-ÿ]{2,})coes$/, "$1ções"], [/^([a-zà-ÿ]{2,})cao$/, "$1ção"], [/^([a-zà-ÿ]{2,})soes$/, "$1sões"], [/^([a-zà-ÿ]{2,})sao$/, "$1são"],
     [/^([a-zà-ÿ]{2,})goes$/, "$1gões"], [/^([a-zà-ÿ]{2,})toes$/, "$1tões"], [/^([a-zà-ÿ]{2,})ao$/, "$1ão"], [/^([a-zà-ÿ]{2,})oes$/, "$1ões"],
     [/^([a-zà-ÿ]{3,})encia(s?)$/, "$1ência$2"], [/^([a-zà-ÿ]{3,})ancia(s?)$/, "$1ância$2"],
@@ -132,7 +135,34 @@
       if (aviso && r.feitas.length) aviso("✍ Corrigido: " + r.feitas.slice(0, 6).join(", ") + (r.feitas.length > 6 ? " e mais " + (r.feitas.length - 6) : ""), "ok");
     });
   }
-  var API = { corrigir: corrigir, ligar: ligar, automatico: automatico, dicionario: DIC };
+  // campos que nunca devem ser mexidos: nomes de pessoas, documentos, e-mail, senha, números, códigos, buscas
+  function excluido(t) {
+    if (t.hasAttribute("data-sem-correcao")) return true;
+    var tag = t.tagName;
+    if (tag === "INPUT" && (t.type || "text").toLowerCase() !== "text") return true;
+    if (/numeric|decimal|tel|email|url|search/i.test(t.getAttribute("inputmode") || "")) return true;
+    if (/email|tel|username|password|name|one-time/i.test(t.getAttribute("autocomplete") || "")) return true;
+    var id = ((t.id || "") + " " + (t.name || "")).toLowerCase();
+    return /(^|[^a-z])(nome|cnpj|cpf|rg|ie|im|email|mail|senha|pix|chave|cod|codigo|cep|link|url|login|usuario|token|whats|fone|tel|placa|renavam|busca|pesq|filtro|valor|qtd|data)([^a-z]|$)/.test(id);
+  }
+  // liga a correção em TODOS os campos de texto do app (inclusive os desenhados depois), menos os de excluido()
+  function global(aviso) {
+    if (typeof document === "undefined") return;
+    document.addEventListener("focusin", function (ev) {
+      var t = ev.target;
+      if (t && t.matches && t.matches("input, textarea") && !excluido(t)) { t.setAttribute("spellcheck", "true"); t.setAttribute("lang", "pt-BR"); }
+    });
+    document.addEventListener("focusout", function (ev) {
+      var t = ev.target;
+      if (!t || !t.matches || !t.matches("input, textarea") || t.readOnly || t.disabled || excluido(t)) return;
+      var r = corrigir(t.value, { maiuscula: true });
+      if (r.texto === t.value) return;
+      t.value = r.texto;
+      t.dispatchEvent(new Event("input", { bubbles: true }));
+      if (aviso && r.feitas.length) aviso("✍ Corrigido: " + r.feitas.slice(0, 6).join(", ") + (r.feitas.length > 6 ? " e mais " + (r.feitas.length - 6) : ""), "ok");
+    });
+  }
+  var API = { global: global, excluido: excluido, corrigir: corrigir, ligar: ligar, automatico: automatico, dicionario: DIC };
   if (typeof window !== "undefined") window.AGE_CORR = API;
   if (typeof module !== "undefined" && module.exports) module.exports = API;
 })();
