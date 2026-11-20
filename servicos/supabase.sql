@@ -910,12 +910,33 @@ revoke execute on function public.lembrete_marcar(text, uuid[]) from public;
 grant execute on function public.lembretes_impostos(text) to anon, authenticated;
 grant execute on function public.lembrete_marcar(text, uuid[]) to anon, authenticated;
 
+-- 🧰 ferramentas: lista geral (catálogo) e o que foi entregue a cada funcionário (com termo para imprimir e assinar)
+create table if not exists public.ferramentas_catalogo (
+  id        uuid primary key default gen_random_uuid(),
+  nome      text not null check (length(trim(nome)) between 1 and 160),
+  categoria text check (categoria is null or length(categoria) <= 60),
+  criado_em timestamptz not null default now()
+);
+create table if not exists public.ferramentas_entregas (
+  id             uuid primary key default gen_random_uuid(),
+  funcionario_id uuid not null references public.funcionarios (id) on delete cascade,
+  nome           text not null default '' check (length(nome) <= 160),
+  qtd            integer not null default 1 check (qtd between 0 and 9999),
+  serie          text check (serie is null or length(serie) <= 60),
+  estado         text check (estado is null or length(estado) <= 30),
+  entregue_em    date,
+  devolvido_em   date,
+  obs            text check (obs is null or length(obs) <= 500),
+  criado_em      timestamptz not null default now()
+);
+create index if not exists ferramentas_entregas_func_idx on public.ferramentas_entregas (funcionario_id);
+
 do $$
 declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha', 'impostos_parcelamentos', 'impostos_parcelas', 'lembrete_config', 'parceiro_servicos', 'parceiro_pagamentos', 'impostos_comprovantes'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha', 'impostos_parcelamentos', 'impostos_parcelas', 'lembrete_config', 'parceiro_servicos', 'parceiro_pagamentos', 'impostos_comprovantes', 'ferramentas_catalogo', 'ferramentas_entregas'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
