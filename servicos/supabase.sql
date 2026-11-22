@@ -947,6 +947,38 @@ create table if not exists public.agenda_eventos (
 );
 create index if not exists agenda_eventos_data_idx on public.agenda_eventos (data);
 
+-- 🔔 aviso dos compromissos no Telegram (mesma chave do lembrete de impostos; rotina do GitHub a cada 30 minutos)
+alter table public.agenda_eventos add column if not exists avisar_min integer check (avisar_min is null or avisar_min between 0 and 10080);   -- minutos antes do horário; vazio = não avisar
+alter table public.agenda_eventos add column if not exists lembrete_enviado timestamptz;
+create or replace function public.lembretes_agenda(p_chave text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare agora timestamp := (now() at time zone 'America/Sao_Paulo'); cfg public.lembrete_config; r jsonb;
+begin
+  select * into cfg from public.lembrete_config where id;
+  if cfg.chave is null or p_chave is distinct from cfg.chave then raise exception 'Chave invalida.'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', e.id, 'titulo', e.titulo, 'tipo', e.tipo, 'data', e.data, 'hora', to_char(e.hora_ini, 'HH24:MI'),
+           'onde', e.onde, 'obs', e.obs, 'minutos', round(extract(epoch from ((e.data + coalesce(e.hora_ini, time '08:00')) - agora)) / 60)) order by e.data, e.hora_ini), '[]'::jsonb) into r
+    from public.agenda_eventos e
+   where not e.feito and e.avisar_min is not null and e.lembrete_enviado is null
+     and agora >= (e.data + coalesce(e.hora_ini, time '08:00')) - make_interval(mins => e.avisar_min)
+     and agora <= (e.data + coalesce(e.hora_ini, time '08:00')) + interval '3 hours';
+  return r;
+end $$;
+create or replace function public.lembrete_agenda_marcar(p_chave text, p_ids uuid[]) returns integer
+language plpgsql security definer set search_path = public as $$
+declare cfg public.lembrete_config; n integer;
+begin
+  select * into cfg from public.lembrete_config where id;
+  if cfg.chave is null or p_chave is distinct from cfg.chave then raise exception 'Chave invalida.'; end if;
+  update public.agenda_eventos set lembrete_enviado = now() where id = any (p_ids);
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function public.lembretes_agenda(text) from public;
+revoke execute on function public.lembrete_agenda_marcar(text, uuid[]) from public;
+grant execute on function public.lembretes_agenda(text) to anon, authenticated;
+grant execute on function public.lembrete_agenda_marcar(text, uuid[]) to anon, authenticated;
+
 do $$
 declare t text;
 begin

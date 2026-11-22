@@ -5,7 +5,8 @@
 (function () {
   "use strict";
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
-  var P = null, ev = [], semTabela = false, mes = null, sel = null, raiz = null, busca = null;
+  var P = null, ev = [], semTabela = false, mes = null, sel = null, raiz = null, busca = null, vista = "mes";
+  var AVISOS = [["", "Não avisar"], ["0", "Na hora"], ["30", "30 min antes"], ["60", "1 hora antes"], ["120", "2 horas antes"], ["1440", "1 dia antes"]];
   var TIPOS = { visita: ["🏠", "Visita"], reuniao: ["🤝", "Reunião"], servico: ["🔧", "Serviço"], prazo: ["⏰", "Prazo"], lembrete: ["🔔", "Lembrete"], outro: ["📌", "Outro"] };
   var MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
   var DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"], DIAS_L = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
@@ -63,7 +64,7 @@
   }
   function itensDo(dIso) {
     var out = [];
-    ev.forEach(function (e) { if (e.data === dIso) out.push({ src: "ev", e: e, hora: String(e.hora_ini || "").slice(0, 5), fim: String(e.hora_fim || "").slice(0, 5), titulo: e.titulo, tipo: e.tipo, onde: e.onde, feito: e.feito }); });
+    ev.forEach(function (e) { if (e.data === dIso) out.push({ src: "ev", e: e, hora: String(e.hora_ini || "").slice(0, 5), fim: String(e.hora_fim || "").slice(0, 5), titulo: e.titulo, tipo: e.tipo, onde: e.onde, feito: e.feito, aviso: e.avisar_min }); });
     ((P.S.serv) || []).forEach(function (s) {
       if (s.data_prevista === dIso && s.status !== "concluido" && s.status !== "cancelado") {
         var o = P.porId(P.S.obras, s.obra_id);
@@ -115,30 +116,61 @@
     var quando = x.di === iso(new Date()) ? "Hoje" : DIAS[x.d.getDay()] + ", " + p2(x.d.getDate()) + "/" + p2(x.d.getMonth() + 1);
     return "Próximo: <b>" + esc(TIPOS[x.it.tipo] ? TIPOS[x.it.tipo][0] : "📌") + " " + esc(x.it.titulo) + "</b> · " + esc(quando) + (x.it.hora ? " às " + esc(x.it.hora) : "");
   }
+  function semanaDe(di) { var d = deIso(di); return new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()); }
+  function rotuloSemana(a) {
+    var b = new Date(a.getFullYear(), a.getMonth(), a.getDate() + 6), m1 = MESES[a.getMonth()].slice(0, 3).toLowerCase(), m2 = MESES[b.getMonth()].slice(0, 3).toLowerCase();
+    return a.getDate() + (a.getMonth() === b.getMonth() ? "" : " " + m1) + " – " + b.getDate() + " " + m2 + " " + b.getFullYear();
+  }
   function desenhar() {
     if (!raiz) return;
-    var y = mes.getFullYear(), m = mes.getMonth(), hoje = iso(new Date()), ini = new Date(y, m, 1 - new Date(y, m, 1).getDay()), fer = {};
+    var y = mes.getFullYear(), m = mes.getMonth(), hoje = iso(new Date()), ini = new Date(y, m, 1 - new Date(y, m, 1).getDay()), fer = {}, dsel = deIso(sel), sem = vista === "sem";
     [y - 1, y, y + 1].forEach(function (a) { var f = feriados(a); Object.keys(f).forEach(function (k) { fer[k] = f[k]; }); });
-    var cel = "";
-    for (var i = 0; i < 42; i++) {
-      var d = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + i), di = iso(d), L = itensDo(di), dots = L.slice(0, 4).map(function (x) { return '<i class="pt t-' + esc(x.tipo) + '"></i>'; }).join("");
-      cel += '<button class="ag-dia' + (d.getMonth() !== m ? " fora" : "") + (di === hoje ? " hoje" : "") + (di === sel ? " sel" : "") + (fer[di] ? " fer" : "") + (d.getDay() === 0 || d.getDay() === 6 ? " fds" : "") + '" data-d="' + di + '" title="' + esc(fer[di] || "") + '"><span class="n">' + d.getDate() + "</span><span class=\"pts\">" + dots + (L.length > 4 ? '<em>+' + (L.length - 4) + "</em>" : "") + "</span></button>";
+    var corpo = "", rotulo = MESES[m] + " " + y;
+    if (!sem) {
+      var cel = "";
+      for (var i = 0; i < 42; i++) {
+        var d = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + i), di = iso(d), L = itensDo(di), dots = L.slice(0, 4).map(function (x) { return '<i class="pt t-' + esc(x.tipo) + '"></i>'; }).join("");
+        cel += '<button class="ag-dia' + (d.getMonth() !== m ? " fora" : "") + (di === hoje ? " hoje" : "") + (di === sel ? " sel" : "") + (fer[di] ? " fer" : "") + (d.getDay() === 0 || d.getDay() === 6 ? " fds" : "") + '" data-d="' + di + '" title="' + esc(fer[di] || "") + '"><span class="n">' + d.getDate() + "</span><span class=\"pts\">" + dots + (L.length > 4 ? '<em>+' + (L.length - 4) + "</em>" : "") + "</span></button>";
+      }
+      corpo = '<div class="ag-sem">' + DIAS.map(function (x) { return "<div>" + x + "</div>"; }).join("") + '</div><div class="ag-grade" id="ag-grade">' + cel + "</div>";
+    } else {
+      var a0 = semanaDe(sel), cols = "";
+      rotulo = rotuloSemana(a0);
+      for (var k = 0; k < 7; k++) {
+        var dk = new Date(a0.getFullYear(), a0.getMonth(), a0.getDate() + k), dik = iso(dk), Lk = itensDo(dik);
+        cols += '<div class="ag-col' + (dik === hoje ? " hoje" : "") + (fer[dik] ? " fer" : "") + (dik === sel ? " sel" : "") + '"><div class="ag-ch"><span><b>' + DIAS[dk.getDay()] + '</b> <span class="n">' + dk.getDate() + "</span></span>" +
+          '<button class="peq" data-novo="' + dik + '"' + (semTabela ? " disabled" : "") + ' aria-label="Novo compromisso neste dia">+</button></div>' + (fer[dik] ? '<div class="ag-fer">🎌 ' + esc(fer[dik]) + "</div>" : "") +
+          (Lk.length ? Lk.map(function (x) {
+            var at = x.src === "ev" ? ' data-ed="' + esc(x.e.id) + '"' : ' data-abrir="' + (x.src === "serv" ? "s:" + esc(x.s.id) : "i") + '"';
+            return '<div class="ag-ci t-' + esc(x.tipo) + (x.feito ? " feito" : "") + '"' + at + ' role="button" tabindex="0"><span class="h">' + (x.hora ? esc(x.hora) : "dia todo") + "</span> " + (TIPOS[x.tipo] || TIPOS.outro)[0] + " " + esc(x.titulo) + (x.aviso !== null && x.aviso !== undefined && x.src === "ev" ? " 🔔" : "") + "</div>";
+          }).join("") : '<div class="ag-vz">—</div>') + "</div>";
+      }
+      corpo = '<div class="ag-semana" id="ag-grade">' + cols + "</div>";
     }
-    var dsel = deIso(sel);
     raiz.innerHTML = '<div class="cab-secao"><h2>📅 Agenda</h2><span><button class="prim" id="ag-novo"' + (semTabela ? " disabled" : "") + ">+ Novo compromisso</button></span></div>" +
       (semTabela ? '<div class="aviso">Para criar compromissos, rode no Supabase o <b>agenda.sql</b> (tabela <b>agenda_eventos</b>) e atualize o app. Enquanto isso a agenda já mostra os serviços com data prevista e os vencimentos de impostos.</div>' : "") +
       '<div class="ag"><div class="ag-hud"><div><div class="ag-rel" data-rel="hora"></div><div class="ag-data" data-rel="data"></div></div><div class="ag-prox" id="ag-prox">' + htmlProximo() + "</div></div>" +
-      '<div class="ag-nav"><button data-nav="-1" aria-label="Mês anterior">‹</button><div class="ag-mes">' + MESES[m] + " " + y + '</div><button data-nav="1" aria-label="Próximo mês">›</button><button data-nav="0" class="ag-hj">Hoje</button></div>' +
-      '<div class="ag-sem">' + DIAS.map(function (x) { return "<div>" + x + "</div>"; }).join("") + '</div><div class="ag-grade" id="ag-grade">' + cel + "</div>" +
-      '<div class="ag-leg">' + Object.keys(TIPOS).map(function (k) { return '<span><i class="pt t-' + k + '"></i>' + TIPOS[k][1] + "</span>"; }).join("") + "</div></div>" +
-      '<div class="cartao"><div class="linha" style="justify-content:space-between"><h3 style="margin:0">' + esc(dataLonga(dsel)) + "</h3><button class=\"peq\" id=\"ag-novo2\"" + (semTabela ? " disabled" : "") + ">+ Neste dia</button></div>" +
-      (fer[sel] ? '<p class="peq" style="color:var(--atencao,#b7791f);margin:6px 0 0">🎌 ' + esc(fer[sel]) + "</p>" : "") + '<div id="ag-dia-lista">' + htmlDia(sel) + "</div></div>";
+      '<div class="ag-vistas"><button data-vista="mes" class="' + (!sem ? "on" : "") + '">Mês</button><button data-vista="sem" class="' + (sem ? "on" : "") + '">Semana</button></div>' +
+      '<div class="ag-nav"><button data-nav="-1" aria-label="' + (sem ? "Semana anterior" : "Mês anterior") + '">‹</button><div class="ag-mes">' + esc(rotulo) + '</div><button data-nav="1" aria-label="' + (sem ? "Próxima semana" : "Próximo mês") + '">›</button><button data-nav="0" class="ag-hj">Hoje</button></div>' +
+      corpo + '<div class="ag-leg">' + Object.keys(TIPOS).map(function (k) { return '<span><i class="pt t-' + k + '"></i>' + TIPOS[k][1] + "</span>"; }).join("") + "<span>🔔 aviso no Telegram</span></div></div>" +
+      (sem ? "" : '<div class="cartao"><div class="linha" style="justify-content:space-between"><h3 style="margin:0">' + esc(dataLonga(dsel)) + "</h3><button class=\"peq\" id=\"ag-novo2\"" + (semTabela ? " disabled" : "") + ">+ Neste dia</button></div>" +
+        (fer[sel] ? '<p class="peq" style="color:var(--atencao,#b7791f);margin:6px 0 0">🎌 ' + esc(fer[sel]) + "</p>" : "") + '<div id="ag-dia-lista">' + htmlDia(sel) + "</div></div>");
     relogio();
     $$("[data-d]", raiz).forEach(function (b) { b.onclick = function () { sel = b.dataset.d; var d = deIso(sel); mes = new Date(d.getFullYear(), d.getMonth(), 1); desenhar(); }; });
+    $$("[data-vista]", raiz).forEach(function (b) { b.onclick = function () { vista = b.dataset.vista; desenhar(); }; });
     $$("[data-nav]", raiz).forEach(function (b) {
-      b.onclick = function () { var n = Number(b.dataset.nav), h = new Date(); if (n === 0) { mes = new Date(h.getFullYear(), h.getMonth(), 1); sel = iso(h); } else mes = new Date(mes.getFullYear(), mes.getMonth() + n, 1); desenhar(); };
+      b.onclick = function () {
+        var n = Number(b.dataset.nav), h = new Date();
+        if (n === 0) { mes = new Date(h.getFullYear(), h.getMonth(), 1); sel = iso(h); }
+        else if (vista === "sem") { var d = deIso(sel); sel = iso(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * n)); var d2 = deIso(sel); mes = new Date(d2.getFullYear(), d2.getMonth(), 1); }
+        else mes = new Date(mes.getFullYear(), mes.getMonth() + n, 1);
+        desenhar();
+      };
     });
-    $("#ag-novo", raiz).onclick = function () { editar(null, sel); }; $("#ag-novo2", raiz).onclick = function () { editar(null, sel); };
+    $("#ag-novo", raiz).onclick = function () { editar(null, sel); };
+    if ($("#ag-novo2", raiz)) $("#ag-novo2", raiz).onclick = function () { editar(null, sel); };
+    $$("[data-novo]", raiz).forEach(function (b) { b.onclick = function () { editar(null, b.dataset.novo); }; });
+    $$(".ag-ci", raiz).forEach(function (el) { el.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } }; });
     ligarDia();
   }
   function htmlDia(di) {
@@ -164,11 +196,12 @@
     $$("[data-abrir]", raiz).forEach(function (b) { b.onclick = function () { var v = b.dataset.abrir; if (v.charAt(0) === "s") P.abrirServico(v.slice(2)); else location.hash = "#impostos"; }; });
   }
   function editar(e, dia) {
-    var novo = !e; e = e || { tipo: "visita", data: dia || sel, hora_ini: "", hora_fim: "", titulo: "", onde: "", obs: "", funcionario_id: "" };
+    var novo = !e; e = e || { tipo: "visita", data: dia || sel, hora_ini: "", hora_fim: "", titulo: "", onde: "", obs: "", funcionario_id: "", avisar_min: 60 };
     var j = A.janela('<div class="ag-f"><label>O quê<input class="a-tit" maxlength="200" value="' + esc(e.titulo) + '" placeholder="Ex.: Visita técnica com as lojas de tinta"></label>' +
       '<div class="linha" style="gap:8px"><label style="flex:1;min-width:140px">Tipo<select class="a-tipo">' + Object.keys(TIPOS).map(function (k) { return '<option value="' + k + '"' + (k === e.tipo ? " selected" : "") + ">" + TIPOS[k][0] + " " + TIPOS[k][1] + "</option>"; }).join("") + '</select></label>' +
       '<label style="flex:1;min-width:150px">Dia<input class="a-data" type="date" value="' + esc(e.data) + '"></label>' +
       '<label style="width:120px">Início<input class="a-ini" type="time" value="' + esc(String(e.hora_ini || "").slice(0, 5)) + '"></label><label style="width:120px">Fim<input class="a-fim" type="time" value="' + esc(String(e.hora_fim || "").slice(0, 5)) + '"></label></div>' +
+      '<label>🔔 Avisar no Telegram<select class="a-av">' + AVISOS.map(function (x) { return '<option value="' + x[0] + '"' + (String(e.avisar_min === null || e.avisar_min === undefined ? "" : e.avisar_min) === x[0] ? " selected" : "") + ">" + x[1] + "</option>"; }).join("") + '</select><span class="peq mudo">Sem horário, o aviso vale para as 8h do dia. Os avisos chegam em até 30 minutos do horário combinado.</span></label>' +
       '<label>Onde<input class="a-onde" maxlength="200" value="' + esc(e.onde || "") + '" placeholder="Endereço ou local"></label>' +
       '<label>Responsável (opcional)<select class="a-func"><option value="">—</option>' + ((P.S.func) || []).filter(function (f) { return f.ativo !== false; }).map(function (f) { return '<option value="' + esc(f.id) + '"' + (f.id === e.funcionario_id ? " selected" : "") + ">" + esc(f.nome) + "</option>"; }).join("") + "</select></label>" +
       '<label>Observação<textarea class="a-obs" rows="3" maxlength="2000">' + esc(e.obs || "") + '</textarea></label></div>' +
@@ -176,7 +209,7 @@
     $("#a-x", j.el).onclick = function () { j.fechar(); };
     $("#a-ok", j.el).onclick = function () {
       var v = { titulo: $(".a-tit", j.el).value.trim(), tipo: $(".a-tipo", j.el).value, data: $(".a-data", j.el).value, hora_ini: $(".a-ini", j.el).value || null, hora_fim: $(".a-fim", j.el).value || null,
-        onde: $(".a-onde", j.el).value.trim() || null, funcionario_id: $(".a-func", j.el).value || null, obs: $(".a-obs", j.el).value.trim() || null };
+        avisar_min: $(".a-av", j.el).value === "" ? null : Number($(".a-av", j.el).value), lembrete_enviado: null, onde: $(".a-onde", j.el).value.trim() || null, funcionario_id: $(".a-func", j.el).value || null, obs: $(".a-obs", j.el).value.trim() || null };
       if (!v.titulo) { A.avisar("Escreva o que é o compromisso.", "erro"); return; }
       if (!v.data) { A.avisar("Escolha o dia.", "erro"); return; }
       if (v.hora_ini && v.hora_fim && v.hora_fim < v.hora_ini) { A.avisar("O fim não pode ser antes do início.", "erro"); return; }
@@ -184,7 +217,7 @@
       run(op).then(function (r) {
         if (novo) ev.push((r.data || [v])[0]); else Object.keys(v).forEach(function (k) { e[k] = v[k]; });
         sel = v.data; var d = deIso(sel); mes = new Date(d.getFullYear(), d.getMonth(), 1); j.fechar(); desenhar(); A.avisar("Compromisso salvo", "ok");
-      }).catch(function (er) { A.avisar(A.msgErro ? A.msgErro(er) : er.message, "erro"); });
+      }).catch(function (er) { A.avisar(/avisar_min|lembrete_enviado/.test(String(er && er.message)) ? "Rode o agenda.sql atualizado no Supabase (novas colunas do aviso)." : (A.msgErro ? A.msgErro(er) : er.message), "erro"); });
     };
     if (!novo) $("#a-del", j.el).onclick = function () {
       if (!A.confirmar("Apagar “" + e.titulo + "”?")) return;
