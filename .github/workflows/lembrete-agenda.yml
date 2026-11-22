@@ -1,0 +1,22 @@
+name: Lembrete dos compromissos da agenda (Telegram)
+
+# A cada 30 minutos, das 06h às 22h de Brasília (09:00 a 01:00 UTC). Também dá para rodar na hora: Actions > este fluxo > Run workflow.
+on:
+  schedule:
+    - cron: "*/30 9-23,0-1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lembrar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Avisar no Telegram os compromissos que já estão na hora
+        run: node scripts/lembrete-agenda.mjs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LEMBRETE_CHAVE: ${{ secrets.LEMBRETE_CHAVE }}
