@@ -44,6 +44,7 @@
   }
   function faixaTxt(l) { return l.min !== null && l.max !== null && l.min !== undefined ? "tabela: " + din(l.min) + " · média " + (l.media !== null ? din(l.media) : "—") + " · " + din(l.max) : (l.media !== null && l.media !== undefined ? "tabela: média " + din(l.media) : "sem preço na tabela"); }
   function aviso(l) {
+    if (!(l.valor > 0)) return '<span class="peq" style="color:var(--perigo,#c0392b)">coloque o preço</span>';
     if (l.min !== null && l.min !== undefined && l.valor && l.valor < l.min) return '<span class="peq" style="color:var(--atencao,#b7791f)">abaixo do mínimo da tabela</span>';
     if (l.max !== null && l.max !== undefined && l.valor && l.valor > l.max) return '<span class="peq" style="color:var(--atencao,#b7791f)">acima do máximo da tabela</span>';
     return "";
@@ -65,7 +66,8 @@
       '<div><label for="cl-preco">Seu preço por unidade (R$)</label><input id="cl-preco" inputmode="decimal" placeholder="Ex.: 12,98"></div></div>' +
       '<div id="cl-ref" class="peq mudo" style="margin-top:6px"></div><input type="range" id="cl-slide" style="width:100%;display:none" aria-label="Ajustar o preço entre o mínimo e o máximo da tabela">' +
       '<div class="acoes"><button class="peq" id="cl-min">Mínimo</button><button class="peq" id="cl-med">Média</button><button class="peq" id="cl-max">Máximo</button>' +
-      '<span id="cl-prev" style="margin-left:auto;font-weight:700"></span><button class="prim" id="cl-add">➕ Adicionar à lista</button></div></div>' +
+      '<span id="cl-prev" style="margin-left:auto;font-weight:700"></span><button class="prim" id="cl-add">➕ Adicionar à lista</button></div>' +
+      '<div class="acoes"><button class="peq" id="cl-colar" title="Cole várias metragens de uma vez: o app acha o serviço na tabela de cada linha">📝 Colar lista de metragens</button><button class="peq" id="cl-livre" title="Serviço que não está na tabela (ex.: limpeza do piso)">➕ Item fora da tabela</button></div></div>' +
       '<div id="cl-lista"></div>';
     $$("[data-cat]", c).forEach(function (b) { b.onclick = function () { estado.cat = b.dataset.cat; estado.grupo = ""; estado.busca = ""; estado.sel = ""; guardar(); desenhar(c); }; });
     $("#cl-busca", c).oninput = function () { estado.busca = this.value; opcoes(c); };
@@ -78,6 +80,8 @@
     $("#cl-med", c).onclick = function () { var s = achar(estado.cat, estado.sel); if (s && s.valor !== null) fixar(c, s.valor); };
     $("#cl-max", c).onclick = function () { var s = achar(estado.cat, estado.sel); if (s && s.max !== null) fixar(c, s.max); };
     $("#cl-add", c).onclick = function () { adicionar(c); };
+    $("#cl-colar", c).onclick = function () { colar(c); };
+    $("#cl-livre", c).onclick = function () { livre(c); };
     opcoes(c); lista(c);
   }
   function opcoes(c) {
@@ -115,6 +119,75 @@
     guardar(); $("#cl-metr", c).value = ""; lista(c); prever(c); A.avisar("Adicionado à lista", "ok");
   }
 
+
+  // ---- colar várias metragens de uma vez ----
+  // cada linha: "2920 m | Demarcação de vaga de garagem => texto que o cliente vê (opcional)". O app acha o serviço na tabela pelo nome.
+  function tokens(t) { return semAcento(t).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(function (x) { return x.length > 2 && !/^(de|da|do|das|dos|com|para|por|uma|uns|das)$/.test(x); }); }
+  function casar(texto) {
+    var alvo = semAcento(texto), qs = tokens(texto), melhor = null, nota = 0;
+    ["pintura", "eletrica"].forEach(function (cat) {
+      servicos(cat).forEach(function (s) {
+        var d = semAcento(s.descricao), sc;
+        if (d === alvo) sc = 2; else if (!qs.length) sc = 0; else { var dt = tokens(s.descricao); sc = qs.filter(function (q) { return dt.some(function (x) { return x === q || x.indexOf(q) === 0 || q.indexOf(x) === 0; }); }).length / qs.length; if (dt.length > qs.length + 3) sc -= 0.1; }
+        if (sc > nota) { nota = sc; melhor = { s: s, cat: cat }; }
+      });
+    });
+    return nota >= 0.8 ? melhor : null;
+  }
+  function lerLinhas(txt) {
+    var out = [];
+    String(txt || "").split(/\n/).forEach(function (l) {
+      l = l.replace(/^\s*[-•*]\s*/, "").trim(); if (!l) return;
+      var partes = l.split("=>"), esq = partes[0].trim(), desc = (partes[1] || "").trim();
+      var m = esq.match(/^([\d.,]+)\s*(m²|m2|m|ml|un|und|serv|vb|h|dia)?\s*[|:–-]?\s*(.+)$/i);
+      if (!m) { out.push({ erro: l }); return; }
+      var qtd = A.lerNumero(m[1]), un = (m[2] || "").toLowerCase().replace("m2", "m²").replace("ml", "m").replace("und", "un"), nome = m[3].trim();
+      if (!(qtd > 0)) { out.push({ erro: l }); return; }
+      var ach = casar(nome);
+      out.push({ qtd: qtd, un: un, nome: nome, desc: desc, ach: ach });
+    });
+    return out;
+  }
+  function colar(c) {
+    var j = A.janela('<p class="mudo peq" style="margin-top:0">Uma linha por serviço: <b>quantidade, unidade e nome do serviço</b> como está na tabela. Para mudar o texto que o cliente vê, escreva <b>=&gt;</b> e o texto. Serviço que não estiver na tabela entra como item fora da tabela (você coloca o preço).<br>Ex.: <code>2920 m | Demarcação de vaga de garagem =&gt; Repintura das linhas das vagas</code></p>' +
+      '<textarea id="cl-txt" rows="9" style="width:100%" spellcheck="false"></textarea><div id="cl-conf"></div>' +
+      '<div class="acoes"><button id="cl-ver">🔎 Conferir</button><button class="prim" id="cl-ok" disabled>➕ Adicionar tudo à lista</button><button id="cl-x">Cancelar</button></div>', { titulo: "📝 Colar lista de metragens", larga: true, semRascunho: true });
+    var itens = [];
+    function conferir() {
+      itens = lerLinhas($("#cl-txt", j.el).value);
+      $("#cl-conf", j.el).innerHTML = itens.length ? '<div class="peq" style="margin-top:8px">' + itens.map(function (x) {
+        if (x.erro) return '<div style="color:var(--perigo,#c0392b)">❓ Não entendi: ' + esc(x.erro) + "</div>";
+        var s = x.ach && x.ach.s;
+        return "<div>" + (s ? "✅" : "➕") + " <b>" + esc(A.numero(x.qtd, 2)) + " " + esc(s ? s.un : x.un || "un") + "</b> · " + esc(x.desc || x.nome) + " " + (s ? '<span class="mudo">→ tabela: ' + esc(s.descricao) + (s.valor !== null ? " · " + din(s.valor) : " · a definir") + "</span>" : '<span class="mudo">→ fora da tabela (sem preço)</span>') + "</div>";
+      }).join("") + "</div>" : '<p class="mudo peq">Nada para conferir.</p>';
+      $("#cl-ok", j.el).disabled = !itens.some(function (x) { return !x.erro; });
+    }
+    $("#cl-ver", j.el).onclick = conferir; $("#cl-txt", j.el).oninput = function () { $("#cl-ok", j.el).disabled = true; };
+    $("#cl-x", j.el).onclick = function () { j.fechar(); };
+    $("#cl-ok", j.el).onclick = function () {
+      conferir();
+      itens.forEach(function (x) {
+        if (x.erro) return;
+        var s = x.ach && x.ach.s;
+        estado.linhas.push(s ? { desc: x.desc || s.descricao, un: s.un, qtd: x.qtd, valor: s.valor !== null ? s.valor : 0, media: s.valor, min: s.min, max: s.max, cat: x.ach.cat }
+          : { desc: x.desc || x.nome, un: x.un || "un", qtd: x.qtd, valor: 0, media: null, min: null, max: null, cat: estado.cat });
+      });
+      guardar(); j.fechar(); lista(c); A.avisar("Lista adicionada", "ok");
+    };
+  }
+  function livre(c) {
+    var j = A.janela('<label>Descrição<input class="lv-d" maxlength="300" placeholder="Ex.: Limpeza e preparo do piso antes da repintura"></label><div class="duas"><div><label>Quantidade<input class="lv-q" inputmode="decimal" value="1"></label></div><div><label>Unidade<select class="lv-u">' +
+      ["un", "m", "m²", "serv", "vb", "h", "dia"].map(function (u) { return "<option>" + u + "</option>"; }).join("") + '</select></label></div></div><label>Preço por unidade (R$)<input class="lv-v" inputmode="decimal" placeholder="Pode deixar vazio e preencher na lista"></label>' +
+      '<div class="acoes"><button class="prim" id="lv-ok">➕ Adicionar</button><button id="lv-x">Cancelar</button></div>', { titulo: "➕ Item fora da tabela", semRascunho: true });
+    $("#lv-x", j.el).onclick = function () { j.fechar(); };
+    $("#lv-ok", j.el).onclick = function () {
+      var d = $(".lv-d", j.el).value.trim(), q = A.lerNumero($(".lv-q", j.el).value);
+      if (!d || !(q > 0)) { A.avisar("Escreva a descrição e a quantidade.", "erro"); return; }
+      estado.linhas.push({ desc: d, un: $(".lv-u", j.el).value, qtd: q, valor: A.lerNumero($(".lv-v", j.el).value) || 0, media: null, min: null, max: null, cat: estado.cat });
+      guardar(); j.fechar(); lista(c);
+    };
+  }
+
   // ---- lista de serviços ----
   function lista(c) {
     var el = $("#cl-lista", c);
@@ -147,6 +220,7 @@
     $("#cl-orc", c).onclick = function () {
       var ls = estado.linhas.filter(function (l) { return l.qtd > 0; });
       if (!ls.length) return;
+      if (ls.some(function (l) { return !(l.valor > 0); }) && !A.confirmar("Há item sem preço. Criar o orçamento assim mesmo?")) return;
       P.novoOrcamento({ categoria: ls[0].cat === "eletrica" ? "eletrica" : "pintura", itens: ls.map(function (l) { return { tipo: "servico", descricao: l.desc, qtd: l.qtd, un: l.un, valor: l.valor }; }) });
     };
   }
