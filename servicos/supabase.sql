@@ -991,12 +991,27 @@ create table if not exists public.calc_cotacoes (
   atualizado_em timestamptz not null default now()
 );
 
+-- 📜 contratos de serviço: modelos preenchidos com os dados do cliente/orçamento, texto editável e situação
+create table if not exists public.contratos_servico (
+  id            uuid primary key default gen_random_uuid(),
+  modelo        text not null check (length(modelo) <= 40),
+  titulo        text not null default '' check (length(titulo) <= 300),
+  cliente       text check (cliente is null or length(cliente) <= 200),
+  valor         numeric(12, 2),
+  status        text not null default 'rascunho' check (status in ('rascunho', 'enviado', 'assinado', 'encerrado')),
+  dados         jsonb not null default '{}'::jsonb,
+  texto         text not null default '',
+  orcamento_id  uuid references public.orcamentos (id) on delete set null,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+
 do $$
 declare t text;
 begin
   foreach t in array array['funcionarios', 'obras', 'servicos', 'pontos', 'relatorios', 'orcamentos', 'lojas', 'rotas',
                              'prefeituras', 'contratos', 'medicoes', 'licitacoes', 'documentos',
-                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha', 'impostos_parcelamentos', 'impostos_parcelas', 'lembrete_config', 'parceiro_servicos', 'parceiro_pagamentos', 'impostos_comprovantes', 'ferramentas_catalogo', 'ferramentas_entregas', 'agenda_eventos', 'calc_cotacoes'] loop
+                             'veiculos', 'km_registros', 'pagamentos', 'compras', 'fornecedores', 'receitas', 'prospects', 'precos', 'precos_historico', 'orcamentos_loja', 'candidatos', 'modelos_laudo', 'propostas', 'areas_orcamento', 'parceiros', 'parceiros_tipos', 'lixeira', 'socios', 'socio_servicos', 'socio_repasses', 'fluxo_previsto', 'propostas_projeto', 'empresa_dados', 'clientes_ficha', 'impostos_parcelamentos', 'impostos_parcelas', 'lembrete_config', 'parceiro_servicos', 'parceiro_pagamentos', 'impostos_comprovantes', 'ferramentas_catalogo', 'ferramentas_entregas', 'agenda_eventos', 'calc_cotacoes', 'contratos_servico'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_tudo on public.%I', t);
     execute format('create policy admin_tudo on public.%I for all to authenticated '
