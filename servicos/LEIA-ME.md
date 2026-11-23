@@ -638,4 +638,4 @@ Botão **📷 Escanear** (azul, no topo de Impostos e dívidas): **📷 Tirar fo
 - **📥 Importar código:** cola um código `AGE-COTACAO:...` e abre a cotação pronta (itens, preços e, ao criar o orçamento, cliente, escopo e observações).
 
 ## 🧷 A tela não volta mais ao topo
-- A atualização automática (a cada minuto e ao voltar para o app) **só redesenha a tela se os dados mudaram**; e, quando redesenha ou quando você salva algo, **a rolagem fica onde você está**. Só ao **trocar de aba** a tela começa no topo. A Calculadora e a Agenda não são redesenhadas pela atualização automática.
+- A atualização automática (a cada minuto e ao voltar para o app) **só redesenha a tela se os dados mudaram**; e, quando redesenha ou quando você salva algo, **a rolagem fica onde você está**. Só ao **trocar de aba** a tela começa no topo. A Calculadora e a Agenda não são redesenhadas pela atualização automática.- Vale também para o **app do funcionário** (só redesenha se os dados mudaram) e para a **atualização de versão do app**: quando o app se recarrega sozinho com uma versão nova, ele volta para o mesmo ponto da tela em que você estava.

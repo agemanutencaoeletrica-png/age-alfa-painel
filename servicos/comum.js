@@ -292,6 +292,31 @@
     };
     atualizarBotoesInstalar();
   }
+  // mantém a tela onde você está: depois de redesenhar (as telas se desenham aos poucos), segura a rolagem em y até a página voltar a ter altura.
+  // Para na hora se você rolar ou tocar na tela.
+  var segurando = null;
+  function segurarRolagem(y) {
+    if (!(y > 4)) return;
+    if (segurando) segurando();
+    var t0 = Date.now(), parar = false, iv = null, evs = ["wheel", "touchstart", "keydown", "mousedown"];
+    function fim() { parar = true; clearInterval(iv); evs.forEach(function (e) { window.removeEventListener(e, fim, true); }); segurando = null; }
+    evs.forEach(function (e) { window.addEventListener(e, fim, true); });
+    iv = setInterval(function () {
+      if (parar) return;
+      var maximo = document.documentElement.scrollHeight - window.innerHeight;
+      if (maximo >= y - 2) { if (Math.abs((window.pageYOffset || 0) - y) > 2) window.scrollTo(0, y); if (Date.now() - t0 > 600) fim(); }
+      else if (Date.now() - t0 > 4000) fim();
+    }, 80);
+    segurando = fim;
+    window.scrollTo(0, y);
+  }
+  window.AGE_ROLAGEM = segurarRolagem;
+  // atualização do app recarrega a página: guarda onde você estava e volta para o mesmo ponto
+  var CH_ROL = "age_rolagem";
+  try {
+    var guardada = JSON.parse(sessionStorage.getItem(CH_ROL) || "null"); sessionStorage.removeItem(CH_ROL);
+    if (guardada && guardada.u === location.href && Date.now() - guardada.t < 120000) window.addEventListener("load", function () { segurarRolagem(guardada.y); });
+  } catch (e) { /* sem armazenamento */ }
   var seguro = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
   if ("serviceWorker" in navigator && seguro) {
     window.addEventListener("load", function () {
@@ -309,7 +334,7 @@
         avisar("Nova versão do app: atualizando...");
         var tentar = function () {
           var a = document.activeElement;
-          if (!document.querySelector(".fundo-modal") && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) location.reload();
+          if (!document.querySelector(".fundo-modal") && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) { try { sessionStorage.setItem(CH_ROL, JSON.stringify({ u: location.href, y: window.pageYOffset || 0, t: Date.now() })); } catch (e) { /* ok */ } location.reload(); }
           else setTimeout(tentar, 5000);
         };
         setTimeout(tentar, 1500);

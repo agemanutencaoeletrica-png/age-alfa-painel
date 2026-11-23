@@ -648,23 +648,8 @@
     if (at && at.scrollIntoView) at.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
-  var ultimaAba = null, segurando = null;
-  // as telas se desenham aos poucos (carregam dados): segura a rolagem no lugar até a tela voltar a ter altura, sem brigar com você se rolar
-  function segurarRolagem(y) {
-    if (!(y > 4)) return;
-    if (segurando) segurando();
-    var t0 = Date.now(), parar = false;
-    function fim() { parar = true; clearInterval(iv); ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (e) { window.removeEventListener(e, fim, true); }); segurando = null; }
-    ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (e) { window.addEventListener(e, fim, true); });
-    var iv = setInterval(function () {
-      if (parar) return;
-      var maximo = document.documentElement.scrollHeight - window.innerHeight;
-      if (maximo >= y - 2) { if (Math.abs((window.pageYOffset || 0) - y) > 2) window.scrollTo(0, y); if (Date.now() - t0 > 600) fim(); }
-      else if (Date.now() - t0 > 4000) fim();
-    }, 80);
-    segurando = fim;
-    window.scrollTo(0, y);
-  }
+  var ultimaAba = null;
+  function segurarRolagem(y) { window.AGE_ROLAGEM(y); }   // (comum.js) segura a rolagem no lugar até a tela voltar a ter altura
   function rota() {
     var aba = location.hash.slice(1) || "hoje";
     if (!ABAS.some(function (a) { return a[0] === aba; })) aba = "hoje";

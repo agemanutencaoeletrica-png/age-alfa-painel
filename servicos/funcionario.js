@@ -90,7 +90,12 @@
     }
     function atualizar() {
       if (!quieto()) return;
-      sb.rpc("func_dados", { p_token: TOKEN }).then(function (r) { if (!r.error && quieto()) { D = r.data; desenhar(); } }, function () { /* sem sinal: tenta depois */ });
+      sb.rpc("func_dados", { p_token: TOKEN }).then(function (r) {
+        if (r.error || !quieto()) return;
+        var igual = false; try { igual = JSON.stringify(r.data) === JSON.stringify(D); } catch (e) { /* redesenha */ }
+        if (igual) return;   // nada mudou: a tela fica como está (não pisca nem sobe)
+        var y = window.pageYOffset || 0; D = r.data; desenhar(); window.AGE_ROLAGEM(y);
+      }, function () { /* sem sinal: tenta depois */ });
     }
     setInterval(atualizar, 120000);
     document.addEventListener("visibilitychange", atualizar);
