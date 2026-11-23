@@ -111,7 +111,8 @@
       '<div id="cl-ref" class="peq mudo" style="margin-top:6px"></div><input type="range" id="cl-slide" style="width:100%;display:none" aria-label="Ajustar o preço entre o mínimo e o máximo da tabela">' +
       '<div class="acoes"><button class="peq" id="cl-min">Mínimo</button><button class="peq" id="cl-med">Média</button><button class="peq" id="cl-max">Máximo</button>' +
       '<span id="cl-prev" style="margin-left:auto;font-weight:700"></span><button class="prim" id="cl-add">➕ Adicionar à lista</button></div>' +
-      '<div class="acoes"><button class="peq" id="cl-colar" title="Cole várias metragens de uma vez: o app acha o serviço na tabela de cada linha">📝 Colar lista de metragens</button><button class="peq" id="cl-livre" title="Serviço que não está na tabela (ex.: limpeza do piso)">➕ Item fora da tabela</button></div></div>' +
+      '<div class="acoes"><button class="peq" id="cl-colar" title="Cole várias metragens de uma vez: o app acha o serviço na tabela de cada linha">📝 Colar lista de metragens</button><button class="peq" id="cl-livre" title="Serviço que não está na tabela (ex.: limpeza do piso)">➕ Item fora da tabela</button>' +
+      '<button class="peq" id="cl-loja" title="Lê o orçamento ou a nota da loja (PDF, foto ou XML) e traz os materiais com o custo de cada um">📂 Materiais da loja (PDF, foto ou XML)</button><input type="file" id="cl-arq-loja" class="oculto" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml"></div></div>' +
       '<div id="cl-lista"></div><div id="cl-salvas"></div>';
     $$("[data-cat]", c).forEach(function (b) { b.onclick = function () { estado.cat = b.dataset.cat; estado.grupo = ""; estado.busca = ""; estado.sel = ""; guardar(); desenhar(c); }; });
     $("#cl-busca", c).oninput = function () { estado.busca = this.value; opcoes(c); };
@@ -129,6 +130,8 @@
     $("#cl-imp", c).onclick = function () { importar(c); };
     $("#cl-colar", c).onclick = function () { colar(c); };
     $("#cl-livre", c).onclick = function () { livre(c); };
+    $("#cl-loja", c).onclick = function () { $("#cl-arq-loja", c).value = ""; $("#cl-arq-loja", c).click(); };
+    $("#cl-arq-loja", c).onchange = function () { if (this.files[0]) lerLoja(c, this.files[0]); };
     opcoes(c); lista(c); pintarSalvas();
   }
   function opcoes(c) {
@@ -203,7 +206,7 @@
   function colar(c) {
     var j = A.janela('<p class="mudo peq" style="margin-top:0">Uma linha por serviço: <b>quantidade, unidade e nome do serviço</b> como está na tabela. Para mudar o texto que o cliente vê, escreva <b>=&gt;</b> e o texto. Serviço que não estiver na tabela entra como item fora da tabela (você coloca o preço).<br>Ex.: <code>2920 m | Demarcação de vaga de garagem =&gt; Repintura das linhas das vagas</code></p>' +
       '<textarea id="cl-txt" rows="9" style="width:100%" spellcheck="false"></textarea><div id="cl-conf"></div>' +
-      '<div class="acoes"><button id="cl-ver">🔎 Conferir</button><button class="prim" id="cl-ok" disabled>➕ Adicionar tudo à lista</button><button id="cl-x">Cancelar</button></div>', { titulo: "📝 Colar lista de metragens", larga: true, semRascunho: true });
+      '<div class="acoes" style="margin-top:4px"><button class="peq" id="cl-txt-arq">📂 Abrir arquivo de texto (.txt, .csv)</button><input type="file" id="cl-txt-in" class="oculto" accept=".txt,.csv,text/plain,text/csv"></div><div class="acoes"><button id="cl-ver">🔎 Conferir</button><button class="prim" id="cl-ok" disabled>➕ Adicionar tudo à lista</button><button id="cl-x">Cancelar</button></div>', { titulo: "📝 Colar lista de metragens", larga: true, semRascunho: true });
     var itens = [];
     function conferir() {
       itens = lerLinhas($("#cl-txt", j.el).value);
@@ -214,6 +217,8 @@
       }).join("") + "</div>" : '<p class="mudo peq">Nada para conferir.</p>';
       $("#cl-ok", j.el).disabled = !itens.some(function (x) { return !x.erro; });
     }
+    $("#cl-txt-arq", j.el).onclick = function () { $("#cl-txt-in", j.el).value = ""; $("#cl-txt-in", j.el).click(); };
+    $("#cl-txt-in", j.el).onchange = function () { var f = this.files[0]; if (!f) return; var fr = new FileReader(); fr.onload = function () { $("#cl-txt", j.el).value = String(fr.result || ""); conferir(); }; fr.readAsText(f); };
     $("#cl-ver", j.el).onclick = conferir; $("#cl-txt", j.el).oninput = function () { $("#cl-ok", j.el).disabled = true; };
     $("#cl-x", j.el).onclick = function () { j.fechar(); };
     $("#cl-ok", j.el).onclick = function () {
@@ -300,6 +305,43 @@
     };
   }
 
+
+  // ---- materiais direto do orçamento ou da nota da loja (PDF, foto ou XML do computador) ----
+  var UN_LOJA = { und: "un", unid: "un", u: "un", pc: "pç", pca: "pç", peca: "pç", "peça": "pç", mt: "m", mts: "m", metro: "m", m2: "m²", rl: "rolo", rolos: "rolo", gl: "galão", galao: "galão", la: "lata", lt: "lata", lata: "lata", pct: "pacote", pcte: "pacote", br: "barra", cx: "cx", kg: "kg", l: "L" };
+  function lerLoja(c, arq) {
+    var CP = window.AGE_COMPRAS;
+    if (!CP) { A.avisar("O leitor de notas não carregou. Recarregue a página.", "erro"); return; }
+    var j = A.janela('<div id="lj-status" class="peq">🔎 Lendo ' + esc(arq.name) + "... (foto pode levar até 1 minuto)</div><div id=\"lj-prev\"></div>", { titulo: "📂 Materiais da loja", larga: true, semRascunho: true });
+    function st(t, erro) { var e = $("#lj-status", j.el); if (e) { e.textContent = t; e.style.color = erro ? "var(--perigo,#c0392b)" : ""; } }
+    CP.lerUmaNota(arq, function (t) { st(t); }).then(function (r) {
+      var d = (r && r.dados) || {}, corr = window.AGE_CORR;
+      var itens = (d.itens || []).map(function (x) {
+        var q = Number(x.qtd) || 1, u = Number(x.unit) || (Number(x.valor) > 0 ? r2(Number(x.valor) / q) : 0), un = String(x.un || "un").toLowerCase().replace(/\.$/, ""), ds = String(x.item || x.descricao || "").replace(/\s+/g, " ").trim();
+        return { desc: corr ? corr.corrigir(ds).texto : ds, qtd: q, un: UN_LOJA[un] || un || "un", unit: u };
+      }).filter(function (x) { return x.desc; });
+      if (!itens.length) { st("Não achei materiais nesse arquivo. Tente o PDF ou o XML da loja, ou uma foto mais reta e de perto.", true); return; }
+      var tot = itens.reduce(function (s, x) { return s + r2(x.qtd * x.unit); }, 0);
+      st("");
+      $("#lj-prev", j.el).innerHTML = '<p class="peq mudo" style="margin:0 0 6px"><b>' + itens.length + " material(is)</b>" + (d.fornecedor ? " · " + esc(d.fornecedor) : "") + " · " + din(tot) + ' no total da loja. Confira nomes, quantidades e preços (a leitura de foto pode errar) e desmarque o que não vai.</p>' +
+        '<div class="tabela-caixa"><table><thead><tr><th></th><th>Material</th><th>Qtd</th><th>Un</th><th>Custo na loja (un.)</th></tr></thead><tbody>' +
+        itens.map(function (x, n) { return '<tr data-n="' + n + '"><td><input type="checkbox" class="lj-ok" checked aria-label="Usar"></td><td><input class="lj-d" maxlength="300" style="min-width:200px"></td><td><input class="lj-q" inputmode="decimal" style="width:70px"></td><td><input class="lj-u" style="width:70px" maxlength="12"></td><td><input class="lj-v" inputmode="decimal" style="width:100px"></td></tr>'; }).join("") +
+        '</tbody></table></div><label style="display:block;margin-top:8px">Margem sobre o custo da loja (%) <span class="peq mudo">— pode deixar 0 e ajustar depois na lista</span><input class="lj-m" inputmode="decimal" value="0" style="width:100px"></label>' +
+        '<div class="acoes"><button class="prim" id="lj-ok">➕ Adicionar à lista como materiais</button><button id="lj-x">Cancelar</button></div>';
+      $$("#lj-prev tbody tr", j.el).forEach(function (tr) { var x = itens[Number(tr.dataset.n)]; $(".lj-d", tr).value = x.desc; $(".lj-q", tr).value = fq(x.qtd); $(".lj-u", tr).value = x.un; $(".lj-v", tr).value = f2(x.unit); });
+      $("#lj-x", j.el).onclick = function () { j.fechar(); };
+      $("#lj-ok", j.el).onclick = function () {
+        var m = A.lerNumero($(".lj-m", j.el).value) || 0, n = 0;
+        $$("#lj-prev tbody tr", j.el).forEach(function (tr) {
+          if (!$(".lj-ok", tr).checked) return;
+          var q = A.lerNumero($(".lj-q", tr).value), cu = A.lerNumero($(".lj-v", tr).value), ds = $(".lj-d", tr).value.trim();
+          if (!ds || !(q > 0)) return;
+          estado.linhas.push({ tipo: "material", custo: cu, desc: ds, un: $(".lj-u", tr).value.trim() || "un", qtd: q, valor: r2(cu * (1 + m / 100)), media: null, min: null, max: null, cat: estado.cat }); n++;
+        });
+        if (!n) { A.avisar("Marque pelo menos um material.", "erro"); return; }
+        guardar(); j.fechar(); lista(c); A.avisar(n + " material(is) adicionado(s) à lista", "ok");
+      };
+    }).catch(function (e) { st("Não consegui ler o arquivo: " + (A.msgErro ? A.msgErro(e) : e.message), true); });
+  }
   // ---- margem em todos os materiais (sobre o custo da loja) ----
   function margem(c) {
     var j = A.janela('<p class="mudo peq" style="margin-top:0">O percentual é aplicado sobre o <b>custo da loja</b> de cada material (não acumula se você aplicar de novo). Depois dá para ajustar item por item.</p>' +

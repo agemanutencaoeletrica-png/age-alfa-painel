@@ -128,6 +128,30 @@
       if (lj.cnpj) r.cnpj = lj.cnpj;
       if (lj.telefone || lj.email) r.loja = { telefone: lj.telefone || "", whatsapp: lj.whatsapp || "", email: lj.email || "" };
     } else { var mcnpj = t.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/); if (mcnpj) r.cnpj = mcnpj[0]; }
+    // orçamento de loja de tinta (Atacadão das Tintas): colunas EF, EMP, código, descrição, legenda, unidade, quantidade, unitário, total.
+    // Uma linha: "15850 DEMARCACAO VIARIA 18L AMARELO PINTE+ LA 7,00 880,00 6.160,00 N 001 A"; nome comprido: o nome ocupa 1 ou 2 linhas
+    // e "PCT 1,00 790,00 790,00 N 001 D" vem na linha de baixo
+    (function () {
+      if (!/DESCRI[CÇ][AÃ]O\s*\/\s*REFER[EÊ]NCIA/i.test(t) || !/\bLEG\b/.test(t)) return;
+      var UNL = { la: "lata", lt: "lata", gl: "gl", pct: "pct", und: "un", unid: "un", mt: "m" }, achou = [], pend = null, N = "(\\d+(?:[.,]\\d{1,3})?)\\s+(\\d{1,3}(?:\\.\\d{3})*,\\d{2})\\s+(\\d{1,3}(?:\\.\\d{3})*,\\d{2})";
+      var reUma = new RegExp("^(\\d{3,8})\\s+(.+?)\\s+([A-Za-z]{1,5})\\s+" + N + "$"), reFim = new RegExp("^([A-Za-z]{1,5})\\s+" + N + "$");
+      var dinheiro = /\d{1,3}(?:\.\d{3})*,\d{2}/;
+      function fecha(d, un, q, u, tt, k) {
+        var qq = A.lerNumero(q), uu = A.lerNumero(u), t2 = A.lerNumero(tt), un2 = un.toLowerCase();
+        if (!(qq > 0) || !(uu > 0) || Math.abs(qq * uu - t2) > 0.05) return false;
+        achou.push({ item: d.replace(/\s+/g, " ").trim().slice(0, 120), qtd: qq, un: UNL[un2] || un2, unit: uu, valor: t2 });
+        return true;
+      }
+      ls.forEach(function (x, i) {
+        var s = String(x).replace(/\s+N\s+\d{3}\s+[A-Z]\s*$/, "").replace(/^[A-Z]\s+\d{3}\s+(?=\d{3,8}\s)/, "").trim(), m;
+        if ((m = s.match(reUma))) { pend = null; if (fecha(m[2], m[3], m[4], m[5], m[6])) ls[i] = ""; return; }
+        if (pend && (m = s.match(reFim))) { if (fecha(pend.d, m[1], m[2], m[3], m[4])) { pend.idx.forEach(function (k) { ls[k] = ""; }); ls[i] = ""; } pend = null; return; }
+        if (dinheiro.test(s)) { pend = null; return; }
+        if ((m = s.match(/^(\d{3,8})\s+([A-Za-zÀ-ú].+)$/))) { pend = { d: m[2], idx: [i] }; return; }
+        if (pend && pend.idx.length < 3 && /^[A-Za-zÀ-ú0-9]/.test(s) && !/^(total|vendedor|profissional|regi|ncm|mensagem|end\.|mens\.|transportadora|valor|validade)/i.test(s)) { pend.d += " " + s; pend.idx.push(i); } else pend = null;
+      });
+      if (achou.length >= 2) achou.forEach(function (it) { r.itens.push(it); });
+    })();
     // itens: "001 CABO FLEX 2,5MM 1 UN 189,90" (código, descrição, quantidade, unidade ... valor)
     // item em 2 linhas (cupom NFC-e): "604 PRO-TECH EPOXI AMARELO" / "2,00 UN 330,44 660,88"
     ls.forEach(function (x, i) {
