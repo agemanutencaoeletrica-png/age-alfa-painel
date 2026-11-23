@@ -196,12 +196,13 @@
         '<span class="dir"><b>' + (Number(o.total) ? A.dinheiro(Number(o.total)) : "") + "</b></span></div>" +
         '<div class="peq">' + esc(o.cliente || "Cliente não informado") + " · " + esc(A.dataSimples(String(o.data).slice(0, 10))) + " · " + (o.itens || []).length + " item(ns)" +
         (o.categoria ? " · " + esc(nomeArea(o.categoria)) : "") + "</div>" +
-        '<div class="acoes" style="margin-top:6px"><button class="peq prim" data-pp-usar>📝 Usar no orçamento</button><button class="peq" data-pp-editar>✏️ Editar</button><button class="peq perigo" data-pp-excluir>🗑 Excluir</button></div></div>';
+        '<div class="acoes" style="margin-top:6px"><button class="peq prim" data-pp-usar>📝 Usar no orçamento</button><button class="peq" data-pp-contrato title="Cria um contrato com os dados desta proposta">📜 Criar contrato</button><button class="peq" data-pp-editar>✏️ Editar</button><button class="peq perigo" data-pp-excluir>🗑 Excluir</button></div></div>';
     }).join("") || '<div class="cartao vazio">Nada com essa busca.</div>';
     $$("[data-pp]", r).forEach(function (cx) {
       var o = P.porId(lista(), cx.dataset.pp);
       cx.onclick = function () { editar(o, null); };
       $("[data-pp-usar]", cx).onclick = function (ev) { ev.stopPropagation(); usar(o); };
+      $("[data-pp-contrato]", cx).onclick = function (ev) { ev.stopPropagation(); if (window.AGE_CONTR) window.AGE_CONTR.daProposta(o.id); };
       $("[data-pp-editar]", cx).onclick = function (ev) { ev.stopPropagation(); editar(o, null); };
       $("[data-pp-excluir]", cx).onclick = function (ev) { ev.stopPropagation(); excluir(o); };
     });

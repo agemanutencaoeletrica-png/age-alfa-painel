@@ -94,5 +94,10 @@
     if (x) $("#ef2-del", el).onclick = function () { if (!A.confirmar("Apagar “" + x.rotulo + "”?")) return; Promise.resolve(P.sb.from("empresa_dados").delete().eq("id", x.id)).then(fim).catch(function (e) { A.avisar(A.msgErro ? A.msgErro(e) : e.message, "erro"); }); };
   }
 
-  window.AGE_EMPRESA = { ver: ver, recarregar: function () { dados = null; } };
+  // dados da empresa para outras telas (contratos...): carrega (e grava a lista inicial na 1ª vez) e devolve [{grupo, rotulo, valor}]
+  function lista(ctx) {
+    if (!P) P = ctx;
+    return new Promise(function (ok) { if (dados) { ok(dados); return; } carregar(function () { ok(dados || []); }); });
+  }
+  window.AGE_EMPRESA = { ver: ver, lista: lista, recarregar: function () { dados = null; } };
 })();
