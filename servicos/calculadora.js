@@ -360,10 +360,16 @@
 
 
   // ---------- 👷 custo da equipe (honorários): só você vê; compara com o que a lista cobra ----------
+  // funções da equipe (cargos); a diária de cada função é lembrada neste aparelho para a próxima obra
+  var FUNCOES = ["Pintor", "Meio oficial de pintura", "Ajudante de pintura", "Eletricista", "Meio oficial de eletricista", "Ajudante de eletricista", "Encarregado / líder de equipe", "Servente / ajudante geral", "Técnico de TI / CFTV", "Instalador de portão eletrônico", "Operador de máquina de demarcação", "Motorista", "Responsável técnico (engenheiro)"];
+  var CH_FN = "age_equipe_funcoes_v1";
+  function lerFn() { try { var o = JSON.parse(localStorage.getItem(CH_FN) || "{}"); return { extras: Array.isArray(o.extras) ? o.extras : [], diarias: o.diarias || {} }; } catch (e) { return { extras: [], diarias: {} }; } }
+  function guardarFn(o) { try { localStorage.setItem(CH_FN, JSON.stringify(o)); } catch (e) { /* ignora */ } }
+  function listaFuncoes() { return FUNCOES.concat(lerFn().extras.filter(function (x) { return FUNCOES.indexOf(x) < 0; })); }
   function eq() { if (!estado.equipe) estado.equipe = { dias: 30, enc: 0, margem: 20, func: [], outros: [] }; return estado.equipe; }
   function custoEquipe() {
     var e = estado.equipe || { func: [], outros: [], enc: 0 }, dia = 0, ext = 0, out = 0;
-    (e.func || []).forEach(function (f) { dia += r2((Number(f.dias) || 0) * (Number(f.diaria) || 0)); ext += r2((Number(f.dias) || 0) * (Number(f.extra) || 0)); });
+    (e.func || []).forEach(function (f) { var pe = f.pessoas === undefined || f.pessoas === "" ? 1 : Number(f.pessoas) || 0; dia += r2(pe * (Number(f.dias) || 0) * (Number(f.diaria) || 0)); ext += r2(pe * (Number(f.dias) || 0) * (Number(f.extra) || 0)); });
     (e.outros || []).forEach(function (o) { out += Number(o.valor) || 0; });
     var enc = r2(dia * (Number(e.enc) || 0) / 100);
     return { dia: r2(dia), ext: r2(ext), enc: enc, out: r2(out), total: r2(dia + ext + enc + out) };
@@ -387,28 +393,45 @@
       '<p class="peq mudo" style="margin:6px 0">Escolha quem vai trabalhar, os dias e a diária (vem do cadastro da equipe, e você pode mudar aqui). O app soma o custo e compara com o que a lista cobra de mão de obra. Nada disso vai para o orçamento do cliente.</p>' +
       '<div class="linha" style="gap:8px"><label style="width:150px">Dias de obra (padrão)<input class="eq-dias" inputmode="decimal" value="' + esc(fq(e.dias)) + '"></label><label style="width:160px">Encargos e benefícios (%)<input class="eq-enc" inputmode="decimal" value="' + esc(fq(e.enc)) + '"></label><label style="width:170px">Sobra desejada (%)<input class="eq-mg" inputmode="decimal" value="' + esc(fq(e.margem)) + '"></label></div>' +
       '<div id="eq-func">' + e.func.map(function (f, i) {
-        return '<div class="linha eq-lin" data-i="' + i + '" style="gap:6px;margin-top:6px;align-items:flex-end"><label style="flex:2;min-width:170px">Funcionário<select class="eq-f"><option value="">— avulso —</option>' + fs.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === f.id ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join("") + '</select></label>' +
-          '<label style="flex:2;min-width:150px">Nome / função<input class="eq-n" maxlength="80" value="' + esc(f.nome || "") + '"></label><label style="width:80px">Dias<input class="eq-d" inputmode="decimal" value="' + esc(fq(f.dias)) + '"></label>' +
+        var fnL = listaFuncoes(); if (f.funcao && fnL.indexOf(f.funcao) < 0) fnL.push(f.funcao);
+        return '<div class="linha eq-lin" data-i="' + i + '" style="gap:6px;margin-top:8px;align-items:flex-end;flex-wrap:wrap"><label style="flex:2;min-width:190px">Função<select class="eq-fn"><option value="">— escolha —</option>' + fnL.map(function (x) { return '<option' + (x === f.funcao ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("") + '</select></label>' +
+          '<label style="flex:2;min-width:170px">Funcionário (opcional)<select class="eq-f"><option value="">— sem nome —</option>' + fs.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === f.id ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join("") + '</select></label>' +
+          '<label style="width:78px">Pessoas<input class="eq-p" inputmode="decimal" value="' + esc(fq(f.pessoas === undefined || f.pessoas === "" ? 1 : f.pessoas)) + '"></label><label style="width:78px">Dias<input class="eq-d" inputmode="decimal" value="' + esc(fq(f.dias)) + '"></label>' +
           '<label style="width:110px">Diária (R$)<input class="eq-v" inputmode="decimal" value="' + esc(f2(f.diaria)) + '"></label><label style="width:120px">Transp./alim. por dia<input class="eq-x" inputmode="decimal" value="' + esc(f2(f.extra)) + '"></label><button class="peq perigo" data-eq-tirar="' + i + '" aria-label="Tirar">🗑</button></div>';
       }).join("") + "</div>" +
       '<div id="eq-out">' + e.outros.map(function (o, i) {
         return '<div class="linha eq-ou" data-i="' + i + '" style="gap:6px;margin-top:6px;align-items:flex-end"><label style="flex:3;min-width:200px">Outro honorário (ART, responsável técnico, terceiro...)<input class="eq-od" maxlength="120" value="' + esc(o.desc || "") + '"></label><label style="width:130px">Valor (R$)<input class="eq-ov" inputmode="decimal" value="' + esc(f2(o.valor)) + '"></label><button class="peq perigo" data-eq-tirar-o="' + i + '" aria-label="Tirar">🗑</button></div>';
       }).join("") + "</div>" +
-      '<div class="acoes"><button class="peq" id="eq-add">➕ Funcionário</button><button class="peq" id="eq-add-o">➕ Outro honorário</button></div><div id="eq-res" style="margin-top:8px"></div></details>';
+      '<div class="acoes"><button class="peq" id="eq-add">➕ Função / funcionário</button><button class="peq" id="eq-add-o">➕ Outro honorário</button></div><div class="linha" style="gap:6px;margin-top:4px"><input class="eq-nf" maxlength="60" placeholder="Nova função (ex.: Soldador)" style="flex:1;min-width:180px"><button class="peq" id="eq-nf-ok">Adicionar à lista de funções</button></div><div id="eq-res" style="margin-top:8px"></div></details>';
     function salvar() { guardar(); }
     $(".eq-dias", el).oninput = function () { e.dias = A.lerNumero(this.value) || 0; salvar(); };
     $(".eq-enc", el).oninput = function () { e.enc = A.lerNumero(this.value) || 0; salvar(); resumoEquipe(c); };
     $(".eq-mg", el).oninput = function () { e.margem = A.lerNumero(this.value) || 0; salvar(); resumoEquipe(c); };
-    $("#eq-add", el).onclick = function () { e.func.push({ id: "", nome: "", dias: e.dias || 0, diaria: 0, extra: 0 }); salvar(); equipeCartao(c); };
+    $("#eq-add", el).onclick = function () { e.func.push({ id: "", funcao: "", nome: "", pessoas: 1, dias: e.dias || 0, diaria: 0, extra: 0 }); salvar(); equipeCartao(c); };
+    $("#eq-nf-ok", el).onclick = function () {
+      var n = $(".eq-nf", el).value.trim(); if (!n) return;
+      var o = lerFn(); if (listaFuncoes().indexOf(n) < 0) { o.extras.push(n); guardarFn(o); }
+      A.avisar("Função “" + n + "” adicionada à lista", "ok"); equipeCartao(c);
+    };
     $("#eq-add-o", el).onclick = function () { e.outros.push({ desc: "", valor: 0 }); salvar(); equipeCartao(c); };
     $$(".eq-lin", el).forEach(function (d) {
       var f = e.func[Number(d.dataset.i)];
-      $(".eq-f", d).onchange = function () {
-        f.id = this.value; var x = fs.filter(function (y) { return y.id === f.id; })[0];
-        if (x) { f.nome = x.nome; if (Number(x.diaria) > 0) f.diaria = Number(x.diaria); $(".eq-n", d).value = f.nome; $(".eq-v", d).value = f2(f.diaria); }
+      $(".eq-fn", d).onchange = function () {
+        f.funcao = this.value; var m = lerFn().diarias[f.funcao];
+        if (m && !f.id) { if (Number(m.diaria) > 0) f.diaria = Number(m.diaria); if (Number(m.extra) > 0 && !(Number(f.extra) > 0)) f.extra = Number(m.extra); $(".eq-v", d).value = f2(f.diaria); $(".eq-x", d).value = f2(f.extra); }
         salvar(); resumoEquipe(c);
       };
-      function ler() { f.nome = $(".eq-n", d).value; f.dias = A.lerNumero($(".eq-d", d).value) || 0; f.diaria = A.lerNumero($(".eq-v", d).value) || 0; f.extra = A.lerNumero($(".eq-x", d).value) || 0; salvar(); resumoEquipe(c); }
+      $(".eq-f", d).onchange = function () {
+        f.id = this.value; var x = fs.filter(function (y) { return y.id === f.id; })[0];
+        if (x) { f.nome = x.nome; if (Number(x.diaria) > 0) { f.diaria = Number(x.diaria); $(".eq-v", d).value = f2(f.diaria); } } else f.nome = "";
+        salvar(); resumoEquipe(c);
+      };
+      function ler(ev) {
+        f.pessoas = A.lerNumero($(".eq-p", d).value); if (!(f.pessoas >= 0)) f.pessoas = 1; f.dias = A.lerNumero($(".eq-d", d).value) || 0; f.diaria = A.lerNumero($(".eq-v", d).value) || 0; f.extra = A.lerNumero($(".eq-x", d).value) || 0;
+        // a diária (e o transporte/alimentação) digitados ficam lembrados para a função, nas próximas obras
+        if (ev && ev.target && /eq-(v|x)/.test(ev.target.className) && f.funcao && !f.id) { var o = lerFn(); o.diarias[f.funcao] = { diaria: f.diaria, extra: f.extra }; guardarFn(o); }
+        salvar(); resumoEquipe(c);
+      }
       $$("input", d).forEach(function (i) { i.addEventListener("input", ler); });
     });
     $$(".eq-ou", el).forEach(function (d) {
