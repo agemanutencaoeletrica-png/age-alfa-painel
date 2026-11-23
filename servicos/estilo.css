@@ -253,3 +253,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .ag-vz { color: #5b6c99; font-size: 12px; }
 @media (min-width: 900px) { .ag-semana { grid-template-columns: repeat(7, 1fr); } }
 .ag-ci.t-visita { border-left-color: #38e8ff; } .ag-ci.t-reuniao { border-left-color: #b49bff; } .ag-ci.t-servico { border-left-color: #5dff9c; } .ag-ci.t-prazo { border-left-color: #ff6b8a; } .ag-ci.t-lembrete { border-left-color: #ffcf6b; } .ag-ci.t-outro { border-left-color: #9fb3c8; }
+
+/* 📜 contratos: campo importante que ainda falta */
+.ct-falta { outline: 2px solid #f2b632; background: rgba(242, 182, 50, .12); }
