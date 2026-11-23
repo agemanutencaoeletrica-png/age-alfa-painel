@@ -639,3 +639,8 @@ Botão **📷 Escanear** (azul, no topo de Impostos e dívidas): **📷 Tirar fo
 
 ## 🧷 A tela não volta mais ao topo
 - A atualização automática (a cada minuto e ao voltar para o app) **só redesenha a tela se os dados mudaram**; e, quando redesenha ou quando você salva algo, **a rolagem fica onde você está**. Só ao **trocar de aba** a tela começa no topo. A Calculadora e a Agenda não são redesenhadas pela atualização automática.- Vale também para o **app do funcionário** (só redesenha se os dados mudaram) e para a **atualização de versão do app**: quando o app se recarrega sozinho com uma versão nova, ele volta para o mesmo ponto da tela em que você estava.
+
+## 📦 Mão de obra + materiais: junto ou separados
+- No orçamento, em **O que vai para o cliente**, dois atalhos: **📦 Tudo junto** (um PDF só: os serviços **sem valores**, os materiais **não aparecem** e só o **valor total**, que já inclui materiais e mão de obra) e **✂ Separados** (este PDF leva só a mão de obra e o total dela; a lista de materiais sai em outro PDF com **🧱 Gerar orçamento de materiais**, com valores, só o total ou só nomes e quantidades). Os dois valem para PDF, impressão e WhatsApp. Os valores dos itens continuam guardados no app.
+- Novas opções na lista de modos: **Só os serviços (sem valores) e o valor total** e **Só a mão de obra (sem valores) e o total dela**.
+- **Calculadora:** a lista aceita **materiais** (🧱) além da mão de obra (**➕ Item fora da tabela › Tipo: Material**, ou pelo código importado) e mostra mão de obra, materiais e **total geral**. Em **Como o cliente vê o orçamento no PDF** (padrão: só os serviços e o total), a escolha vai para o orçamento criado.
