@@ -5,7 +5,7 @@
   "use strict";
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var P = null, CHAVE = "age_calc_v1";
-  var estado = { cat: "pintura", linhas: [], busca: "", grupo: "", sel: "", id: null, nome: "", orc: null, visao: "t_servicos" };
+  var estado = { cat: "pintura", linhas: [], busca: "", grupo: "", sel: "", id: null, nome: "", orc: null, visao: "t_servicos", equipe: null };
   var cot = [], semTab = false, raiz = null, timerN = null, salvando = false, pendente = false;
   var CATS = { pintura: "🎨 Pintura", eletrica: "⚡ Elétrica" };
 
@@ -15,16 +15,19 @@
   function ler() {
     try {
       var s = JSON.parse(localStorage.getItem(CHAVE) || "null");
-      if (s && Array.isArray(s.linhas)) { estado.cat = CATS[s.cat] ? s.cat : "pintura"; estado.linhas = s.linhas; estado.id = s.id || null; estado.nome = s.nome || ""; estado.orc = s.orc || null; estado.visao = s.visao || "t_servicos"; }
+      if (s && Array.isArray(s.linhas)) { estado.cat = CATS[s.cat] ? s.cat : "pintura"; estado.linhas = s.linhas; estado.id = s.id || null; estado.nome = s.nome || ""; estado.orc = s.orc || null; estado.visao = s.visao || "t_servicos"; estado.equipe = s.equipe || null; }
     } catch (e) { /* sem armazenamento: começa vazio */ }
   }
-  function guardarLocal() { try { localStorage.setItem(CHAVE, JSON.stringify({ cat: estado.cat, linhas: estado.linhas, id: estado.id, nome: estado.nome, orc: estado.orc, visao: estado.visao })); } catch (e) { /* ignora */ } }
+  function guardarLocal() { try { localStorage.setItem(CHAVE, JSON.stringify({ cat: estado.cat, linhas: estado.linhas, id: estado.id, nome: estado.nome, orc: estado.orc, visao: estado.visao, equipe: estado.equipe })); } catch (e) { /* ignora */ } }
   function guardar() { guardarLocal(); agendarNuvem(); }
   function semT(e) { return /does not exist|schema cache|PGRST205|42P01/i.test(String((e && (e.message || e.code)) || e)); }
   function agoraTxt() { var d = new Date(); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); }
   function status(t, erro) { var e = raiz && $("#cl-status", raiz); if (e) { e.textContent = t; e.style.color = erro ? "var(--perigo,#c0392b)" : ""; } }
   function nomePadrao() { var d = new Date(); return "Cotação de " + ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + " " + agoraTxt(); }
 
+  // a equipe (custo interno) viaja dentro do campo "orc" da cotação salva (o orçamento criado nunca recebe isso)
+  function orcComEquipe() { var o = Object.assign({}, estado.orc || {}); if (estado.equipe && ((estado.equipe.func || []).length || (estado.equipe.outros || []).length)) o._equipe = estado.equipe; return Object.keys(o).length ? o : null; }
+  function tirarEquipe(o) { var x = Object.assign({}, o || {}), eq = x._equipe || null; delete x._equipe; return { orc: Object.keys(x).length ? x : null, equipe: eq }; }
   // ---- salvar sozinho na nuvem (Supabase) e guardar as cotações para consulta ----
   function carregarCot(depois) {
     Promise.resolve(P.sb.from("calc_cotacoes").select("*").order("atualizado_em", { ascending: false }).limit(300)).then(function (r) {
@@ -36,7 +39,7 @@
     if (!P || semTab || (!estado.linhas.length && !estado.id)) return;
     if (salvando) { pendente = true; return; }
     salvando = true;
-    var reg = { nome: estado.nome || nomePadrao(), categoria: estado.cat, linhas: estado.linhas, orc: estado.orc || null, total: r2(totais().seu + totais().mat), atualizado_em: new Date().toISOString() };
+    var reg = { nome: estado.nome || nomePadrao(), categoria: estado.cat, linhas: estado.linhas, orc: orcComEquipe(), total: r2(totais().seu + totais().mat), atualizado_em: new Date().toISOString() };
     var op = estado.id ? P.sb.from("calc_cotacoes").update(reg).eq("id", estado.id).select() : P.sb.from("calc_cotacoes").insert(reg).select();
     Promise.resolve(op).then(function (r) {
       if (r.error) throw r.error;
@@ -113,7 +116,7 @@
       '<span id="cl-prev" style="margin-left:auto;font-weight:700"></span><button class="prim" id="cl-add">➕ Adicionar à lista</button></div>' +
       '<div class="acoes"><button class="peq" id="cl-colar" title="Cole várias metragens de uma vez: o app acha o serviço na tabela de cada linha">📝 Colar lista de metragens</button><button class="peq" id="cl-livre" title="Serviço que não está na tabela (ex.: limpeza do piso)">➕ Item fora da tabela</button>' +
       '<button class="peq" id="cl-loja" title="Lê o orçamento ou a nota da loja (PDF, foto ou XML) e traz os materiais com o custo de cada um">📂 Materiais da loja (PDF, foto ou XML)</button><input type="file" id="cl-arq-loja" class="oculto" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml"></div></div>' +
-      '<div id="cl-lista"></div><div id="cl-salvas"></div>';
+      '<div id="cl-lista"></div><div id="cl-equipe"></div><div id="cl-salvas"></div>';
     $$("[data-cat]", c).forEach(function (b) { b.onclick = function () { estado.cat = b.dataset.cat; estado.grupo = ""; estado.busca = ""; estado.sel = ""; guardar(); desenhar(c); }; });
     $("#cl-busca", c).oninput = function () { estado.busca = this.value; opcoes(c); };
     $("#cl-grupo", c).onchange = function () { estado.grupo = this.value; opcoes(c); };
@@ -126,13 +129,13 @@
     $("#cl-max", c).onclick = function () { var s = achar(estado.cat, estado.sel); if (s && s.max !== null) fixar(c, s.max); };
     $("#cl-add", c).onclick = function () { adicionar(c); };
     $(".cl-ncot", c).oninput = function () { estado.nome = this.value; guardar(); };
-    $("#cl-nova", c).onclick = function () { estado = Object.assign(estado, { id: null, nome: "", linhas: [], orc: null }); guardarLocal(); status(""); desenhar(c); };
+    $("#cl-nova", c).onclick = function () { estado = Object.assign(estado, { id: null, nome: "", linhas: [], orc: null, equipe: null }); guardarLocal(); status(""); desenhar(c); };
     $("#cl-imp", c).onclick = function () { importar(c); };
     $("#cl-colar", c).onclick = function () { colar(c); };
     $("#cl-livre", c).onclick = function () { livre(c); };
     $("#cl-loja", c).onclick = function () { $("#cl-arq-loja", c).value = ""; $("#cl-arq-loja", c).click(); };
     $("#cl-arq-loja", c).onchange = function () { if (this.files[0]) lerLoja(c, this.files[0]); };
-    opcoes(c); lista(c); pintarSalvas();
+    opcoes(c); lista(c); equipeCartao(c); pintarSalvas();
   }
   function opcoes(c) {
     var b = semAcento(estado.busca), g = {}, total = 0;
@@ -275,8 +278,8 @@
         '<div class="peq" style="margin:6px 0">' + (x.linhas || []).map(function (l) { return esc(A.numero(l.qtd, 2)) + " " + esc(l.un) + " · " + esc(l.desc) + " — " + din(l.valor) + "/" + esc(l.un); }).join("<br>") + "</div>" +
         '<div class="acoes" style="margin-top:4px"><button class="peq" data-abrir="' + esc(x.id) + '">Abrir</button><button class="peq" data-dup="' + esc(x.id) + '">Duplicar</button><button class="peq perigo" data-del="' + esc(x.id) + '">Apagar</button></div></details>';
     }).join("") + "</div>";
-    $$("[data-abrir]", el).forEach(function (b) { b.onclick = function () { var x = cot.filter(function (y) { return y.id === b.dataset.abrir; })[0]; if (!x) return; Object.assign(estado, { id: x.id, nome: x.nome, cat: CATS[x.categoria] ? x.categoria : "pintura", linhas: x.linhas || [], orc: x.orc || null }); guardarLocal(); desenhar(raiz); window.scrollTo(0, 0); }; });
-    $$("[data-dup]", el).forEach(function (b) { b.onclick = function () { var x = cot.filter(function (y) { return y.id === b.dataset.dup; })[0]; if (!x) return; Object.assign(estado, { id: null, nome: (x.nome || "Cotação") + " (cópia)", cat: CATS[x.categoria] ? x.categoria : "pintura", linhas: JSON.parse(JSON.stringify(x.linhas || [])), orc: x.orc || null }); guardar(); desenhar(raiz); window.scrollTo(0, 0); }; });
+    $$("[data-abrir]", el).forEach(function (b) { b.onclick = function () { var x = cot.filter(function (y) { return y.id === b.dataset.abrir; })[0]; if (!x) return; Object.assign(estado, { id: x.id, nome: x.nome, cat: CATS[x.categoria] ? x.categoria : "pintura", linhas: x.linhas || [], orc: tirarEquipe(x.orc).orc, equipe: tirarEquipe(x.orc).equipe }); guardarLocal(); desenhar(raiz); window.scrollTo(0, 0); }; });
+    $$("[data-dup]", el).forEach(function (b) { b.onclick = function () { var x = cot.filter(function (y) { return y.id === b.dataset.dup; })[0]; if (!x) return; Object.assign(estado, { id: null, nome: (x.nome || "Cotação") + " (cópia)", cat: CATS[x.categoria] ? x.categoria : "pintura", linhas: JSON.parse(JSON.stringify(x.linhas || [])), orc: tirarEquipe(x.orc).orc, equipe: tirarEquipe(x.orc).equipe }); guardar(); desenhar(raiz); window.scrollTo(0, 0); }; });
     $$("[data-del]", el).forEach(function (b) {
       b.onclick = function () {
         var x = cot.filter(function (y) { return y.id === b.dataset.del; })[0]; if (!x || !A.confirmar("Apagar a cotação “" + (x.nome || "") + "”?")) return;
@@ -299,7 +302,7 @@
       var d = decodificar($("#cl-cod", j.el).value);
       if (!d || !Array.isArray(d.l)) { A.avisar("Não consegui ler esse código. Copie de novo, inteiro.", "erro"); return; }
       if (estado.linhas.length && !estado.id && !A.confirmar("A lista atual ainda não foi salva e será substituída. Continuar?")) return;
-      Object.assign(estado, { id: null, nome: d.n || "", cat: CATS[d.c] ? d.c : "pintura", orc: d.o || null, visao: d.v || "t_servicos",
+      Object.assign(estado, { id: null, nome: d.n || "", cat: CATS[d.c] ? d.c : "pintura", orc: tirarEquipe(d.o).orc, equipe: tirarEquipe(d.o).equipe, visao: d.v || "t_servicos",
         linhas: d.l.map(function (x) { return { tipo: x.t === "m" ? "material" : undefined, custo: x.t === "m" ? (Number(x.v) || 0) : undefined, desc: x.d, ref: x.r || x.d, un: x.u, qtd: Number(x.q) || 0, valor: Number(x.v) || 0, media: x.m === undefined ? null : x.m, min: x.mi === undefined ? null : x.mi, max: x.ma === undefined ? null : x.ma, cat: CATS[x.c] ? x.c : (CATS[d.c] ? d.c : "pintura") }; }) });
       guardar(); j.fechar(); desenhar(c); A.avisar("Cotação importada: " + estado.linhas.length + " itens", "ok");
     };
@@ -355,10 +358,73 @@
     };
   }
 
+
+  // ---------- 👷 custo da equipe (honorários): só você vê; compara com o que a lista cobra ----------
+  function eq() { if (!estado.equipe) estado.equipe = { dias: 30, enc: 0, margem: 20, func: [], outros: [] }; return estado.equipe; }
+  function custoEquipe() {
+    var e = estado.equipe || { func: [], outros: [], enc: 0 }, dia = 0, ext = 0, out = 0;
+    (e.func || []).forEach(function (f) { dia += r2((Number(f.dias) || 0) * (Number(f.diaria) || 0)); ext += r2((Number(f.dias) || 0) * (Number(f.extra) || 0)); });
+    (e.outros || []).forEach(function (o) { out += Number(o.valor) || 0; });
+    var enc = r2(dia * (Number(e.enc) || 0) / 100);
+    return { dia: r2(dia), ext: r2(ext), enc: enc, out: r2(out), total: r2(dia + ext + enc + out) };
+  }
+  function resumoEquipe(c) {
+    var el = c && $("#eq-res", c); if (!el) return;
+    var k = custoEquipe(), t = totais(), e = eq(), cobra = t.seu, res = r2(cobra - k.total), pct = cobra ? res / cobra * 100 : 0, mg = Number(e.margem) || 0;
+    var minimo = mg > 0 && mg < 100 ? r2(k.total / (1 - mg / 100)) : null;
+    el.innerHTML = '<div class="linha peq" style="justify-content:space-between"><span>Diárias</span><span>' + din(k.dia) + '</span></div>' +
+      (k.ext ? '<div class="linha peq" style="justify-content:space-between"><span>Transporte / alimentação</span><span>' + din(k.ext) + "</span></div>" : "") +
+      (k.enc ? '<div class="linha peq" style="justify-content:space-between"><span>Encargos e benefícios</span><span>' + din(k.enc) + "</span></div>" : "") +
+      (k.out ? '<div class="linha peq" style="justify-content:space-between"><span>Outros honorários</span><span>' + din(k.out) + "</span></div>" : "") +
+      '<div class="linha" style="justify-content:space-between;border-top:1px solid var(--borda);margin-top:4px;padding-top:4px"><b>Custo total da equipe</b><b>' + din(k.total) + "</b></div>" +
+      (cobra ? '<div class="linha" style="justify-content:space-between;margin-top:6px"><span>Mão de obra cobrada na lista</span><span>' + din(cobra) + '</span></div><div class="linha" style="justify-content:space-between"><b>Sobra (cobrado − custo da equipe)</b><b style="color:' + (res >= 0 ? "var(--bom,#1b7f3b)" : "var(--perigo,#c0392b)") + '">' + din(res) + " (" + A.numero(pct, 1) + "%)</b></div>" : '<p class="peq mudo" style="margin:6px 0 0">Adicione serviços à lista acima para comparar com o que você cobra.</p>') +
+      (minimo !== null && k.total > 0 ? '<div class="linha" style="justify-content:space-between;margin-top:4px"><span>Preço mínimo da mão de obra para ter ' + A.numero(mg, 1) + '% de sobra</span><b>' + din(minimo) + "</b></div>" + (cobra && cobra < minimo ? '<p class="peq" style="color:var(--perigo,#c0392b);margin:4px 0 0">⚠ O que você cobra está ' + din(r2(minimo - cobra)) + " abaixo desse mínimo.</p>" : "") : "");
+  }
+  function equipeCartao(c) {
+    var el = $("#cl-equipe", c); if (!el) return;
+    var e = eq(), fs = ((P && P.S.func) || []).filter(function (f) { return f.ativo !== false; }).sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome), "pt-BR"); });
+    el.innerHTML = '<details class="cartao" id="eq-cx"' + ((e.func.length || e.outros.length) ? " open" : "") + '><summary><b>👷 Custo da equipe (honorários)</b> <span class="selo">só você vê</span> <span class="peq mudo">· quanto a equipe custa nesta obra</span></summary>' +
+      '<p class="peq mudo" style="margin:6px 0">Escolha quem vai trabalhar, os dias e a diária (vem do cadastro da equipe, e você pode mudar aqui). O app soma o custo e compara com o que a lista cobra de mão de obra. Nada disso vai para o orçamento do cliente.</p>' +
+      '<div class="linha" style="gap:8px"><label style="width:150px">Dias de obra (padrão)<input class="eq-dias" inputmode="decimal" value="' + esc(fq(e.dias)) + '"></label><label style="width:160px">Encargos e benefícios (%)<input class="eq-enc" inputmode="decimal" value="' + esc(fq(e.enc)) + '"></label><label style="width:170px">Sobra desejada (%)<input class="eq-mg" inputmode="decimal" value="' + esc(fq(e.margem)) + '"></label></div>' +
+      '<div id="eq-func">' + e.func.map(function (f, i) {
+        return '<div class="linha eq-lin" data-i="' + i + '" style="gap:6px;margin-top:6px;align-items:flex-end"><label style="flex:2;min-width:170px">Funcionário<select class="eq-f"><option value="">— avulso —</option>' + fs.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === f.id ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join("") + '</select></label>' +
+          '<label style="flex:2;min-width:150px">Nome / função<input class="eq-n" maxlength="80" value="' + esc(f.nome || "") + '"></label><label style="width:80px">Dias<input class="eq-d" inputmode="decimal" value="' + esc(fq(f.dias)) + '"></label>' +
+          '<label style="width:110px">Diária (R$)<input class="eq-v" inputmode="decimal" value="' + esc(f2(f.diaria)) + '"></label><label style="width:120px">Transp./alim. por dia<input class="eq-x" inputmode="decimal" value="' + esc(f2(f.extra)) + '"></label><button class="peq perigo" data-eq-tirar="' + i + '" aria-label="Tirar">🗑</button></div>';
+      }).join("") + "</div>" +
+      '<div id="eq-out">' + e.outros.map(function (o, i) {
+        return '<div class="linha eq-ou" data-i="' + i + '" style="gap:6px;margin-top:6px;align-items:flex-end"><label style="flex:3;min-width:200px">Outro honorário (ART, responsável técnico, terceiro...)<input class="eq-od" maxlength="120" value="' + esc(o.desc || "") + '"></label><label style="width:130px">Valor (R$)<input class="eq-ov" inputmode="decimal" value="' + esc(f2(o.valor)) + '"></label><button class="peq perigo" data-eq-tirar-o="' + i + '" aria-label="Tirar">🗑</button></div>';
+      }).join("") + "</div>" +
+      '<div class="acoes"><button class="peq" id="eq-add">➕ Funcionário</button><button class="peq" id="eq-add-o">➕ Outro honorário</button></div><div id="eq-res" style="margin-top:8px"></div></details>';
+    function salvar() { guardar(); }
+    $(".eq-dias", el).oninput = function () { e.dias = A.lerNumero(this.value) || 0; salvar(); };
+    $(".eq-enc", el).oninput = function () { e.enc = A.lerNumero(this.value) || 0; salvar(); resumoEquipe(c); };
+    $(".eq-mg", el).oninput = function () { e.margem = A.lerNumero(this.value) || 0; salvar(); resumoEquipe(c); };
+    $("#eq-add", el).onclick = function () { e.func.push({ id: "", nome: "", dias: e.dias || 0, diaria: 0, extra: 0 }); salvar(); equipeCartao(c); };
+    $("#eq-add-o", el).onclick = function () { e.outros.push({ desc: "", valor: 0 }); salvar(); equipeCartao(c); };
+    $$(".eq-lin", el).forEach(function (d) {
+      var f = e.func[Number(d.dataset.i)];
+      $(".eq-f", d).onchange = function () {
+        f.id = this.value; var x = fs.filter(function (y) { return y.id === f.id; })[0];
+        if (x) { f.nome = x.nome; if (Number(x.diaria) > 0) f.diaria = Number(x.diaria); $(".eq-n", d).value = f.nome; $(".eq-v", d).value = f2(f.diaria); }
+        salvar(); resumoEquipe(c);
+      };
+      function ler() { f.nome = $(".eq-n", d).value; f.dias = A.lerNumero($(".eq-d", d).value) || 0; f.diaria = A.lerNumero($(".eq-v", d).value) || 0; f.extra = A.lerNumero($(".eq-x", d).value) || 0; salvar(); resumoEquipe(c); }
+      $$("input", d).forEach(function (i) { i.addEventListener("input", ler); });
+    });
+    $$(".eq-ou", el).forEach(function (d) {
+      var o = e.outros[Number(d.dataset.i)];
+      $$("input", d).forEach(function (i) { i.addEventListener("input", function () { o.desc = $(".eq-od", d).value; o.valor = A.lerNumero($(".eq-ov", d).value) || 0; salvar(); resumoEquipe(c); }); });
+    });
+    $$("[data-eq-tirar]", el).forEach(function (b) { b.onclick = function () { e.func.splice(Number(b.dataset.eqTirar), 1); salvar(); equipeCartao(c); }; });
+    $$("[data-eq-tirar-o]", el).forEach(function (b) { b.onclick = function () { e.outros.splice(Number(b.dataset.eqTirarO), 1); salvar(); equipeCartao(c); }; });
+    resumoEquipe(c);
+  }
+
   // ---- lista de serviços ----
   function lista(c) {
     var el = $("#cl-lista", c);
-    if (!estado.linhas.length) { el.innerHTML = '<div class="cartao vazio">Sua lista está vazia. Escolha um serviço, digite a metragem e toque em ➕ Adicionar.</div>'; return; }
+    if (!estado.linhas.length) { resumoEquipe(c); el.innerHTML = '<div class="cartao vazio">Sua lista está vazia. Escolha um serviço, digite a metragem e toque em ➕ Adicionar.</div>'; return; }
+    resumoEquipe(c);
     var t = totais(), dif = t.media ? ((t.seu - t.media) / t.media * 100) : 0;
     el.innerHTML = '<div class="cartao"><h3 style="margin-top:0">Sua lista</h3>' + (t.mat ? '<div class="acoes" style="margin-top:0"><button class="peq" id="cl-margem" title="Aplica um percentual sobre o custo da loja em todos os materiais">💹 Margem nos materiais</button><button class="peq" id="cl-custo" title="Volta todos os materiais ao custo da loja">↺ Tudo ao custo</button></div>' : "") + estado.linhas.map(function (l, i) {
       return '<div class="cl-lin" data-i="' + i + '" style="border-top:1px solid var(--borda);padding:8px 0">' + (l.tipo === "material" ? '<span class="selo">🧱 material</span>' : "") + '<input class="l-desc" maxlength="300" value="' + esc(l.desc) + '" style="width:100%">' +
@@ -373,7 +439,7 @@
       '<div class="acoes"><button class="prim" id="cl-orc">📄 Criar orçamento com esta lista</button><button id="cl-copiar">📋 Copiar</button><button class="perigo" id="cl-limpar">🧹 Limpar lista</button></div></div>';
     function atualizarTotais() {
       var t2 = totais(), d2 = t2.media ? ((t2.seu - t2.media) / t2.media * 100) : 0;
-      $("#cl-tot", c).textContent = din(t2.seu); if ($("#cl-tmat", c)) { $("#cl-tcusto", c).textContent = din(t2.matCusto) + " · " + din(r2(t2.mat - t2.matCusto)); $("#cl-tmat", c).textContent = din(t2.mat); $("#cl-tgeral", c).textContent = din(r2(t2.seu + t2.mat)); } $("#cl-tmed", c).textContent = din(t2.media) + (t2.media ? " (" + (d2 >= 0 ? "+" : "") + A.numero(d2, 1) + "%)" : "");
+      resumoEquipe(c); $("#cl-tot", c).textContent = din(t2.seu); if ($("#cl-tmat", c)) { $("#cl-tcusto", c).textContent = din(t2.matCusto) + " · " + din(r2(t2.mat - t2.matCusto)); $("#cl-tmat", c).textContent = din(t2.mat); $("#cl-tgeral", c).textContent = din(r2(t2.seu + t2.mat)); } $("#cl-tmed", c).textContent = din(t2.media) + (t2.media ? " (" + (d2 >= 0 ? "+" : "") + A.numero(d2, 1) + "%)" : "");
     }
     $$(".cl-lin", el).forEach(function (d) {
       var l = estado.linhas[Number(d.dataset.i)];
