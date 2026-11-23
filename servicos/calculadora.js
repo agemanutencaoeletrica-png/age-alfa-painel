@@ -5,14 +5,47 @@
   "use strict";
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var P = null, CHAVE = "age_calc_v1";
-  var estado = { cat: "pintura", linhas: [], busca: "", grupo: "", sel: "" };
+  var estado = { cat: "pintura", linhas: [], busca: "", grupo: "", sel: "", id: null, nome: "", orc: null };
+  var cot = [], semTab = false, raiz = null, timerN = null, salvando = false, pendente = false;
   var CATS = { pintura: "🎨 Pintura", eletrica: "⚡ Elétrica" };
 
   function semAcento(t) { return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim(); }
   function r2(v) { return Math.round((Number(v) || 0) * 100) / 100; }
   function din(v) { return A.dinheiro(Number(v) || 0); }
-  function ler() { try { var s = JSON.parse(localStorage.getItem(CHAVE) || "null"); if (s && Array.isArray(s.linhas)) { estado.cat = CATS[s.cat] ? s.cat : "pintura"; estado.linhas = s.linhas; } } catch (e) { /* sem armazenamento: começa vazio */ } }
-  function guardar() { try { localStorage.setItem(CHAVE, JSON.stringify({ cat: estado.cat, linhas: estado.linhas })); } catch (e) { /* ignora */ } }
+  function ler() {
+    try {
+      var s = JSON.parse(localStorage.getItem(CHAVE) || "null");
+      if (s && Array.isArray(s.linhas)) { estado.cat = CATS[s.cat] ? s.cat : "pintura"; estado.linhas = s.linhas; estado.id = s.id || null; estado.nome = s.nome || ""; estado.orc = s.orc || null; }
+    } catch (e) { /* sem armazenamento: começa vazio */ }
+  }
+  function guardarLocal() { try { localStorage.setItem(CHAVE, JSON.stringify({ cat: estado.cat, linhas: estado.linhas, id: estado.id, nome: estado.nome, orc: estado.orc })); } catch (e) { /* ignora */ } }
+  function guardar() { guardarLocal(); agendarNuvem(); }
+  function semT(e) { return /does not exist|schema cache|PGRST205|42P01/i.test(String((e && (e.message || e.code)) || e)); }
+  function agoraTxt() { var d = new Date(); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); }
+  function status(t, erro) { var e = raiz && $("#cl-status", raiz); if (e) { e.textContent = t; e.style.color = erro ? "var(--perigo,#c0392b)" : ""; } }
+  function nomePadrao() { var d = new Date(); return "Cotação de " + ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + " " + agoraTxt(); }
+
+  // ---- salvar sozinho na nuvem (Supabase) e guardar as cotações para consulta ----
+  function carregarCot(depois) {
+    Promise.resolve(P.sb.from("calc_cotacoes").select("*").order("atualizado_em", { ascending: false }).limit(300)).then(function (r) {
+      if (r.error) throw r.error; cot = r.data || []; semTab = false;
+    }).catch(function (e) { cot = []; semTab = semT(e); }).then(depois);
+  }
+  function agendarNuvem() { if (semTab || !P) { status(estado.linhas.length ? "salva neste aparelho" : ""); return; } status("salvando…"); clearTimeout(timerN); timerN = setTimeout(salvarNuvem, 1200); }
+  function salvarNuvem() {
+    if (!P || semTab || (!estado.linhas.length && !estado.id)) return;
+    if (salvando) { pendente = true; return; }
+    salvando = true;
+    var reg = { nome: estado.nome || nomePadrao(), categoria: estado.cat, linhas: estado.linhas, orc: estado.orc || null, total: totais().seu, atualizado_em: new Date().toISOString() };
+    var op = estado.id ? P.sb.from("calc_cotacoes").update(reg).eq("id", estado.id).select() : P.sb.from("calc_cotacoes").insert(reg).select();
+    Promise.resolve(op).then(function (r) {
+      if (r.error) throw r.error;
+      var x = (r.data || [])[0];
+      if (x) { estado.id = x.id; cot = [x].concat(cot.filter(function (y) { return y.id !== x.id; })); guardarLocal(); }
+      status("☁ salva às " + agoraTxt()); pintarSalvas();
+    }).catch(function (e) { if (semT(e)) { semTab = true; status("salva neste aparelho (falta rodar o calculadora.sql)"); } else status("não salvou na nuvem", true); })
+      .then(function () { salvando = false; if (pendente) { pendente = false; salvarNuvem(); } });
+  }
   function f2(v) { return Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function fq(v) { return String(Number(v) || 0).replace(".", ","); }   // sem ponto de milhar: "2.920" seria lido como 2,92
   function n(x) { return x === null || x === undefined || x === "" ? null : Number(x); }
@@ -51,13 +84,15 @@
   }
 
   // ---------------- tela ----------------
-  function ver(c, ctx) { P = ctx; ler(); desenhar(c); }
+  function ver(c, ctx) { P = ctx; raiz = c; ler(); c.innerHTML = '<div class="cab-secao"><h2>🧮 Calculadora de mão de obra</h2></div><div class="cartao vazio">Carregando...</div>'; carregarCot(function () { desenhar(c); }); }
   function desenhar(c) {
     var L = servicos(estado.cat), grupos = [];
     L.forEach(function (s) { if (grupos.indexOf(s.grupo) < 0) grupos.push(s.grupo); });
     if (estado.grupo && grupos.indexOf(estado.grupo) < 0) estado.grupo = "";
-    c.innerHTML = '<div class="cab-secao"><h2>🧮 Calculadora de mão de obra</h2><span id="cl-status" class="mudo peq">salva sozinha neste aparelho</span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>🧮 Calculadora de mão de obra</h2><span id="cl-status" class="mudo peq">salva sozinha</span></div>' +
       '<p class="mudo peq" style="margin-top:-4px">Escolha o serviço da tabela, digite a <b>metragem</b> e ajuste o <b>preço por unidade</b> como quiser (a tabela não muda). Os valores são só mão de obra, sem material.</p>' +
+      '<div class="cartao"><label style="margin-top:0">Nome desta cotação (para achar depois)<input class="cl-ncot" maxlength="200" placeholder="Ex.: Condomínio X – sinalização" value="' + esc(estado.nome) + '"></label>' +
+      '<div class="acoes"><button class="peq" id="cl-nova">🆕 Nova cotação</button><button class="peq" id="cl-imp" title="Cole o código de uma cotação preparada">📥 Importar código</button></div></div>' +
       '<div class="cartao"><div class="acoes" style="margin-top:0">' + Object.keys(CATS).map(function (k) { return '<button class="' + (k === estado.cat ? "prim" : "") + '" data-cat="' + k + '">' + CATS[k] + "</button>"; }).join("") + "</div>" +
       '<div class="linha" style="gap:8px;margin-top:8px"><input type="search" id="cl-busca" data-sem-correcao placeholder="🔍 Buscar serviço (ex.: vaga, pare, parede)" style="flex:2;min-width:180px" value="' + esc(estado.busca) + '">' +
       '<select id="cl-grupo" aria-label="Grupo" style="flex:1;min-width:150px"><option value="">Todos os grupos</option>' + grupos.map(function (g) { return '<option' + (g === estado.grupo ? " selected" : "") + ">" + esc(g) + "</option>"; }).join("") + "</select></div>" +
@@ -68,7 +103,7 @@
       '<div class="acoes"><button class="peq" id="cl-min">Mínimo</button><button class="peq" id="cl-med">Média</button><button class="peq" id="cl-max">Máximo</button>' +
       '<span id="cl-prev" style="margin-left:auto;font-weight:700"></span><button class="prim" id="cl-add">➕ Adicionar à lista</button></div>' +
       '<div class="acoes"><button class="peq" id="cl-colar" title="Cole várias metragens de uma vez: o app acha o serviço na tabela de cada linha">📝 Colar lista de metragens</button><button class="peq" id="cl-livre" title="Serviço que não está na tabela (ex.: limpeza do piso)">➕ Item fora da tabela</button></div></div>' +
-      '<div id="cl-lista"></div>';
+      '<div id="cl-lista"></div><div id="cl-salvas"></div>';
     $$("[data-cat]", c).forEach(function (b) { b.onclick = function () { estado.cat = b.dataset.cat; estado.grupo = ""; estado.busca = ""; estado.sel = ""; guardar(); desenhar(c); }; });
     $("#cl-busca", c).oninput = function () { estado.busca = this.value; opcoes(c); };
     $("#cl-grupo", c).onchange = function () { estado.grupo = this.value; opcoes(c); };
@@ -80,9 +115,12 @@
     $("#cl-med", c).onclick = function () { var s = achar(estado.cat, estado.sel); if (s && s.valor !== null) fixar(c, s.valor); };
     $("#cl-max", c).onclick = function () { var s = achar(estado.cat, estado.sel); if (s && s.max !== null) fixar(c, s.max); };
     $("#cl-add", c).onclick = function () { adicionar(c); };
+    $(".cl-ncot", c).oninput = function () { estado.nome = this.value; guardar(); };
+    $("#cl-nova", c).onclick = function () { estado = Object.assign(estado, { id: null, nome: "", linhas: [], orc: null }); guardarLocal(); status(""); desenhar(c); };
+    $("#cl-imp", c).onclick = function () { importar(c); };
     $("#cl-colar", c).onclick = function () { colar(c); };
     $("#cl-livre", c).onclick = function () { livre(c); };
-    opcoes(c); lista(c);
+    opcoes(c); lista(c); pintarSalvas();
   }
   function opcoes(c) {
     var b = semAcento(estado.busca), g = {}, total = 0;
@@ -96,12 +134,16 @@
     if (estado.sel && !$("#cl-serv", c).value) estado.sel = "";
     escolher(c, true);
   }
+  function refHist(s) {
+    var h = historico(s);
+    return h.length ? '<div style="margin-top:4px">Você já cobrou: ' + h.map(function (x) { return '<button class="peq" data-hv="' + x.v + '" title="' + esc(x.de) + '">' + din(x.v) + " · " + esc(x.de.slice(0, 28)) + (x.data ? " (" + dataCurta(x.data) + ")" : "") + "</button>"; }).join(" ") + "</div>" : "";
+  }
   function fixar(c, v) { $("#cl-preco", c).value = f2(v); if ($("#cl-slide", c).style.display !== "none") $("#cl-slide", c).value = v; prever(c); }
   function escolher(c, manter) {
     var s = achar(estado.cat, estado.sel), sl = $("#cl-slide", c);
     $("#cl-metr-r", c).textContent = s ? "Metragem / quantidade (" + s.un + ")" : "Metragem / quantidade";
     if (!s) { $("#cl-ref", c).textContent = ""; sl.style.display = "none"; prever(c); return; }
-    $("#cl-ref", c).textContent = faixaTxt({ min: s.min, max: s.max, media: s.valor });
+    $("#cl-ref", c).innerHTML = esc(faixaTxt({ min: s.min, max: s.max, media: s.valor })) + refHist(s);
     if (s.min !== null && s.max !== null && s.max > s.min) { sl.style.display = ""; sl.min = s.min; sl.max = s.max; sl.step = "0.01"; } else sl.style.display = "none";
     if (!manter || !$("#cl-preco", c).value) { if (s.valor !== null) fixar(c, s.valor); else $("#cl-preco", c).value = ""; }
     prever(c);
@@ -110,12 +152,13 @@
     var q = A.lerNumero($("#cl-metr", c).value), v = A.lerNumero($("#cl-preco", c).value), s = achar(estado.cat, estado.sel);
     $("#cl-prev", c).innerHTML = s && q && v ? "= " + din(r2(q * v)) : "";
     $("#cl-add", c).disabled = !(s && q > 0 && v > 0);
-    if (s && v) { var l = { min: s.min, max: s.max, valor: v }; $("#cl-ref", c).innerHTML = esc(faixaTxt({ min: s.min, max: s.max, media: s.valor })) + " " + aviso(l); }
+    if (s && v) { var l = { min: s.min, max: s.max, valor: v }; $("#cl-ref", c).innerHTML = esc(faixaTxt({ min: s.min, max: s.max, media: s.valor })) + " " + aviso(l) + refHist(s); }
+    $$("[data-hv]", c).forEach(function (b) { b.onclick = function () { fixar(c, Number(b.dataset.hv)); }; });
   }
   function adicionar(c) {
     var s = achar(estado.cat, estado.sel), q = A.lerNumero($("#cl-metr", c).value), v = A.lerNumero($("#cl-preco", c).value);
     if (!s || !(q > 0) || !(v > 0)) return;
-    estado.linhas.push({ desc: s.descricao, un: s.un, qtd: q, valor: r2(v), media: s.valor, min: s.min, max: s.max, cat: estado.cat });
+    estado.linhas.push({ desc: s.descricao, ref: s.descricao, un: s.un, qtd: q, valor: r2(v), media: s.valor, min: s.min, max: s.max, cat: estado.cat });
     guardar(); $("#cl-metr", c).value = ""; lista(c); prever(c); A.avisar("Adicionado à lista", "ok");
   }
 
@@ -169,7 +212,7 @@
       itens.forEach(function (x) {
         if (x.erro) return;
         var s = x.ach && x.ach.s;
-        estado.linhas.push(s ? { desc: x.desc || s.descricao, un: s.un, qtd: x.qtd, valor: s.valor !== null ? s.valor : 0, media: s.valor, min: s.min, max: s.max, cat: x.ach.cat }
+        estado.linhas.push(s ? { desc: x.desc || s.descricao, ref: s.descricao, un: s.un, qtd: x.qtd, valor: s.valor !== null ? s.valor : 0, media: s.valor, min: s.min, max: s.max, cat: x.ach.cat }
           : { desc: x.desc || x.nome, un: x.un || "un", qtd: x.qtd, valor: 0, media: null, min: null, max: null, cat: estado.cat });
       });
       guardar(); j.fechar(); lista(c); A.avisar("Lista adicionada", "ok");
@@ -185,6 +228,65 @@
       if (!d || !(q > 0)) { A.avisar("Escreva a descrição e a quantidade.", "erro"); return; }
       estado.linhas.push({ desc: d, un: $(".lv-u", j.el).value, qtd: q, valor: A.lerNumero($(".lv-v", j.el).value) || 0, media: null, min: null, max: null, cat: estado.cat });
       guardar(); j.fechar(); lista(c);
+    };
+  }
+
+
+  // ---- valores de referência: o que você já cobrou nos orçamentos e nas cotações salvas ----
+  function historico(s) {
+    var qs = tokens(s.descricao), out = [];
+    if (!qs.length) return out;
+    ((P && P.S.orc) || []).forEach(function (o) {
+      (o.itens || []).forEach(function (i) {
+        var v = Number(i.valor) || 0; if (i.tipo === "material" || !v) return;
+        var dt = tokens(i.descricao), sc = qs.filter(function (q) { return dt.some(function (x) { return x === q || x.indexOf(q) === 0 || q.indexOf(x) === 0; }); }).length / qs.length;
+        if (sc >= 0.8 && Math.abs(dt.length - qs.length) <= 8) out.push({ v: v, de: "orçamento " + (o.cliente || ""), data: o.criado_em });
+      });
+    });
+    cot.forEach(function (c) { (c.linhas || []).forEach(function (l) { if (l.ref === s.descricao && Number(l.valor) > 0 && c.id !== estado.id) out.push({ v: Number(l.valor), de: "cotação " + (c.nome || ""), data: c.atualizado_em }); }); });
+    out.sort(function (a, b) { return String(b.data || "") < String(a.data || "") ? -1 : 1; });
+    return out.slice(0, 4);
+  }
+  function dataCurta(iso) { var d = new Date(iso); return isNaN(d) ? "" : ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear(); }
+
+  // ---- cotações salvas ----
+  function pintarSalvas() {
+    var el = raiz && $("#cl-salvas", raiz); if (!el) return;
+    if (semTab) { el.innerHTML = '<div class="aviso">Para guardar as cotações na nuvem (e ver os valores de referência em qualquer aparelho), rode no Supabase o <b>calculadora.sql</b>. Por enquanto a lista fica só neste aparelho.</div>'; return; }
+    if (!cot.length) { el.innerHTML = ""; return; }
+    el.innerHTML = '<div class="cartao"><h3 style="margin-top:0">📚 Cotações salvas <span class="mudo peq">(valores para referência)</span></h3>' + cot.map(function (x) {
+      var atual = x.id === estado.id;
+      return '<details class="cl-cot" data-id="' + esc(x.id) + '" style="border-top:1px solid var(--borda);padding:6px 0"' + '><summary><b>' + esc(x.nome || "(sem nome)") + "</b>" + (atual ? ' <span class="selo">aberta</span>' : "") + ' · ' + din(x.total) + ' <span class="mudo peq">· ' + (x.linhas || []).length + " item(ns) · " + esc(dataCurta(x.atualizado_em)) + "</span></summary>" +
+        '<div class="peq" style="margin:6px 0">' + (x.linhas || []).map(function (l) { return esc(A.numero(l.qtd, 2)) + " " + esc(l.un) + " · " + esc(l.desc) + " — " + din(l.valor) + "/" + esc(l.un); }).join("<br>") + "</div>" +
+        '<div class="acoes" style="margin-top:4px"><button class="peq" data-abrir="' + esc(x.id) + '">Abrir</button><button class="peq" data-dup="' + esc(x.id) + '">Duplicar</button><button class="peq perigo" data-del="' + esc(x.id) + '">Apagar</button></div></details>';
+    }).join("") + "</div>";
+    $$("[data-abrir]", el).forEach(function (b) { b.onclick = function () { var x = cot.filter(function (y) { return y.id === b.dataset.abrir; })[0]; if (!x) return; Object.assign(estado, { id: x.id, nome: x.nome, cat: CATS[x.categoria] ? x.categoria : "pintura", linhas: x.linhas || [], orc: x.orc || null }); guardarLocal(); desenhar(raiz); window.scrollTo(0, 0); }; });
+    $$("[data-dup]", el).forEach(function (b) { b.onclick = function () { var x = cot.filter(function (y) { return y.id === b.dataset.dup; })[0]; if (!x) return; Object.assign(estado, { id: null, nome: (x.nome || "Cotação") + " (cópia)", cat: CATS[x.categoria] ? x.categoria : "pintura", linhas: JSON.parse(JSON.stringify(x.linhas || [])), orc: x.orc || null }); guardar(); desenhar(raiz); window.scrollTo(0, 0); }; });
+    $$("[data-del]", el).forEach(function (b) {
+      b.onclick = function () {
+        var x = cot.filter(function (y) { return y.id === b.dataset.del; })[0]; if (!x || !A.confirmar("Apagar a cotação “" + (x.nome || "") + "”?")) return;
+        Promise.resolve(P.sb.from("calc_cotacoes").delete().eq("id", x.id)).then(function (r) { if (r.error) throw r.error; cot = cot.filter(function (y) { return y.id !== x.id; }); if (estado.id === x.id) { estado.id = null; guardarLocal(); } pintarSalvas(); })
+          .catch(function (e) { A.avisar(A.msgErro ? A.msgErro(e) : e.message, "erro"); });
+      };
+    });
+  }
+
+  // ---- importar uma cotação preparada (código "AGE-COTACAO:...") ----
+  function decodificar(txt) {
+    var m = String(txt || "").replace(/\s+/g, "").match(/AGE-COTACAO:([A-Za-z0-9+/=_-]+)/); if (!m) return null;
+    try { return JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, "+").replace(/_/g, "/"))))); } catch (e) { return null; }
+  }
+  function importar(c) {
+    var j = A.janela('<p class="mudo peq" style="margin-top:0">Cole aqui o código da cotação (começa com <b>AGE-COTACAO:</b>).</p><textarea id="cl-cod" rows="6" style="width:100%" spellcheck="false"></textarea>' +
+      '<div class="acoes"><button class="prim" id="cl-cod-ok">📥 Importar</button><button id="cl-cod-x">Cancelar</button></div>', { titulo: "📥 Importar cotação", semRascunho: true });
+    $("#cl-cod-x", j.el).onclick = function () { j.fechar(); };
+    $("#cl-cod-ok", j.el).onclick = function () {
+      var d = decodificar($("#cl-cod", j.el).value);
+      if (!d || !Array.isArray(d.l)) { A.avisar("Não consegui ler esse código. Copie de novo, inteiro.", "erro"); return; }
+      if (estado.linhas.length && !estado.id && !A.confirmar("A lista atual ainda não foi salva e será substituída. Continuar?")) return;
+      Object.assign(estado, { id: null, nome: d.n || "", cat: CATS[d.c] ? d.c : "pintura", orc: d.o || null,
+        linhas: d.l.map(function (x) { return { desc: x.d, ref: x.r || x.d, un: x.u, qtd: Number(x.q) || 0, valor: Number(x.v) || 0, media: x.m === undefined ? null : x.m, min: x.mi === undefined ? null : x.mi, max: x.ma === undefined ? null : x.ma, cat: CATS[x.c] ? x.c : (CATS[d.c] ? d.c : "pintura") }; }) });
+      guardar(); j.fechar(); desenhar(c); A.avisar("Cotação importada: " + estado.linhas.length + " itens", "ok");
     };
   }
 
@@ -221,7 +323,7 @@
       var ls = estado.linhas.filter(function (l) { return l.qtd > 0; });
       if (!ls.length) return;
       if (ls.some(function (l) { return !(l.valor > 0); }) && !A.confirmar("Há item sem preço. Criar o orçamento assim mesmo?")) return;
-      P.novoOrcamento({ categoria: ls[0].cat === "eletrica" ? "eletrica" : "pintura", itens: ls.map(function (l) { return { tipo: "servico", descricao: l.desc, qtd: l.qtd, un: l.un, valor: l.valor }; }) });
+      P.novoOrcamento(Object.assign({ categoria: ls[0].cat === "eletrica" ? "eletrica" : "pintura" }, estado.orc || {}, { itens: ls.map(function (l) { return { tipo: "servico", descricao: l.desc, qtd: l.qtd, un: l.un, valor: l.valor }; }) }));
     };
   }
   function texto() {
