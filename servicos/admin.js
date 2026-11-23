@@ -2496,12 +2496,12 @@
   function semValores(o) { return soMateriais(o) && modoMat(o) === "nenhum"; }
   // orçamento completo (materiais + mão de obra): o que o cliente vê com valor. t_total = só o total; t_mao = valor da mão de obra; t_mat = valor dos materiais;
   // "itens" = tudo com valor. (Nos três primeiros os materiais entram no total.)
-  function modoVis(o) { return !soMateriais(o) && /^t_(total|mao|mat|lista)$/.test(o.valores_cliente || "") ? o.valores_cliente : null; }
+  function modoVis(o) { return !soMateriais(o) && /^t_(total|mao|mat|lista|servicos|sep)$/.test(o.valores_cliente || "") ? o.valores_cliente : null; }
   function valoresCliente(o) { var mv = modoVis(o); return soMateriais(o) ? modoMat(o) === "itens" : mv ? mv === "t_mao" : o.valores_cliente !== "total"; }
   // linhas de subtotal que o cliente vê acima do total, conforme o modo
   function linhasSub(o, t) {
     var mv = modoVis(o), l = [];
-    if (mv === "t_total" || mv === "t_lista") return l;
+    if (mv === "t_total" || mv === "t_lista" || mv === "t_servicos" || mv === "t_sep") return l;   // t_servicos: só os serviços sem valores e o total (materiais embutidos, não aparecem)
     if (mv !== "t_mao" && t.mc && t.mat) l.push(["Materiais", t.mat]);
     if (mv !== "t_mat" && t.serv) l.push(["Mão de obra", t.serv]);
     return l;
@@ -2635,8 +2635,12 @@
         '<button class="peq" id="eo2-organizar" title="Põe os itens parecidos um embaixo do outro, em ordem de medida (ex.: Cabo PP 2x1,5, 2x2,5, 3x1,5). Para mudar um item de lugar, segure o ⠿ e arraste.">🔀 Organizar itens</button></div>' +
       '<div class="duas"><div><label for="eo2-desc">Desconto (R$)</label><input id="eo2-desc" inputmode="decimal"></div><div><label for="eo2-val">Validade (dias)</label><input id="eo2-val" type="number" min="1" max="365"></div></div>' +
       '<div class="cartao' + (soMateriais(M) ? " oculto" : "") + '" style="margin-top:10px"><b>O que vai para o cliente (PDF, impressão e WhatsApp)</b>' +
+      '<div class="acoes" style="margin-top:6px"><button type="button" class="peq" id="eo2-q-junto">📦 Tudo junto: só os serviços e o total</button><button type="button" class="peq" id="eo2-q-sep">✂ Separados: mão de obra + lista de materiais</button></div>' +
+      '<p id="eo2-q-info" class="mudo peq" style="margin:4px 0 0"></p>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="itens"> <b>Tudo com valor</b>: materiais e mão de obra, cada item com o seu valor</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_total"> <b>Só o valor total</b> (a lista dos itens vai sem valores)</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_servicos"> <b>Só os serviços (sem valores) e o valor total</b> (os materiais <u>não aparecem</u> e entram no total)</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_sep"> <b>Só a mão de obra (sem valores) e o total dela</b> (a lista de materiais vai em outro PDF; os materiais não entram no total)</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_lista"> <b>Só a lista de materiais, sem valores, e o valor total</b> (a mão de obra não aparece em linha; o total inclui tudo)</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_mao"> <b>Só o valor da mão de obra</b> (materiais só a lista; o total inclui os materiais)</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="radio" name="eo2-vmodo" value="t_mat"> <b>Só o valor dos materiais</b> (mão de obra sem valor; o total inclui a mão de obra)</label>' +
@@ -2976,7 +2980,7 @@
       M.desconto = A.lerNumero($("#eo2-desc", el).value); M.validade_dias = Math.max(1, parseInt($("#eo2-val", el).value, 10) || 15);
       M.pagamento = val(el, "#eo2-pag"); M.prazo = val(el, "#eo2-prazo"); M.observacoes = val(el, "#eo2-obs"); M.status = $("#eo2-st", el).value;
       M.valores_cliente = $("#eo2-vitens", el).checked ? "itens" : "total"; M.materiais_cliente = $("#eo2-mcli", el).checked;
-      if (visSel && !soMateriais(M)) { M.valores_cliente = visSel; M.materiais_cliente = true; }
+      if (visSel && !soMateriais(M)) { M.valores_cliente = visSel; M.materiais_cliente = visSel !== "t_sep"; }
       if (soMateriais(M)) { var rm = $('input[name="eo2-mmodo"]:checked', el); M.valores_cliente = rm ? rm.value : "itens"; M.materiais_cliente = true; }
       var mImp = $("#eo2-imp-modo", el).value;
       M.impostos = mImp ? { modo: mImp, municipio: val(el, "#eo2-imp-mun"), iss: A.lerNumero($("#eo2-imp-iss", el).value) || 0, outros: A.lerNumero($("#eo2-imp-out", el).value) || 0 } : null;
@@ -3058,11 +3062,19 @@
     $$('input[name="eo2-vmodo"]', el).forEach(function (r) {
       r.addEventListener("change", function () {
         var vv = this.value, novo = /^t_/.test(vv);
-        $("#eo2-vitens", el).checked = novo ? vv === "t_mao" : vv !== "total"; $("#eo2-mcli", el).checked = vv !== "total";
+        $("#eo2-vitens", el).checked = novo ? vv === "t_mao" : vv !== "total"; $("#eo2-mcli", el).checked = vv !== "total" && vv !== "t_sep";
         $("#eo2-vitens", el).dispatchEvent(new Event("change", { bubbles: true })); $("#eo2-mcli", el).dispatchEvent(new Event("change", { bubbles: true }));
         visSel = novo ? vv : null; marcarModoValores(); lerCampos(); totais();
       });
     });
+    // atalhos: tudo junto (um PDF só, com os serviços sem valores e o total) ou separados (mão de obra num PDF e a lista de materiais em outro)
+    function escolherModo(v, info) {
+      var r = $$('input[name="eo2-vmodo"]', el).filter(function (x) { return x.value === v; })[0];
+      if (r) { r.checked = true; r.dispatchEvent(new Event("change", { bubbles: true })); }
+      $("#eo2-q-info", el).textContent = info;
+    }
+    if ($("#eo2-q-junto", el)) $("#eo2-q-junto", el).onclick = function () { escolherModo("t_servicos", "Um PDF só: os serviços (sem valores e sem os materiais) e apenas o valor total, que já inclui materiais e mão de obra."); };
+    if ($("#eo2-q-sep", el)) $("#eo2-q-sep", el).onclick = function () { escolherModo("t_sep", "Este PDF leva só a mão de obra (serviços sem valores e o total deles); os materiais não aparecem e ficam fora do total. Para a lista de materiais, toque em 🧱 Gerar orçamento de materiais (você escolhe se leva valores ou só nomes e quantidades) e envie junto ou depois."); };
     $$('input[name="eo2-mmodo"]', el).forEach(function (r) { r.addEventListener("change", function () { lerCampos(); desenharItens(); }); });
     function focarUltimo() { var x = $$(".i-desc", el); if (x.length) x[x.length - 1].focus(); }
     desenharItens();
@@ -3577,9 +3589,9 @@
   }
 
   function gruposCliente(o) {
-    var mc = matCliente(o), vi = valoresCliente(o), soLista = modoVis(o) === "t_lista";   // t_lista: só a lista de materiais, sem valores, e o total
+    var mc = matCliente(o), vi = valoresCliente(o), soLista = modoVis(o) === "t_lista", semMat = /^t_(servicos|sep)$/.test(modoVis(o) || "");   // t_lista: só a lista de materiais, sem valores, e o total; t_servicos: sem lista de materiais (entram só no total)
     return [
-      { titulo: "Materiais", itens: o.itens.filter(function (i) { return i.tipo === "material" || (soLista && i.tipo === "ambos"); }), comValor: soMateriais(o) ? vi : modoVis(o) ? modoVis(o) === "t_mat" : mc },
+      { titulo: "Materiais", itens: semMat ? [] : o.itens.filter(function (i) { return i.tipo === "material" || (soLista && i.tipo === "ambos"); }), comValor: soMateriais(o) ? vi : modoVis(o) ? modoVis(o) === "t_mat" : mc },
       { titulo: "Mão de obra / serviços", itens: soLista ? [] : o.itens.filter(function (i) { return i.tipo !== "material"; }), comValor: vi }
     ].filter(function (g) { return g.itens.length; });
   }

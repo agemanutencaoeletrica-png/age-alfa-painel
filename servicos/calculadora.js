@@ -5,7 +5,7 @@
   "use strict";
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var P = null, CHAVE = "age_calc_v1";
-  var estado = { cat: "pintura", linhas: [], busca: "", grupo: "", sel: "", id: null, nome: "", orc: null };
+  var estado = { cat: "pintura", linhas: [], busca: "", grupo: "", sel: "", id: null, nome: "", orc: null, visao: "t_servicos" };
   var cot = [], semTab = false, raiz = null, timerN = null, salvando = false, pendente = false;
   var CATS = { pintura: "🎨 Pintura", eletrica: "⚡ Elétrica" };
 
@@ -15,10 +15,10 @@
   function ler() {
     try {
       var s = JSON.parse(localStorage.getItem(CHAVE) || "null");
-      if (s && Array.isArray(s.linhas)) { estado.cat = CATS[s.cat] ? s.cat : "pintura"; estado.linhas = s.linhas; estado.id = s.id || null; estado.nome = s.nome || ""; estado.orc = s.orc || null; }
+      if (s && Array.isArray(s.linhas)) { estado.cat = CATS[s.cat] ? s.cat : "pintura"; estado.linhas = s.linhas; estado.id = s.id || null; estado.nome = s.nome || ""; estado.orc = s.orc || null; estado.visao = s.visao || "t_servicos"; }
     } catch (e) { /* sem armazenamento: começa vazio */ }
   }
-  function guardarLocal() { try { localStorage.setItem(CHAVE, JSON.stringify({ cat: estado.cat, linhas: estado.linhas, id: estado.id, nome: estado.nome, orc: estado.orc })); } catch (e) { /* ignora */ } }
+  function guardarLocal() { try { localStorage.setItem(CHAVE, JSON.stringify({ cat: estado.cat, linhas: estado.linhas, id: estado.id, nome: estado.nome, orc: estado.orc, visao: estado.visao })); } catch (e) { /* ignora */ } }
   function guardar() { guardarLocal(); agendarNuvem(); }
   function semT(e) { return /does not exist|schema cache|PGRST205|42P01/i.test(String((e && (e.message || e.code)) || e)); }
   function agoraTxt() { var d = new Date(); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); }
@@ -36,7 +36,7 @@
     if (!P || semTab || (!estado.linhas.length && !estado.id)) return;
     if (salvando) { pendente = true; return; }
     salvando = true;
-    var reg = { nome: estado.nome || nomePadrao(), categoria: estado.cat, linhas: estado.linhas, orc: estado.orc || null, total: totais().seu, atualizado_em: new Date().toISOString() };
+    var reg = { nome: estado.nome || nomePadrao(), categoria: estado.cat, linhas: estado.linhas, orc: estado.orc || null, total: r2(totais().seu + totais().mat), atualizado_em: new Date().toISOString() };
     var op = estado.id ? P.sb.from("calc_cotacoes").update(reg).eq("id", estado.id).select() : P.sb.from("calc_cotacoes").insert(reg).select();
     Promise.resolve(op).then(function (r) {
       if (r.error) throw r.error;
@@ -68,16 +68,18 @@
   function achar(cat, desc) { return servicos(cat).filter(function (s) { return s.descricao === desc; })[0] || null; }
 
   function totais() {
-    var t = { seu: 0, media: 0, semMedia: 0 };
+    var t = { seu: 0, media: 0, semMedia: 0, mat: 0 };
     estado.linhas.forEach(function (l) {
+      if (l.tipo === "material") { t.mat += r2(l.qtd * l.valor); return; }
       t.seu += r2(l.qtd * l.valor);
       if (l.media !== null && l.media !== undefined) t.media += r2(l.qtd * l.media); else t.semMedia++;
     });
-    t.seu = r2(t.seu); t.media = r2(t.media); return t;
+    t.seu = r2(t.seu); t.media = r2(t.media); t.mat = r2(t.mat); return t;
   }
-  function faixaTxt(l) { return l.min !== null && l.max !== null && l.min !== undefined ? "tabela: " + din(l.min) + " · média " + (l.media !== null ? din(l.media) : "—") + " · " + din(l.max) : (l.media !== null && l.media !== undefined ? "tabela: média " + din(l.media) : "sem preço na tabela"); }
+  function faixaTxt(l) { if (l.tipo === "material") return "material · valor da loja (custo)"; return l.min !== null && l.max !== null && l.min !== undefined ? "tabela: " + din(l.min) + " · média " + (l.media !== null ? din(l.media) : "—") + " · " + din(l.max) : (l.media !== null && l.media !== undefined ? "tabela: média " + din(l.media) : "sem preço na tabela"); }
   function aviso(l) {
     if (!(l.valor > 0)) return '<span class="peq" style="color:var(--perigo,#c0392b)">coloque o preço</span>';
+    if (l.tipo === "material") return "";
     if (l.min !== null && l.min !== undefined && l.valor && l.valor < l.min) return '<span class="peq" style="color:var(--atencao,#b7791f)">abaixo do mínimo da tabela</span>';
     if (l.max !== null && l.max !== undefined && l.valor && l.valor > l.max) return '<span class="peq" style="color:var(--atencao,#b7791f)">acima do máximo da tabela</span>';
     return "";
@@ -219,14 +221,14 @@
     };
   }
   function livre(c) {
-    var j = A.janela('<label>Descrição<input class="lv-d" maxlength="300" placeholder="Ex.: Limpeza e preparo do piso antes da repintura"></label><div class="duas"><div><label>Quantidade<input class="lv-q" inputmode="decimal" value="1"></label></div><div><label>Unidade<select class="lv-u">' +
+    var j = A.janela('<label>Tipo<select class="lv-t"><option value="servico">Mão de obra / serviço</option><option value="material">🧱 Material</option></select></label><label>Descrição<input class="lv-d" maxlength="300" placeholder="Ex.: Limpeza e preparo do piso antes da repintura"></label><div class="duas"><div><label>Quantidade<input class="lv-q" inputmode="decimal" value="1"></label></div><div><label>Unidade<select class="lv-u">' +
       ["un", "m", "m²", "serv", "vb", "h", "dia"].map(function (u) { return "<option>" + u + "</option>"; }).join("") + '</select></label></div></div><label>Preço por unidade (R$)<input class="lv-v" inputmode="decimal" placeholder="Pode deixar vazio e preencher na lista"></label>' +
       '<div class="acoes"><button class="prim" id="lv-ok">➕ Adicionar</button><button id="lv-x">Cancelar</button></div>', { titulo: "➕ Item fora da tabela", semRascunho: true });
     $("#lv-x", j.el).onclick = function () { j.fechar(); };
     $("#lv-ok", j.el).onclick = function () {
       var d = $(".lv-d", j.el).value.trim(), q = A.lerNumero($(".lv-q", j.el).value);
       if (!d || !(q > 0)) { A.avisar("Escreva a descrição e a quantidade.", "erro"); return; }
-      estado.linhas.push({ desc: d, un: $(".lv-u", j.el).value, qtd: q, valor: A.lerNumero($(".lv-v", j.el).value) || 0, media: null, min: null, max: null, cat: estado.cat });
+      estado.linhas.push({ tipo: $(".lv-t", j.el).value === "material" ? "material" : undefined, desc: d, un: $(".lv-u", j.el).value, qtd: q, valor: A.lerNumero($(".lv-v", j.el).value) || 0, media: null, min: null, max: null, cat: estado.cat });
       guardar(); j.fechar(); lista(c);
     };
   }
@@ -284,8 +286,8 @@
       var d = decodificar($("#cl-cod", j.el).value);
       if (!d || !Array.isArray(d.l)) { A.avisar("Não consegui ler esse código. Copie de novo, inteiro.", "erro"); return; }
       if (estado.linhas.length && !estado.id && !A.confirmar("A lista atual ainda não foi salva e será substituída. Continuar?")) return;
-      Object.assign(estado, { id: null, nome: d.n || "", cat: CATS[d.c] ? d.c : "pintura", orc: d.o || null,
-        linhas: d.l.map(function (x) { return { desc: x.d, ref: x.r || x.d, un: x.u, qtd: Number(x.q) || 0, valor: Number(x.v) || 0, media: x.m === undefined ? null : x.m, min: x.mi === undefined ? null : x.mi, max: x.ma === undefined ? null : x.ma, cat: CATS[x.c] ? x.c : (CATS[d.c] ? d.c : "pintura") }; }) });
+      Object.assign(estado, { id: null, nome: d.n || "", cat: CATS[d.c] ? d.c : "pintura", orc: d.o || null, visao: d.v || "t_servicos",
+        linhas: d.l.map(function (x) { return { tipo: x.t === "m" ? "material" : undefined, desc: x.d, ref: x.r || x.d, un: x.u, qtd: Number(x.q) || 0, valor: Number(x.v) || 0, media: x.m === undefined ? null : x.m, min: x.mi === undefined ? null : x.mi, max: x.ma === undefined ? null : x.ma, cat: CATS[x.c] ? x.c : (CATS[d.c] ? d.c : "pintura") }; }) });
       guardar(); j.fechar(); desenhar(c); A.avisar("Cotação importada: " + estado.linhas.length + " itens", "ok");
     };
   }
@@ -296,17 +298,19 @@
     if (!estado.linhas.length) { el.innerHTML = '<div class="cartao vazio">Sua lista está vazia. Escolha um serviço, digite a metragem e toque em ➕ Adicionar.</div>'; return; }
     var t = totais(), dif = t.media ? ((t.seu - t.media) / t.media * 100) : 0;
     el.innerHTML = '<div class="cartao"><h3 style="margin-top:0">Sua lista</h3>' + estado.linhas.map(function (l, i) {
-      return '<div class="cl-lin" data-i="' + i + '" style="border-top:1px solid var(--borda);padding:8px 0"><input class="l-desc" maxlength="300" value="' + esc(l.desc) + '" style="width:100%">' +
+      return '<div class="cl-lin" data-i="' + i + '" style="border-top:1px solid var(--borda);padding:8px 0">' + (l.tipo === "material" ? '<span class="selo">🧱 material</span>' : "") + '<input class="l-desc" maxlength="300" value="' + esc(l.desc) + '" style="width:100%">' +
         '<div class="linha" style="gap:8px;margin-top:6px;align-items:flex-end"><label style="width:110px">Qtd (' + esc(l.un) + ')<input class="l-q" inputmode="decimal" value="' + esc(fq(l.qtd)) + '"></label>' +
         '<label style="width:130px">R$ por ' + esc(l.un) + '<input class="l-v" inputmode="decimal" value="' + esc(f2(l.valor)) + '"></label>' +
         '<div style="flex:1;min-width:120px"><b class="l-sub">' + din(r2(l.qtd * l.valor)) + '</b><div class="peq mudo">' + esc(faixaTxt(l)) + '</div><div class="l-av">' + aviso(l) + '</div></div>' +
         '<button class="peq" data-med="' + i + '" title="Volta ao preço médio da tabela"' + (l.media === null || l.media === undefined ? " disabled" : "") + '>↺ média</button><button class="peq perigo" data-tirar="' + i + '" aria-label="Tirar da lista">🗑</button></div></div>';
-    }).join("") + '<div style="border-top:2px solid var(--borda);margin-top:8px;padding-top:8px"><div class="linha" style="justify-content:space-between"><span>Total pelo seu preço</span><b id="cl-tot" style="font-size:20px">' + din(t.seu) + "</b></div>" +
+    }).join("") + '<div style="border-top:2px solid var(--borda);margin-top:8px;padding-top:8px"><div class="linha" style="justify-content:space-between"><span>' + (t.mat ? "Mão de obra" : "Total pelo seu preço") + '</span><b id="cl-tot" style="font-size:' + (t.mat ? "16" : "20") + 'px">' + din(t.seu) + "</b></div>" +
+      (t.mat ? '<div class="linha" style="justify-content:space-between"><span>Materiais</span><b id="cl-tmat" style="font-size:16px">' + din(t.mat) + '</b></div><div class="linha" style="justify-content:space-between"><span>Total geral</span><b id="cl-tgeral" style="font-size:20px">' + din(r2(t.seu + t.mat)) + "</b></div>" : "") +
       '<div class="linha peq mudo" style="justify-content:space-between"><span>Pela média da tabela' + (t.semMedia ? " (sem " + t.semMedia + " item(ns) sem preço)" : "") + '</span><span id="cl-tmed">' + din(t.media) + (t.media ? " (" + (dif >= 0 ? "+" : "") + A.numero(dif, 1) + "%)" : "") + "</span></div></div>" +
+      '<label style="display:block;margin-top:10px">Como o cliente vê o orçamento no PDF<select id="cl-visao"><option value="t_servicos">Só os serviços (sem valores) e o valor total — materiais não aparecem</option><option value="itens">Cada serviço com o seu valor</option><option value="total">Só mão de obra e o total (materiais por conta do cliente, lista à parte)</option></select></label><span class="peq mudo">Os materiais você acrescenta no orçamento (+ Material, 📋 Escolher da lista ou 📷 Ler nota da loja).</span>' +
       '<div class="acoes"><button class="prim" id="cl-orc">📄 Criar orçamento com esta lista</button><button id="cl-copiar">📋 Copiar</button><button class="perigo" id="cl-limpar">🧹 Limpar lista</button></div></div>';
     function atualizarTotais() {
       var t2 = totais(), d2 = t2.media ? ((t2.seu - t2.media) / t2.media * 100) : 0;
-      $("#cl-tot", c).textContent = din(t2.seu); $("#cl-tmed", c).textContent = din(t2.media) + (t2.media ? " (" + (d2 >= 0 ? "+" : "") + A.numero(d2, 1) + "%)" : "");
+      $("#cl-tot", c).textContent = din(t2.seu); if ($("#cl-tmat", c)) { $("#cl-tmat", c).textContent = din(t2.mat); $("#cl-tgeral", c).textContent = din(r2(t2.seu + t2.mat)); } $("#cl-tmed", c).textContent = din(t2.media) + (t2.media ? " (" + (d2 >= 0 ? "+" : "") + A.numero(d2, 1) + "%)" : "");
     }
     $$(".cl-lin", el).forEach(function (d) {
       var l = estado.linhas[Number(d.dataset.i)];
@@ -317,18 +321,23 @@
     });
     $$("[data-med]", el).forEach(function (b) { b.onclick = function () { var l = estado.linhas[Number(b.dataset.med)]; if (l.media !== null && l.media !== undefined) { l.valor = l.media; guardar(); lista(c); } }; });
     $$("[data-tirar]", el).forEach(function (b) { b.onclick = function () { estado.linhas.splice(Number(b.dataset.tirar), 1); guardar(); lista(c); }; });
+    $("#cl-visao", c).value = estado.visao || "t_servicos";
+    $("#cl-visao", c).onchange = function () { estado.visao = this.value; guardarLocal(); };
     $("#cl-limpar", c).onclick = function () { if (A.confirmar("Limpar toda a lista da calculadora?")) { estado.linhas = []; guardar(); lista(c); } };
     $("#cl-copiar", c).onclick = function () { copiar(texto()); };
     $("#cl-orc", c).onclick = function () {
       var ls = estado.linhas.filter(function (l) { return l.qtd > 0; });
       if (!ls.length) return;
       if (ls.some(function (l) { return !(l.valor > 0); }) && !A.confirmar("Há item sem preço. Criar o orçamento assim mesmo?")) return;
-      P.novoOrcamento(Object.assign({ categoria: ls[0].cat === "eletrica" ? "eletrica" : "pintura" }, estado.orc || {}, { itens: ls.map(function (l) { return { tipo: "servico", descricao: l.desc, qtd: l.qtd, un: l.un, valor: l.valor }; }) }));
+      var ps = ls.filter(function (l) { return l.tipo !== "material"; });
+      P.novoOrcamento(Object.assign({ categoria: (ps[0] || ls[0]).cat === "eletrica" ? "eletrica" : "pintura" }, estado.orc || {}, { valores_cliente: estado.visao || "t_servicos", materiais_cliente: estado.visao !== "total", itens: ls.map(function (l) { return { tipo: l.tipo === "material" ? "material" : "servico", descricao: l.desc, qtd: l.qtd, un: l.un, valor: l.valor }; }) }));
     };
   }
   function texto() {
     var t = totais();
-    return "MÃO DE OBRA\n" + estado.linhas.map(function (l) { return "- " + A.numero(l.qtd, 2) + " " + l.un + " " + l.desc + ": " + din(l.valor) + "/" + l.un + " = " + din(r2(l.qtd * l.valor)); }).join("\n") + "\nTOTAL: " + din(t.seu);
+    function lin(l) { return "- " + A.numero(l.qtd, 2) + " " + l.un + " " + l.desc + ": " + din(l.valor) + "/" + l.un + " = " + din(r2(l.qtd * l.valor)); }
+    var s = estado.linhas.filter(function (l) { return l.tipo !== "material"; }), m = estado.linhas.filter(function (l) { return l.tipo === "material"; });
+    return "MÃO DE OBRA\n" + s.map(lin).join("\n") + "\nTotal da mão de obra: " + din(t.seu) + (m.length ? "\n\nMATERIAIS\n" + m.map(lin).join("\n") + "\nTotal dos materiais: " + din(t.mat) + "\n\nTOTAL GERAL: " + din(r2(t.seu + t.mat)) : "");
   }
   function copiar(t) {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { A.avisar("Lista copiada", "ok"); }, function () { window.prompt("Copie:", t); });
