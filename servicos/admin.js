@@ -524,10 +524,13 @@
     return document.visibilityState === "visible" && !document.querySelector(".fundo-modal") &&
       !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
   }
+  // "impressão digital" dos dados carregados: se nada mudou desde a última busca, a tela nem é redesenhada (nada pisca nem volta ao topo)
+  function assinaturaBase() { try { return JSON.stringify(S); } catch (e) { return String(Date.now()); } }
   function atualizarSozinho() {
     if (autoAt.indo || !podeAtualizar()) return;
     autoAt.indo = true;
-    carregarBase().then(function () { autoAt.ultima = Date.now(); if (podeAtualizar()) rota(); })
+    var antes = assinaturaBase();
+    carregarBase().then(function () { autoAt.ultima = Date.now(); if (podeAtualizar() && !/^(calculadora|agenda)$/.test(location.hash.slice(1)) && assinaturaBase() !== antes) rota(); })
       .catch(function () { /* sem internet: tenta de novo no próximo minuto */ })
       .then(function () { autoAt.indo = false; });
   }
@@ -645,14 +648,35 @@
     if (at && at.scrollIntoView) at.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
+  var ultimaAba = null, segurando = null;
+  // as telas se desenham aos poucos (carregam dados): segura a rolagem no lugar até a tela voltar a ter altura, sem brigar com você se rolar
+  function segurarRolagem(y) {
+    if (!(y > 4)) return;
+    if (segurando) segurando();
+    var t0 = Date.now(), parar = false;
+    function fim() { parar = true; clearInterval(iv); ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (e) { window.removeEventListener(e, fim, true); }); segurando = null; }
+    ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (e) { window.addEventListener(e, fim, true); });
+    var iv = setInterval(function () {
+      if (parar) return;
+      var maximo = document.documentElement.scrollHeight - window.innerHeight;
+      if (maximo >= y - 2) { if (Math.abs((window.pageYOffset || 0) - y) > 2) window.scrollTo(0, y); if (Date.now() - t0 > 600) fim(); }
+      else if (Date.now() - t0 > 4000) fim();
+    }, 80);
+    segurando = fim;
+    window.scrollTo(0, y);
+  }
   function rota() {
     var aba = location.hash.slice(1) || "hoje";
     if (!ABAS.some(function (a) { return a[0] === aba; })) aba = "hoje";
     desenharAbas(aba);
     var c = $("#conteudo");
     if (!c) return;
-    window.scrollTo(0, 0);
+    // trocou de aba: começa no topo. Mesma aba (salvou, atualizou sozinho...): a tela fica onde você está.
+    var mudouAba = aba !== ultimaAba; ultimaAba = aba;
+    var yAntes = window.pageYOffset || 0;
+    if (mudouAba) window.scrollTo(0, 0);
     ({ hoje: verHoje, agenda: function (c2) { window.AGE_AGENDA.ver(c2, P); }, servicos: verServicos, executados: verExecutados, prefeitura: function (c2) { window.AGE_PREF.ver(c2, P); }, rotas: verRotas, lojas: verLojas, ponto: verPonto, pagamentos: function (c2) { window.AGE_PAG.ver(c2, P); }, compras: function (c2) { window.AGE_COMPRAS.ver(c2, P); }, orclojas: function (c2) { window.AGE_ORCLOJA.ver(c2, P); }, faturamento: function (c2) { window.AGE_FAT.ver(c2, P); }, impostos: function (c2) { window.AGE_IMP.ver(c2, P); }, prospeccao: function (c2) { window.AGE_PROSP.ver(c2, P); }, veiculos: verVeiculos, relatorios: verRelatorios, clientes: function (c2) { window.AGE_CLI.ver(c2, P); }, orcamentos: verOrcamentos, propostas: function (c2) { window.AGE_PROP.ver(c2, P); }, parceiros: function (c2) { window.AGE_PARC.ver(c2, P); }, empresa: function (c2) { window.AGE_EMPRESA.ver(c2, P); }, lixeira: function (c2) { window.AGE_LIXO.ver(c2, P); }, socios: function (c2) { window.AGE_SOC.ver(c2, P); }, ferramentas: function (c2) { window.AGE_FERR.ver(c2, P); }, precos: function (c2) { window.AGE_PRECOS.ver(c2, P); }, calculadora: function (c2) { window.AGE_CALC.ver(c2, P); }, equipe: verEquipe })[aba](c);
+    if (!mudouAba) segurarRolagem(yAntes);
   }
 
   // =================================================================

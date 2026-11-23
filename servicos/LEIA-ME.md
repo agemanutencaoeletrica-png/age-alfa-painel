@@ -636,3 +636,6 @@ Botão **📷 Escanear** (azul, no topo de Impostos e dívidas): **📷 Tirar fo
 - **📝 Colar lista de metragens:** cole várias linhas de uma vez (`2920 m | Demarcação de vaga de garagem => texto que o cliente vê`); o app acha o serviço na tabela de cada linha, mostra a conferência (✅ da tabela / ➕ fora da tabela) e adiciona tudo à lista. **➕ Item fora da tabela** acrescenta um serviço que a tabela não tem (ex.: limpeza do piso), com o preço que você digitar.
 - **Cotações salvas (referência):** a lista é **salva sozinha** (aparelho + nuvem) com o nome que você der e aparece em **📚 Cotações salvas**, com o total e os itens, para abrir, duplicar ou apagar. Ao escolher um serviço, a calculadora mostra **"Você já cobrou"**: valores de orçamentos anteriores e de cotações salvas (toque para usar o valor). Rode o `calculadora.sql` no Supabase (tabela `calc_cotacoes`).
 - **📥 Importar código:** cola um código `AGE-COTACAO:...` e abre a cotação pronta (itens, preços e, ao criar o orçamento, cliente, escopo e observações).
+
+## 🧷 A tela não volta mais ao topo
+- A atualização automática (a cada minuto e ao voltar para o app) **só redesenha a tela se os dados mudaram**; e, quando redesenha ou quando você salva algo, **a rolagem fica onde você está**. Só ao **trocar de aba** a tela começa no topo. A Calculadora e a Agenda não são redesenhadas pela atualização automática.
