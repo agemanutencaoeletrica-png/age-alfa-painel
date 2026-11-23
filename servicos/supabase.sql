@@ -998,13 +998,16 @@ create table if not exists public.contratos_servico (
   titulo        text not null default '' check (length(titulo) <= 300),
   cliente       text check (cliente is null or length(cliente) <= 200),
   valor         numeric(12, 2),
-  status        text not null default 'rascunho' check (status in ('rascunho', 'enviado', 'assinado', 'encerrado')),
+  status        text not null default 'rascunho' check (status in ('rascunho', 'pre_aprovado', 'enviado', 'assinado', 'encerrado')),
   dados         jsonb not null default '{}'::jsonb,
   texto         text not null default '',
   orcamento_id  uuid references public.orcamentos (id) on delete set null,
   criado_em     timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+
+alter table public.contratos_servico drop constraint if exists contratos_servico_status_check;   -- inclui a situação "pré-aprovado" em tabelas já criadas
+alter table public.contratos_servico add constraint contratos_servico_status_check check (status in ('rascunho', 'pre_aprovado', 'enviado', 'assinado', 'encerrado'));
 
 do $$
 declare t text;

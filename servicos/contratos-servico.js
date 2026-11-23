@@ -6,7 +6,10 @@
   "use strict";
   var A = window.AGE, esc = A.esc, $ = A.$, $$ = A.$$;
   var P = null, lista = [], semTab = false, filtro = { busca: "", status: "" }, EMP = {}, pendente = null;
-  var STATUS = { rascunho: "Rascunho", enviado: "Enviado ao cliente", assinado: "Assinado", encerrado: "Encerrado" };
+  var STATUS = { rascunho: "Rascunho", pre_aprovado: "⏳ Pré-aprovado (falta finalizar)", enviado: "Enviado ao cliente", assinado: "Assinado", encerrado: "Encerrado" };
+  // campos importantes: o que ainda faltar aparece no contrato (em amarelo) e na lista
+  var IMPORTANTES = { cli_nome: "cliente", cli_doc: "CPF/CNPJ do cliente", cli_end: "endereço do cliente", cli_rep: "representante do cliente", emp_rep: "representante da AGE", valor: "valor", pagamento: "forma de pagamento", prazo: "prazo", inicio: "início", foro: "foro" };
+  function faltas(d, m) { d = d || {}; return Object.keys(IMPORTANTES).filter(function (k) { return !String(d[k] === undefined || d[k] === null ? "" : d[k]).trim() && !(k === "inicio" && m === "aditivo"); }).map(function (k) { return IMPORTANTES[k]; }); }
   var MODELOS = {
     servico_obra: { nome: "Prestação de serviços com materiais", desc: "Obra, pintura, sinalização, reforma: a AGE executa e fornece mão de obra e materiais." },
     maodeobra: { nome: "Prestação de serviços só com mão de obra", desc: "O cliente fornece os materiais; a AGE executa." },
@@ -171,7 +174,7 @@
       '<p class="mudo peq" style="margin-top:-4px">Escolha um modelo, preencha (ou traga os dados de um orçamento) e o app monta o contrato com as cláusulas principais. O texto é seu: edite à vontade, ele salva sozinho e sai em PDF com campos de assinatura. São modelos de apoio: em contratos de valor alto, vale a revisão de um advogado.</p>' +
       '<div class="filtros"><input type="search" id="ct-busca" data-sem-correcao placeholder="🔍 Buscar contrato ou cliente" value="' + esc(filtro.busca) + '"><select id="ct-st" aria-label="Situação"><option value="">Todas as situações</option>' + Object.keys(STATUS).map(function (k) { return '<option value="' + k + '"' + (k === filtro.status ? " selected" : "") + ">" + STATUS[k] + "</option>"; }).join("") + "</select></div>" +
       (L.length ? L.map(function (x) {
-        return '<div class="cartao" data-ct="' + esc(x.id) + '"><div class="linha" style="gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><b>' + esc(x.titulo || "(sem título)") + "</b><br><span class=\"peq mudo\">" + esc(x.cliente || "sem cliente") + (x.valor ? " · " + din(x.valor) : "") + " · atualizado " + esc(dataBr(x.atualizado_em)) + '</span></div><span class="selo">' + esc(STATUS[x.status] || x.status) + "</span></div>" +
+        return '<div class="cartao" data-ct="' + esc(x.id) + '"><div class="linha" style="gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><b>' + esc(x.titulo || "(sem título)") + "</b><br><span class=\"peq mudo\">" + esc(x.cliente || "sem cliente") + (x.valor ? " · " + din(x.valor) : "") + " · atualizado " + esc(dataBr(x.atualizado_em)) + '</span>' + (function () { var f2 = /^(assinado|encerrado)$/.test(x.status) ? [] : faltas(x.dados, x.modelo); return f2.length ? '<br><span class="peq" style="color:var(--atencao,#b7791f)">⚠ Falta preencher: ' + esc(f2.join(", ")) + "</span>" : ""; })() + '</div><span class="selo">' + esc(STATUS[x.status] || x.status) + "</span></div>" +
           '<div class="acoes"><button class="peq prim" data-ab="' + esc(x.id) + '">Abrir / editar</button><button class="peq" data-im="' + esc(x.id) + '">🖨 Imprimir / PDF</button><button class="peq" data-dp="' + esc(x.id) + '">📋 Duplicar</button><button class="peq perigo" data-ap="' + esc(x.id) + '">Apagar</button></div></div>';
       }).join("") : '<div class="cartao vazio">' + (lista.length ? "Nada com esse filtro." : "Nenhum contrato ainda. Toque em + Novo contrato.") + "</div>");
     function achar(id) { return lista.filter(function (x) { return x.id === id; })[0]; }
@@ -232,15 +235,14 @@
       '<details open class="cartao"><summary><b>📋 Condições</b></summary>' + campo("objeto", "Objeto: o que será feito (um item por linha)", "area", 5) + '<div class="linha" style="gap:8px">' + campo("local", "Local de execução") + campo("valor", m === "manutencao" ? "Valor mensal (R$)" : "Valor total (R$)") + '</div>' +
       '<div class="linha" style="gap:8px">' + campo("pagamento", "Forma de pagamento") + campo("prazo", "Prazo / duração") + '</div><div class="linha" style="gap:8px">' + campo("inicio", "Início previsto", "date") + (m === "manutencao" ? campo("vigencia", "Vigência (ex.: 12 meses)") : "") + (m === "aditivo" ? campo("contrato_ref", "Contrato original (nº e data)") : "") + campo("numero", "Nº do contrato") + '</div>' +
       '<div class="linha" style="gap:8px">' + campo("garantia", "Garantia dos serviços") + campo("multa", "Multa por atraso (%)") + campo("juros", "Juros ao mês (%)") + campo("foro", "Foro (cidade/UF)") + '</div>' + campo("condicoes", "Condições comerciais da proposta (opcional)", "area", 3) + "</details>" +
-      '<div class="acoes"><button class="prim" id="ct-gerar">🔄 Gerar o texto com estes campos</button><select id="ct-status" aria-label="Situação">' + Object.keys(STATUS).map(function (k) { return '<option value="' + k + '">' + STATUS[k] + "</option>"; }).join("") + "</select></div>" +
-      '<label>Texto do contrato <span class="peq mudo">— muda sozinho quando você edita os campos acima; se você editar o texto à mão, ele deixa de mudar sozinho (use 🔄 para refazer)</span><textarea class="ct-texto" rows="22" data-sem-correcao style="font-family:inherit;line-height:1.45"></textarea></label>' +
+      '<div class="acoes"><button class="prim" id="ct-gerar">🔄 Gerar o texto com estes campos</button><span class="peq mudo">Situação:</span><select id="ct-status" aria-label="Situação">' + Object.keys(STATUS).map(function (k) { return '<option value="' + k + '">' + STATUS[k] + "</option>"; }).join("") + "</select></div>" +
+      '<p class="peq mudo" style="margin:2px 0 0">⏳ <b>Pré-aprovado</b> deixa o contrato guardado para você finalizar em outro dia: ele aparece na lista com o que ainda falta preencher.</p><label>Texto do contrato <span class="peq mudo">— muda sozinho quando você edita os campos acima; se você editar o texto à mão, ele deixa de mudar sozinho (use 🔄 para refazer)</span><textarea class="ct-texto" rows="22" data-sem-correcao style="font-family:inherit;line-height:1.45"></textarea></label>' +
       '<div class="acoes"><button class="prim" id="ct-imp">🖨 Imprimir / salvar PDF</button><button id="ct-fechar">Fechar</button></div>';
     var j = A.janela(html, { titulo: "📜 " + (x.titulo || "Contrato"), larga: true, semRascunho: true, aoFechar: function () { salvarJa(); desenhar(c); } });
     $$("[class^=f-]", j.el).forEach(function (e) { var k = e.className.replace(/^f-/, ""); e.value = d[k] === undefined || d[k] === null ? "" : d[k]; });
     $(".ct-texto", j.el).value = x.texto || ""; $("#ct-status", j.el).value = x.status || "rascunho";
     function ler() { $$("[class^=f-]", j.el).forEach(function (e) { d[e.className.replace(/^f-/, "")] = e.value; }); }
     // campos importantes que ainda faltam ficam destacados em amarelo
-    var IMPORTANTES = { cli_nome: "cliente", cli_doc: "CPF/CNPJ do cliente", cli_end: "endereço do cliente", cli_rep: "representante do cliente", emp_rep: "representante da AGE", valor: "valor", pagamento: "forma de pagamento", prazo: "prazo", inicio: "início", foro: "foro" };
     function marcarFaltas() {
       var f2 = [];
       Object.keys(IMPORTANTES).forEach(function (k) {
@@ -260,7 +262,11 @@
         valor: Number(String(d.valor || "").replace(/\./g, "").replace(",", ".")) || null, atualizado_em: new Date().toISOString() };
       Object.assign(x, reg);
       return run(P.sb.from("contratos_servico").update(reg).eq("id", x.id)).then(function () { var s = $("#ct-st-info", j.el); if (s) { s.textContent = "💾 Salvo às " + agora(); s.style.color = ""; } })
-        .catch(function (e) { var s = $("#ct-st-info", j.el); if (s) { s.textContent = "Não salvou: " + (A.msgErro ? A.msgErro(e) : e.message); s.style.color = "var(--perigo,#c0392b)"; } });
+        .catch(function (e) {
+          var s = $("#ct-st-info", j.el), semSql = /contratos_servico_status_check/.test(String(e && (e.message || e.details) || ""));
+          if (semSql) { x.status = "rascunho"; if ($("#ct-status", j.el)) $("#ct-status", j.el).value = "rascunho"; }
+          if (s) { s.textContent = semSql ? "Para usar “Pré-aprovado”, rode no Supabase o contratos.sql atualizado (a situação voltou para Rascunho)." : "Não salvou: " + (A.msgErro ? A.msgErro(e) : e.message); s.style.color = "var(--perigo,#c0392b)"; }
+        });
     }
     function agendar() { var s = $("#ct-st-info", j.el); if (s) s.textContent = "salvando…"; clearTimeout(tm); tm = setTimeout(salvarJa, 1000); }
     marcarFaltas();
