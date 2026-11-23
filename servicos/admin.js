@@ -2664,8 +2664,10 @@
       '<div class="linha" style="margin-top:4px"><select id="eo2-cond" aria-label="Condição de pagamento pronta" style="flex:1 1 100%"><option value="">✍️ Manual: eu escrevo a forma de pagamento</option>' +
         '<option value="matmo">💲 100% dos materiais + 50% da mão de obra na aprovação, 50% da mão de obra na entrega (calcula sozinho)</option>' +
         '<option value="50">💲 50% na aprovação e 50% na entrega (calcula sozinho)</option>' +
+        '<option value="quin">💲 Entrada + parcelas a cada 15 dias durante a obra (calcula sozinho)</option>' +
         '<option value="vista">💲 À vista na aprovação (calcula sozinho)</option>' +
         '<option value="combinar">A combinar</option></select></div>' +
+      '<div id="eo2-quin" class="oculto cartao" style="margin:6px 0 0"><div class="linha" style="gap:8px"><label style="width:130px">Entrada (%)<input class="q-ent" inputmode="decimal" value="50"></label><label style="width:150px">Duração da obra (meses)<input class="q-mes" inputmode="decimal" value="3"></label><label style="width:130px">Parcela a cada (dias)<input class="q-dia" inputmode="decimal" value="15"></label></div><span class="peq mudo">A entrada é paga na aprovação e o restante é dividido em parcelas iguais durante a duração da obra. O prazo de execução é preenchido com a duração.</span></div>' +
       '<p class="mudo peq" id="eo2-cond-dica" style="margin:2px 0 0">Escolha uma condição pronta e o app escreve os valores sozinho (e refaz se você mudar os itens), ou deixe em Manual e escreva do seu jeito. Pode corrigir o texto à mão quando quiser.</p>' +
       '<label for="eo2-obs">Observações</label><textarea id="eo2-obs" rows="3"></textarea>' +
       '<label for="eo2-st">Situação</label><select id="eo2-st">' + Object.keys(STATUS_ORC).map(function (k) { return '<option value="' + k + '">' + STATUS_ORC[k] + "</option>"; }).join("") + "</select>" +
@@ -2988,11 +2990,17 @@
       if ($("#eo2-escopo", el)) M.laudo = Object.assign(copiaLaudo(M.laudo), { escopo: $("#eo2-escopo", el).value.trim() });
     }
     // 💲 forma de pagamento pronta: o app calcula pelos materiais e pela mão de obra do orçamento; "Manual" não mexe no que você escreve
-    var condAuto = "";
+    var condAuto = "", prazoAuto = "";
     function textoCond(k, t) {
       var R = function (v) { return A.dinheiro(Math.round(v * 100) / 100); }, total = t.total, matC = t.mc ? Math.min(t.mat, total) : 0, mo = Math.max(0, total - matC);
       if (k === "matmo" && matC > 0) { var ap = matC + Math.round(mo / 2 * 100) / 100; return "Na aprovação: " + R(ap) + " (100% dos materiais + 50% da mão de obra). Na entrega do serviço: " + R(total - ap) + " (50% da mão de obra)."; }
       if (k === "matmo" || k === "50") { var m1 = Math.round(total / 2 * 100) / 100; return "50% na aprovação (" + R(m1) + ") e 50% na entrega do serviço (" + R(total - m1) + ")."; }
+      if (k === "quin") {
+        var ent = Math.min(100, Math.max(0, A.lerNumero($(".q-ent", el).value) || 0)), meses = A.lerNumero($(".q-mes", el).value) || 0, dias = Math.max(1, A.lerNumero($(".q-dia", el).value) || 15);
+        var vEnt = Math.round(total * ent) / 100, resto = Math.round((total - vEnt) * 100) / 100, n = Math.max(1, Math.floor(meses * 30 / dias)), base = Math.floor(resto / n * 100) / 100, ult = Math.round((resto - base * (n - 1)) * 100) / 100;
+        var pc = A.numero(ent, 1).replace(/,0$/, "");
+        return "Entrada de " + pc + "% na aprovação (" + R(vEnt) + ") e o restante em " + n + " parcelas, uma a cada " + dias + " dias durante os " + A.numero(meses, 1).replace(/,0$/, "") + " meses de execução: " + (Math.abs(ult - base) < 0.005 ? n + " de " + R(base) : (n - 1) + " de " + R(base) + " e a última de " + R(ult)) + ".";
+      }
       if (k === "vista") return "À vista na aprovação (" + R(total) + ").";
       return "A combinar.";
     }
@@ -3001,9 +3009,14 @@
       var t = calcOrc(M), txt = textoCond(condAuto, t);
       if (condAuto === "matmo" && !(t.mc && t.mat > 0)) $("#eo2-cond-dica", el).textContent = "Sem materiais no valor do cliente: usei 50% na aprovação e 50% na entrega.";
       $("#eo2-pag", el).value = txt; M.pagamento = txt;
+      if (condAuto === "quin") {
+        var mm = A.numero(A.lerNumero($(".q-mes", el).value) || 0, 1).replace(/,0$/, ""), pz = $("#eo2-prazo", el).value.trim();
+        if (!pz || pz === prazoAuto) { var novoPz = mm + (mm === "1" ? " mês" : " meses"); $("#eo2-prazo", el).value = novoPz; M.prazo = novoPz; prazoAuto = novoPz; }
+      }
     }
-    $("#eo2-cond", el).addEventListener("change", function () { condAuto = this.value; if (condAuto) { aplicarCond(); totais(); } });
-    $("#eo2-pag", el).addEventListener("input", function (ev) { if (ev.isTrusted && condAuto) { condAuto = ""; $("#eo2-cond", el).value = ""; } });   // digitou à mão: volta para Manual
+    $("#eo2-cond", el).addEventListener("change", function () { condAuto = this.value; $("#eo2-quin", el).classList.toggle("oculto", condAuto !== "quin"); if (condAuto) { aplicarCond(); totais(); } });
+    $$("#eo2-quin input", el).forEach(function (i) { i.addEventListener("input", function () { if (condAuto === "quin") { aplicarCond(); totais(); } }); });
+    $("#eo2-pag", el).addEventListener("input", function (ev) { if (ev.isTrusted && condAuto) { condAuto = ""; $("#eo2-cond", el).value = ""; $("#eo2-quin", el).classList.add("oculto"); } });   // digitou à mão: volta para Manual
     function totais() {
       lerCampos(); aplicarCond(); marcarModoValores(); guardarRasc();
       M.itens.forEach(function (i, n) {
