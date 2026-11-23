@@ -68,15 +68,22 @@
   function achar(cat, desc) { return servicos(cat).filter(function (s) { return s.descricao === desc; })[0] || null; }
 
   function totais() {
-    var t = { seu: 0, media: 0, semMedia: 0, mat: 0 };
+    var t = { seu: 0, media: 0, semMedia: 0, mat: 0, matCusto: 0 };
     estado.linhas.forEach(function (l) {
-      if (l.tipo === "material") { t.mat += r2(l.qtd * l.valor); return; }
+      if (l.tipo === "material") { t.mat += r2(l.qtd * l.valor); t.matCusto += r2(l.qtd * (Number(l.custo) || Number(l.valor) || 0)); return; }
       t.seu += r2(l.qtd * l.valor);
       if (l.media !== null && l.media !== undefined) t.media += r2(l.qtd * l.media); else t.semMedia++;
     });
-    t.seu = r2(t.seu); t.media = r2(t.media); t.mat = r2(t.mat); return t;
+    t.seu = r2(t.seu); t.media = r2(t.media); t.mat = r2(t.mat); t.matCusto = r2(t.matCusto); return t;
   }
-  function faixaTxt(l) { if (l.tipo === "material") return "material · valor da loja (custo)"; return l.min !== null && l.max !== null && l.min !== undefined ? "tabela: " + din(l.min) + " · média " + (l.media !== null ? din(l.media) : "—") + " · " + din(l.max) : (l.media !== null && l.media !== undefined ? "tabela: média " + din(l.media) : "sem preço na tabela"); }
+  function faixaTxt(l) {
+    if (l.tipo === "material") {
+      var cu = Number(l.custo) || 0;
+      if (!(cu > 0)) return "material · sem custo de referência";
+      var mg = (Number(l.valor) / cu - 1) * 100;
+      return "custo da loja " + din(cu) + " · " + (Math.abs(mg) < 0.05 ? "sem margem" : (mg >= 0 ? "margem " : "abaixo do custo ") + A.numero(Math.abs(mg), 1) + "%");
+    }
+    return l.min !== null && l.max !== null && l.min !== undefined ? "tabela: " + din(l.min) + " · média " + (l.media !== null ? din(l.media) : "—") + " · " + din(l.max) : (l.media !== null && l.media !== undefined ? "tabela: média " + din(l.media) : "sem preço na tabela"); }
   function aviso(l) {
     if (!(l.valor > 0)) return '<span class="peq" style="color:var(--perigo,#c0392b)">coloque o preço</span>';
     if (l.tipo === "material") return "";
@@ -228,7 +235,8 @@
     $("#lv-ok", j.el).onclick = function () {
       var d = $(".lv-d", j.el).value.trim(), q = A.lerNumero($(".lv-q", j.el).value);
       if (!d || !(q > 0)) { A.avisar("Escreva a descrição e a quantidade.", "erro"); return; }
-      estado.linhas.push({ tipo: $(".lv-t", j.el).value === "material" ? "material" : undefined, desc: d, un: $(".lv-u", j.el).value, qtd: q, valor: A.lerNumero($(".lv-v", j.el).value) || 0, media: null, min: null, max: null, cat: estado.cat });
+      var vl = A.lerNumero($(".lv-v", j.el).value) || 0, ehMat = $(".lv-t", j.el).value === "material";
+      estado.linhas.push({ tipo: ehMat ? "material" : undefined, custo: ehMat ? vl : undefined, desc: d, un: $(".lv-u", j.el).value, qtd: q, valor: A.lerNumero($(".lv-v", j.el).value) || 0, media: null, min: null, max: null, cat: estado.cat });
       guardar(); j.fechar(); lista(c);
     };
   }
@@ -287,8 +295,21 @@
       if (!d || !Array.isArray(d.l)) { A.avisar("Não consegui ler esse código. Copie de novo, inteiro.", "erro"); return; }
       if (estado.linhas.length && !estado.id && !A.confirmar("A lista atual ainda não foi salva e será substituída. Continuar?")) return;
       Object.assign(estado, { id: null, nome: d.n || "", cat: CATS[d.c] ? d.c : "pintura", orc: d.o || null, visao: d.v || "t_servicos",
-        linhas: d.l.map(function (x) { return { tipo: x.t === "m" ? "material" : undefined, desc: x.d, ref: x.r || x.d, un: x.u, qtd: Number(x.q) || 0, valor: Number(x.v) || 0, media: x.m === undefined ? null : x.m, min: x.mi === undefined ? null : x.mi, max: x.ma === undefined ? null : x.ma, cat: CATS[x.c] ? x.c : (CATS[d.c] ? d.c : "pintura") }; }) });
+        linhas: d.l.map(function (x) { return { tipo: x.t === "m" ? "material" : undefined, custo: x.t === "m" ? (Number(x.v) || 0) : undefined, desc: x.d, ref: x.r || x.d, un: x.u, qtd: Number(x.q) || 0, valor: Number(x.v) || 0, media: x.m === undefined ? null : x.m, min: x.mi === undefined ? null : x.mi, max: x.ma === undefined ? null : x.ma, cat: CATS[x.c] ? x.c : (CATS[d.c] ? d.c : "pintura") }; }) });
       guardar(); j.fechar(); desenhar(c); A.avisar("Cotação importada: " + estado.linhas.length + " itens", "ok");
+    };
+  }
+
+  // ---- margem em todos os materiais (sobre o custo da loja) ----
+  function margem(c) {
+    var j = A.janela('<p class="mudo peq" style="margin-top:0">O percentual é aplicado sobre o <b>custo da loja</b> de cada material (não acumula se você aplicar de novo). Depois dá para ajustar item por item.</p>' +
+      '<label>Margem (%)<input class="mg-p" inputmode="decimal" value="15"></label><div class="acoes"><button class="prim" id="mg-ok">Aplicar</button><button id="mg-x">Cancelar</button></div>', { titulo: "💹 Margem nos materiais", semRascunho: true });
+    $("#mg-x", j.el).onclick = function () { j.fechar(); };
+    $("#mg-ok", j.el).onclick = function () {
+      var p = A.lerNumero($(".mg-p", j.el).value);
+      if (!(p >= 0 && p < 1000)) { A.avisar("Digite um percentual válido.", "erro"); return; }
+      estado.linhas.forEach(function (l) { if (l.tipo === "material" && Number(l.custo) > 0) l.valor = r2(Number(l.custo) * (1 + p / 100)); });
+      guardar(); j.fechar(); lista(c); A.avisar("Margem de " + A.numero(p, 1) + "% aplicada", "ok");
     };
   }
 
@@ -297,30 +318,32 @@
     var el = $("#cl-lista", c);
     if (!estado.linhas.length) { el.innerHTML = '<div class="cartao vazio">Sua lista está vazia. Escolha um serviço, digite a metragem e toque em ➕ Adicionar.</div>'; return; }
     var t = totais(), dif = t.media ? ((t.seu - t.media) / t.media * 100) : 0;
-    el.innerHTML = '<div class="cartao"><h3 style="margin-top:0">Sua lista</h3>' + estado.linhas.map(function (l, i) {
+    el.innerHTML = '<div class="cartao"><h3 style="margin-top:0">Sua lista</h3>' + (t.mat ? '<div class="acoes" style="margin-top:0"><button class="peq" id="cl-margem" title="Aplica um percentual sobre o custo da loja em todos os materiais">💹 Margem nos materiais</button><button class="peq" id="cl-custo" title="Volta todos os materiais ao custo da loja">↺ Tudo ao custo</button></div>' : "") + estado.linhas.map(function (l, i) {
       return '<div class="cl-lin" data-i="' + i + '" style="border-top:1px solid var(--borda);padding:8px 0">' + (l.tipo === "material" ? '<span class="selo">🧱 material</span>' : "") + '<input class="l-desc" maxlength="300" value="' + esc(l.desc) + '" style="width:100%">' +
         '<div class="linha" style="gap:8px;margin-top:6px;align-items:flex-end"><label style="width:110px">Qtd (' + esc(l.un) + ')<input class="l-q" inputmode="decimal" value="' + esc(fq(l.qtd)) + '"></label>' +
         '<label style="width:130px">R$ por ' + esc(l.un) + '<input class="l-v" inputmode="decimal" value="' + esc(f2(l.valor)) + '"></label>' +
-        '<div style="flex:1;min-width:120px"><b class="l-sub">' + din(r2(l.qtd * l.valor)) + '</b><div class="peq mudo">' + esc(faixaTxt(l)) + '</div><div class="l-av">' + aviso(l) + '</div></div>' +
-        '<button class="peq" data-med="' + i + '" title="Volta ao preço médio da tabela"' + (l.media === null || l.media === undefined ? " disabled" : "") + '>↺ média</button><button class="peq perigo" data-tirar="' + i + '" aria-label="Tirar da lista">🗑</button></div></div>';
+        '<div style="flex:1;min-width:120px"><b class="l-sub">' + din(r2(l.qtd * l.valor)) + '</b><div class="peq mudo l-ref">' + esc(faixaTxt(l)) + '</div><div class="l-av">' + aviso(l) + '</div></div>' +
+        '<button class="peq" data-med="' + i + '" title="' + (l.tipo === "material" ? "Volta ao custo da loja (tira a margem)" : "Volta ao preço médio da tabela") + '"' + ((l.tipo === "material" ? !(Number(l.custo) > 0) : (l.media === null || l.media === undefined)) ? " disabled" : "") + '>' + (l.tipo === "material" ? "↺ custo" : "↺ média") + '</button><button class="peq perigo" data-tirar="' + i + '" aria-label="Tirar da lista">🗑</button></div></div>';
     }).join("") + '<div style="border-top:2px solid var(--borda);margin-top:8px;padding-top:8px"><div class="linha" style="justify-content:space-between"><span>' + (t.mat ? "Mão de obra" : "Total pelo seu preço") + '</span><b id="cl-tot" style="font-size:' + (t.mat ? "16" : "20") + 'px">' + din(t.seu) + "</b></div>" +
-      (t.mat ? '<div class="linha" style="justify-content:space-between"><span>Materiais</span><b id="cl-tmat" style="font-size:16px">' + din(t.mat) + '</b></div><div class="linha" style="justify-content:space-between"><span>Total geral</span><b id="cl-tgeral" style="font-size:20px">' + din(r2(t.seu + t.mat)) + "</b></div>" : "") +
+      (t.mat ? '<div class="linha" style="justify-content:space-between"><span>Materiais</span><b id="cl-tmat" style="font-size:16px">' + din(t.mat) + '</b></div><div class="linha peq mudo" style="justify-content:space-between"><span>Custo dos materiais na loja · margem</span><span id="cl-tcusto">' + din(t.matCusto) + " · " + din(r2(t.mat - t.matCusto)) + '</span></div><div class="linha" style="justify-content:space-between"><span>Total geral</span><b id="cl-tgeral" style="font-size:20px">' + din(r2(t.seu + t.mat)) + "</b></div>" : "") +
       '<div class="linha peq mudo" style="justify-content:space-between"><span>Pela média da tabela' + (t.semMedia ? " (sem " + t.semMedia + " item(ns) sem preço)" : "") + '</span><span id="cl-tmed">' + din(t.media) + (t.media ? " (" + (dif >= 0 ? "+" : "") + A.numero(dif, 1) + "%)" : "") + "</span></div></div>" +
       '<label style="display:block;margin-top:10px">Como o cliente vê o orçamento no PDF<select id="cl-visao"><option value="t_servicos">Só os serviços (sem valores) e o valor total — materiais não aparecem</option><option value="itens">Cada serviço com o seu valor</option><option value="total">Só mão de obra e o total (materiais por conta do cliente, lista à parte)</option></select></label><span class="peq mudo">Os materiais você acrescenta no orçamento (+ Material, 📋 Escolher da lista ou 📷 Ler nota da loja).</span>' +
       '<div class="acoes"><button class="prim" id="cl-orc">📄 Criar orçamento com esta lista</button><button id="cl-copiar">📋 Copiar</button><button class="perigo" id="cl-limpar">🧹 Limpar lista</button></div></div>';
     function atualizarTotais() {
       var t2 = totais(), d2 = t2.media ? ((t2.seu - t2.media) / t2.media * 100) : 0;
-      $("#cl-tot", c).textContent = din(t2.seu); if ($("#cl-tmat", c)) { $("#cl-tmat", c).textContent = din(t2.mat); $("#cl-tgeral", c).textContent = din(r2(t2.seu + t2.mat)); } $("#cl-tmed", c).textContent = din(t2.media) + (t2.media ? " (" + (d2 >= 0 ? "+" : "") + A.numero(d2, 1) + "%)" : "");
+      $("#cl-tot", c).textContent = din(t2.seu); if ($("#cl-tmat", c)) { $("#cl-tcusto", c).textContent = din(t2.matCusto) + " · " + din(r2(t2.mat - t2.matCusto)); $("#cl-tmat", c).textContent = din(t2.mat); $("#cl-tgeral", c).textContent = din(r2(t2.seu + t2.mat)); } $("#cl-tmed", c).textContent = din(t2.media) + (t2.media ? " (" + (d2 >= 0 ? "+" : "") + A.numero(d2, 1) + "%)" : "");
     }
     $$(".cl-lin", el).forEach(function (d) {
       var l = estado.linhas[Number(d.dataset.i)];
       function mudou() {
         l.desc = $(".l-desc", d).value; l.qtd = A.lerNumero($(".l-q", d).value) || 0; l.valor = A.lerNumero($(".l-v", d).value) || 0;
-        $(".l-sub", d).textContent = din(r2(l.qtd * l.valor)); $(".l-av", d).innerHTML = aviso(l); atualizarTotais(); guardar(); var s = $("#cl-status", c); if (s) s.textContent = "✓ salvo"; }
+        $(".l-sub", d).textContent = din(r2(l.qtd * l.valor)); $(".l-av", d).innerHTML = aviso(l); $(".l-ref", d).textContent = faixaTxt(l); atualizarTotais(); guardar(); var s = $("#cl-status", c); if (s) s.textContent = "✓ salvo"; }
       $$("input", d).forEach(function (i) { i.addEventListener("input", mudou); });
     });
-    $$("[data-med]", el).forEach(function (b) { b.onclick = function () { var l = estado.linhas[Number(b.dataset.med)]; if (l.media !== null && l.media !== undefined) { l.valor = l.media; guardar(); lista(c); } }; });
+    $$("[data-med]", el).forEach(function (b) { b.onclick = function () { var l = estado.linhas[Number(b.dataset.med)]; var alvo = l.tipo === "material" ? (Number(l.custo) > 0 ? Number(l.custo) : null) : l.media; if (alvo !== null && alvo !== undefined) { l.valor = alvo; guardar(); lista(c); } }; });
     $$("[data-tirar]", el).forEach(function (b) { b.onclick = function () { estado.linhas.splice(Number(b.dataset.tirar), 1); guardar(); lista(c); }; });
+    if ($("#cl-margem", c)) $("#cl-margem", c).onclick = function () { margem(c); };
+    if ($("#cl-custo", c)) $("#cl-custo", c).onclick = function () { estado.linhas.forEach(function (l) { if (l.tipo === "material" && Number(l.custo) > 0) l.valor = Number(l.custo); }); guardar(); lista(c); };
     $("#cl-visao", c).value = estado.visao || "t_servicos";
     $("#cl-visao", c).onchange = function () { estado.visao = this.value; guardarLocal(); };
     $("#cl-limpar", c).onclick = function () { if (A.confirmar("Limpar toda a lista da calculadora?")) { estado.linhas = []; guardar(); lista(c); } };
