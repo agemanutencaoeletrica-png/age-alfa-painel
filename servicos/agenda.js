@@ -103,7 +103,7 @@
     if (auto) return; auto = true;
     function atualizar(recarregar) {
       if (!vivo() || $(".fundo-modal")) return;
-      if (recarregar) carregar(function () { if (vivo() && !$(".fundo-modal")) desenhar(); }); else desenhar();
+      if (recarregar) { var antes = JSON.stringify(ev); carregar(function () { if (vivo() && !$(".fundo-modal") && JSON.stringify(ev) !== antes) desenhar(); }); } else desenhar();
     }
     document.addEventListener("age-dia", function () { if (!vivo()) return; var h = new Date(); mes = new Date(h.getFullYear(), h.getMonth(), 1); sel = iso(h); atualizar(true); });
     var n = 0;
