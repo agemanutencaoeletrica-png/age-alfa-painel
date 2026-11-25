@@ -667,3 +667,10 @@ Botão **📷 Escanear** (azul, no topo de Impostos e dívidas): **📷 Tirar fo
 ## 📋 Modelos de compromisso (Agenda)
 - Em **+ Novo compromisso**, o seletor **📋 Modelo de compromisso** preenche o formulário (título, tipo, horário, aviso do Telegram e uma pauta nas observações; o dia você escolhe). Já vêm: **Visita técnica com as lojas de tinta** (pauta: piso, compatibilidade com asfalto, rendimento, secagem, laudo e garantia, quantidades, prazo e pagamento da loja; aviso 1 dia antes), **Reunião com o síndico**, **Visita para levantamento e orçamento**, **Início da obra**, **Vistoria de entrega** e **Acerto quinzenal**.
 - **⭐ Salvar como modelo** guarda o compromisso que você montou (sem o dia) para usar de novo; ele aparece com ⭐ na lista. Os seus modelos ficam neste aparelho.
+
+## 🔔 Avisos dos serviços no Telegram (resumo do dia e véspera)
+- **Resumo do dia, às 7h:** uma mensagem com os **serviços do dia por funcionário** (cliente/loja, descrição e endereço), os **compromissos da agenda** de hoje e os **serviços atrasados** (data prevista que já passou e ainda abertos). Rotina `.github/workflows/resumo-diario.yml` (`scripts/avisos-servicos.mjs resumo`).
+- **Aviso dos serviços com data prevista:** os serviços marcados para **amanhã** são avisados **a partir das 18h** do dia anterior, e os marcados para **hoje depois do resumo** são avisados a partir das 8h. Roda junto da rotina da agenda (a cada 30 minutos, das 6h às 22h). Cada serviço é avisado **uma vez por data prevista**: se você mudar a data, ele é avisado de novo. Concluídos e cancelados não entram.
+- Não manda nada quando não há o que avisar. Usam os **mesmos 3 segredos** do Telegram. Rode o `avisos-servicos.sql` no Supabase (coluna `servicos.aviso_data` e as funções `resumo_diario`, `lembretes_servicos`, `servicos_avisados`).
+- O aviso vai para o **seu** Telegram. Para o funcionário receber o dele, ele precisaria do próprio Telegram ligado ao bot (passo à parte).
+
