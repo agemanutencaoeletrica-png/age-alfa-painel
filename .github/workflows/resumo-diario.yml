@@ -1,0 +1,22 @@
+name: Resumo do dia no Telegram (serviços e compromissos)
+
+# Todo dia às 07:00 de Brasília (10:00 UTC). Também dá para rodar na hora: Actions > este fluxo > Run workflow.
+on:
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resumo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mandar o resumo do dia no Telegram
+        run: node scripts/avisos-servicos.mjs resumo
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LEMBRETE_CHAVE: ${{ secrets.LEMBRETE_CHAVE }}

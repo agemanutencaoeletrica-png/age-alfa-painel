@@ -20,3 +20,10 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LEMBRETE_CHAVE: ${{ secrets.LEMBRETE_CHAVE }}
+      - name: Avisar os serviços de amanhã (a partir das 18h) e os de hoje ainda não avisados
+        if: always()
+        run: node scripts/avisos-servicos.mjs vespera
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LEMBRETE_CHAVE: ${{ secrets.LEMBRETE_CHAVE }}

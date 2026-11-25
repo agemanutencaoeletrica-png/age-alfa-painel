@@ -1009,6 +1009,65 @@ create table if not exists public.contratos_servico (
 alter table public.contratos_servico drop constraint if exists contratos_servico_status_check;   -- inclui a situação "pré-aprovado" em tabelas já criadas
 alter table public.contratos_servico add constraint contratos_servico_status_check check (status in ('rascunho', 'pre_aprovado', 'enviado', 'assinado', 'encerrado'));
 
+-- 🔔 avisos dos serviços no Telegram: resumo do dia (7h) e aviso na véspera (18h) dos serviços com data prevista.
+-- Usam a mesma chave do lembrete de impostos (tabela lembrete_config). "aviso_data" guarda a data prevista que já foi avisada:
+-- se você mudar a data do serviço, ele é avisado de novo.
+alter table public.servicos add column if not exists aviso_data date;
+
+create or replace function public.resumo_diario(p_chave text, p_agora timestamptz default now()) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare hoje date := (p_agora at time zone 'America/Sao_Paulo')::date; cfg public.lembrete_config; r jsonb;
+begin
+  select * into cfg from public.lembrete_config where id;
+  if cfg.chave is null or p_chave is distinct from cfg.chave then raise exception 'Chave invalida.'; end if;
+  select jsonb_build_object(
+    'hoje', hoje,
+    'servicos', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'cliente', o.cliente, 'endereco', o.endereco, 'descricao', s.descricao, 'categoria', s.categoria,
+                'status', s.status, 'funcionario', f.nome, 'data', s.data_prevista) order by f.nome nulls last, o.cliente)
+              from public.servicos s join public.obras o on o.id = s.obra_id left join public.funcionarios f on f.id = s.funcionario_id
+             where s.data_prevista = hoje and s.status in ('aberto', 'em_andamento', 'aguardando')), '[]'::jsonb),
+    'atrasados', coalesce((select jsonb_agg(jsonb_build_object('cliente', o.cliente, 'descricao', s.descricao, 'funcionario', f.nome, 'data', s.data_prevista) order by s.data_prevista, o.cliente)
+              from public.servicos s join public.obras o on o.id = s.obra_id left join public.funcionarios f on f.id = s.funcionario_id
+             where s.data_prevista < hoje and s.data_prevista >= hoje - 30 and s.status in ('aberto', 'em_andamento', 'aguardando')), '[]'::jsonb),
+    'compromissos', coalesce((select jsonb_agg(jsonb_build_object('titulo', e.titulo, 'tipo', e.tipo, 'hora', to_char(e.hora_ini, 'HH24:MI'), 'onde', e.onde, 'responsavel', f2.nome) order by e.hora_ini nulls first, e.titulo)
+              from public.agenda_eventos e left join public.funcionarios f2 on f2.id = e.funcionario_id
+             where e.data = hoje and not e.feito), '[]'::jsonb)
+  ) into r;
+  return r;
+end $$;
+
+-- serviços para avisar: os de amanhã a partir das 18h e os de hoje a partir das 8h que ainda não foram avisados (ex.: marcados depois do resumo)
+create or replace function public.lembretes_servicos(p_chave text, p_agora timestamptz default now()) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare hoje date := (p_agora at time zone 'America/Sao_Paulo')::date; hora integer := extract(hour from (p_agora at time zone 'America/Sao_Paulo'))::integer; cfg public.lembrete_config; r jsonb;
+begin
+  select * into cfg from public.lembrete_config where id;
+  if cfg.chave is null or p_chave is distinct from cfg.chave then raise exception 'Chave invalida.'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'cliente', o.cliente, 'endereco', o.endereco, 'descricao', s.descricao, 'categoria', s.categoria, 'status', s.status,
+           'funcionario', f.nome, 'data', s.data_prevista, 'dia', case when s.data_prevista = hoje then 'hoje' else 'amanha' end) order by s.data_prevista, f.nome nulls last, o.cliente), '[]'::jsonb) into r
+    from public.servicos s join public.obras o on o.id = s.obra_id left join public.funcionarios f on f.id = s.funcionario_id
+   where s.status in ('aberto', 'em_andamento', 'aguardando') and s.aviso_data is distinct from s.data_prevista
+     and ((s.data_prevista = hoje + 1 and hora >= 18) or (s.data_prevista = hoje and hora >= 8));
+  return r;
+end $$;
+
+create or replace function public.servicos_avisados(p_chave text, p_ids uuid[]) returns integer
+language plpgsql security definer set search_path = public as $$
+declare cfg public.lembrete_config; n integer;
+begin
+  select * into cfg from public.lembrete_config where id;
+  if cfg.chave is null or p_chave is distinct from cfg.chave then raise exception 'Chave invalida.'; end if;
+  update public.servicos set aviso_data = data_prevista where id = any (p_ids);
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function public.resumo_diario(text, timestamptz) from public;
+revoke execute on function public.lembretes_servicos(text, timestamptz) from public;
+revoke execute on function public.servicos_avisados(text, uuid[]) from public;
+grant execute on function public.resumo_diario(text, timestamptz) to anon, authenticated;
+grant execute on function public.lembretes_servicos(text, timestamptz) to anon, authenticated;
+grant execute on function public.servicos_avisados(text, uuid[]) to anon, authenticated;
+
 do $$
 declare t text;
 begin
