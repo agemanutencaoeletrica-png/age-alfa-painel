@@ -14,6 +14,19 @@
   function p2(n) { return ("0" + n).slice(-2); }
   function iso(d) { return A.isoLocal(d); }
   function deIso(s) { var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/); return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])); }
+  // modelos de compromisso: preenchem o formulário (menos o dia). Os seus modelos ficam salvos neste aparelho.
+  var MODELOS_AG = [
+    { nome: "Visita técnica com as lojas de tinta", tipo: "visita", ini: "09:00", fim: "10:00", aviso: 1440, obs: "Pauta da visita técnica:\n- Avaliar o piso e o estado da tinta atual\n- Confirmar se o produto indicado é compatível com o piso (asfalto) e com uso externo\n- Pedir o rendimento real do produto no piso e o tempo de secagem entre demãos\n- Pedir o laudo do fabricante e o termo de garantia\n- Conferir quantidades, larguras das linhas e cores\n- Combinar prazo de entrega e condições de pagamento da loja" },
+    { nome: "Reunião com o síndico (proposta e contrato)", tipo: "reuniao", ini: "10:00", fim: "11:00", aviso: 60, obs: "Pauta:\n- Apresentar a proposta e tirar dúvidas\n- Combinar contrato: prazo, forma de pagamento, início e garantia\n- Pegar dados do contrato: CNPJ, endereço e nome do representante" },
+    { nome: "Visita para levantamento e orçamento", tipo: "visita", ini: "09:00", fim: "10:00", aviso: 60, obs: "Levar: trena, planta, celular para fotos e caderno.\nMedir, fotografar e anotar o que precisa ser feito." },
+    { nome: "Início da obra", tipo: "servico", ini: "07:00", fim: "", aviso: 1440, obs: "Conferir: materiais entregues, equipe, EPIs, isolamento e sinalização da área, acesso liberado pela administração." },
+    { nome: "Vistoria de entrega com o cliente", tipo: "visita", ini: "", fim: "", aviso: 60, obs: "Vistoria dos serviços, pendências anotadas e aceite por escrito." },
+    { nome: "Acerto quinzenal (cobrança / medição)", tipo: "prazo", ini: "", fim: "", aviso: 0, obs: "Conferir a medição da quinzena e cobrar a parcela combinada no contrato." }
+  ];
+  var CH_MOD = "age_agenda_modelos_v1";
+  function lerMods() { try { var o = JSON.parse(localStorage.getItem(CH_MOD) || "[]"); return Array.isArray(o) ? o : []; } catch (e) { return []; } }
+  function guardarMods(l) { try { localStorage.setItem(CH_MOD, JSON.stringify(l)); } catch (e) { /* ignora */ } }
+  function todosMods() { return MODELOS_AG.concat(lerMods().map(function (m) { return Object.assign({ meu: true }, m); })); }
   function semT(e) { return /does not exist|schema cache|PGRST205|42P01/i.test(String((e && (e.message || e.code)) || e)); }
   function run(b) { return Promise.resolve(b).then(function (r) { if (r && r.error) throw r.error; return r; }); }
   function dataLonga(d) { return DIAS_L[d.getDay()] + ", " + d.getDate() + " de " + MESES[d.getMonth()].toLowerCase() + " de " + d.getFullYear(); }
@@ -197,7 +210,8 @@
   }
   function editar(e, dia) {
     var novo = !e; e = e || { tipo: "visita", data: dia || sel, hora_ini: "", hora_fim: "", titulo: "", onde: "", obs: "", funcionario_id: "", avisar_min: 60 };
-    var j = A.janela('<div class="ag-f"><label>O quê<input class="a-tit" maxlength="200" value="' + esc(e.titulo) + '" placeholder="Ex.: Visita técnica com as lojas de tinta"></label>' +
+    var mods = todosMods();
+    var j = A.janela('<div class="ag-f">' + (novo ? '<label>📋 Modelo de compromisso <span class="peq mudo">(preenche o formulário; você ainda ajusta tudo)</span><select class="a-mod"><option value="">— sem modelo —</option>' + mods.map(function (m, i) { return '<option value="' + i + '">' + (m.meu ? "⭐ " : "") + esc(m.nome) + "</option>"; }).join("") + "</select></label>" : "") + '<label>O quê<input class="a-tit" maxlength="200" value="' + esc(e.titulo) + '" placeholder="Ex.: Visita técnica com as lojas de tinta"></label>' +
       '<div class="linha" style="gap:8px"><label style="flex:1;min-width:140px">Tipo<select class="a-tipo">' + Object.keys(TIPOS).map(function (k) { return '<option value="' + k + '"' + (k === e.tipo ? " selected" : "") + ">" + TIPOS[k][0] + " " + TIPOS[k][1] + "</option>"; }).join("") + '</select></label>' +
       '<label style="flex:1;min-width:150px">Dia<input class="a-data" type="date" value="' + esc(e.data) + '"></label>' +
       '<label style="width:120px">Início<input class="a-ini" type="time" value="' + esc(String(e.hora_ini || "").slice(0, 5)) + '"></label><label style="width:120px">Fim<input class="a-fim" type="time" value="' + esc(String(e.hora_fim || "").slice(0, 5)) + '"></label></div>' +
@@ -205,8 +219,20 @@
       '<label>Onde<input class="a-onde" maxlength="200" value="' + esc(e.onde || "") + '" placeholder="Endereço ou local"></label>' +
       '<label>Responsável (opcional)<select class="a-func"><option value="">—</option>' + ((P.S.func) || []).filter(function (f) { return f.ativo !== false; }).map(function (f) { return '<option value="' + esc(f.id) + '"' + (f.id === e.funcionario_id ? " selected" : "") + ">" + esc(f.nome) + "</option>"; }).join("") + "</select></label>" +
       '<label>Observação<textarea class="a-obs" rows="3" maxlength="2000">' + esc(e.obs || "") + '</textarea></label></div>' +
-      '<div class="acoes"><button class="prim" id="a-ok">💾 Salvar</button>' + (novo ? "" : '<button class="perigo" id="a-del">Apagar</button>') + '<button id="a-x">Cancelar</button></div>', { titulo: novo ? "📅 Novo compromisso" : "📅 Editar compromisso" });
+      '<div class="acoes"><button class="prim" id="a-ok">💾 Salvar</button><button id="a-mod-salvar" title="Guarda este compromisso (sem o dia) como modelo para usar de novo">⭐ Salvar como modelo</button>' + (novo ? "" : '<button class="perigo" id="a-del">Apagar</button>') + '<button id="a-x">Cancelar</button></div>', { titulo: novo ? "📅 Novo compromisso" : "📅 Editar compromisso" });
     $("#a-x", j.el).onclick = function () { j.fechar(); };
+    function aplicarMod(m) {
+      $(".a-tit", j.el).value = m.titulo || m.nome; $(".a-tipo", j.el).value = TIPOS[m.tipo] ? m.tipo : "outro"; $(".a-ini", j.el).value = m.ini || ""; $(".a-fim", j.el).value = m.fim || "";
+      $(".a-av", j.el).value = m.aviso === null || m.aviso === undefined || m.aviso === "" ? "" : String(m.aviso); $(".a-onde", j.el).value = m.onde || ""; $(".a-obs", j.el).value = m.obs || "";
+      $(".a-tit", j.el).dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    if ($(".a-mod", j.el)) $(".a-mod", j.el).onchange = function () { var m = this.value === "" ? null : mods[Number(this.value)]; if (m) aplicarMod(m); };
+    $("#a-mod-salvar", j.el).onclick = function () {
+      var t = $(".a-tit", j.el).value.trim(); if (!t) { A.avisar("Escreva o que é o compromisso para guardar como modelo.", "erro"); return; }
+      var l = lerMods().filter(function (m) { return m.nome !== t; });
+      l.push({ nome: t, titulo: t, tipo: $(".a-tipo", j.el).value, ini: $(".a-ini", j.el).value, fim: $(".a-fim", j.el).value, aviso: $(".a-av", j.el).value === "" ? null : Number($(".a-av", j.el).value), onde: $(".a-onde", j.el).value.trim(), obs: $(".a-obs", j.el).value.trim() });
+      guardarMods(l); A.avisar("Modelo “" + t + "” guardado (⭐ na lista de modelos)", "ok");
+    };
     $("#a-ok", j.el).onclick = function () {
       var v = { titulo: $(".a-tit", j.el).value.trim(), tipo: $(".a-tipo", j.el).value, data: $(".a-data", j.el).value, hora_ini: $(".a-ini", j.el).value || null, hora_fim: $(".a-fim", j.el).value || null,
         avisar_min: $(".a-av", j.el).value === "" ? null : Number($(".a-av", j.el).value), lembrete_enviado: null, onde: $(".a-onde", j.el).value.trim() || null, funcionario_id: $(".a-func", j.el).value || null, obs: $(".a-obs", j.el).value.trim() || null };
