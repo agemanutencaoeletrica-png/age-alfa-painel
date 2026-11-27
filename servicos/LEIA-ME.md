@@ -674,3 +674,7 @@ Botão **📷 Escanear** (azul, no topo de Impostos e dívidas): **📷 Tirar fo
 - Não manda nada quando não há o que avisar. Usam os **mesmos 3 segredos** do Telegram. Rode o `avisos-servicos.sql` no Supabase (coluna `servicos.aviso_data` e as funções `resumo_diario`, `lembretes_servicos`, `servicos_avisados`).
 - O aviso vai para o **seu** Telegram. Para o funcionário receber o dele, ele precisaria do próprio Telegram ligado ao bot (passo à parte).
 
+## 🏢 Fachadas de torres / prédios (calculadora)
+- Na **🧮 Calculadora**, o botão **🏢 Fachadas (torres / prédios)** calcula a **área líquida** (nº de torres × perímetro × altura − janelas e portas) e a **tinta** (demãos, rendimento em m² por litro, perda e tamanho da lata), e coloca na lista: o **serviço** (m², com o preço da tabela ABRAPP "acima de 3 m", que você ajusta), a **tinta** (latas, para você preencher o preço) e um item de **acesso em altura** (andaime, balancim ou corda), com preço a definir. As últimas medidas ficam lembradas. Altura e janelas são estimativas: confirme nas elevações do projeto ou medindo uma torre no local.
+- Correção: o total de **Materiais** da lista aparece assim que existe um material, mesmo antes de você digitar o preço dele.
+
