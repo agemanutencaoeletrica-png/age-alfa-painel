@@ -114,7 +114,7 @@
       '<div id="cl-ref" class="peq mudo" style="margin-top:6px"></div><input type="range" id="cl-slide" style="width:100%;display:none" aria-label="Ajustar o preço entre o mínimo e o máximo da tabela">' +
       '<div class="acoes"><button class="peq" id="cl-min">Mínimo</button><button class="peq" id="cl-med">Média</button><button class="peq" id="cl-max">Máximo</button>' +
       '<span id="cl-prev" style="margin-left:auto;font-weight:700"></span><button class="prim" id="cl-add">➕ Adicionar à lista</button></div>' +
-      '<div class="acoes"><button class="peq" id="cl-colar" title="Cole várias metragens de uma vez: o app acha o serviço na tabela de cada linha">📝 Colar lista de metragens</button><button class="peq" id="cl-livre" title="Serviço que não está na tabela (ex.: limpeza do piso)">➕ Item fora da tabela</button>' +
+      '<div class="acoes"><button class="peq" id="cl-colar" title="Cole várias metragens de uma vez: o app acha o serviço na tabela de cada linha">📝 Colar lista de metragens</button><button class="peq" id="cl-livre" title="Serviço que não está na tabela (ex.: limpeza do piso)">➕ Item fora da tabela</button><button class="peq" id="cl-fach" title="Calcula a área das fachadas de torres/prédios, a tinta e já coloca o serviço na lista">🏢 Fachadas (torres / prédios)</button>' +
       '<button class="peq" id="cl-loja" title="Lê o orçamento ou a nota da loja (PDF, foto ou XML) e traz os materiais com o custo de cada um">📂 Materiais da loja (PDF, foto ou XML)</button><input type="file" id="cl-arq-loja" class="oculto" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml"></div></div>' +
       '<div id="cl-lista"></div><div id="cl-equipe"></div><div id="cl-salvas"></div>';
     $$("[data-cat]", c).forEach(function (b) { b.onclick = function () { estado.cat = b.dataset.cat; estado.grupo = ""; estado.busca = ""; estado.sel = ""; guardar(); desenhar(c); }; });
@@ -133,6 +133,7 @@
     $("#cl-imp", c).onclick = function () { importar(c); };
     $("#cl-colar", c).onclick = function () { colar(c); };
     $("#cl-livre", c).onclick = function () { livre(c); };
+    $("#cl-fach", c).onclick = function () { fachadas(c); };
     $("#cl-loja", c).onclick = function () { $("#cl-arq-loja", c).value = ""; $("#cl-arq-loja", c).click(); };
     $("#cl-arq-loja", c).onchange = function () { if (this.files[0]) lerLoja(c, this.files[0]); };
     opcoes(c); lista(c); equipeCartao(c); pintarSalvas();
@@ -235,6 +236,52 @@
       guardar(); j.fechar(); lista(c); A.avisar("Lista adicionada", "ok");
     };
   }
+
+  // ---- 🏢 fachadas de torres / prédios: área, tinta e serviço na lista ----
+  var CH_FACH = "age_calc_fachadas_v1", FACH_PAD = { n: 34, perim: 72, alt: 12, aber: 20, demaos: 2, rend: 10, perda: 10, lata: 18 };
+  function lerFach() { try { return Object.assign({}, FACH_PAD, JSON.parse(localStorage.getItem(CH_FACH) || "{}")); } catch (e) { return Object.assign({}, FACH_PAD); } }
+  function guardarFach(o) { try { localStorage.setItem(CH_FACH, JSON.stringify(o)); } catch (e) { /* ignora */ } }
+  function fachadas(c) {
+    var o = lerFach();
+    var serv = servicos("pintura").filter(function (s) { return /acima de 3 m/.test(s.descricao) && /(látex|fachada|chapisco)/i.test(s.descricao) && s.valor !== null; });
+    var padrao = serv.filter(function (s) { return /standard fosco 2 dem/i.test(s.descricao); })[0] || serv[0];
+    var j = A.janela('<p class="mudo peq" style="margin-top:0">Informe as medidas de <b>uma torre</b> e quantas são. O app calcula a área líquida, a tinta para as demãos e coloca o serviço na lista, com o preço da tabela (acima de 3 m de altura), que você ajusta depois.</p>' +
+      '<div class="linha" style="gap:8px"><label style="width:110px">Nº de torres<input class="fa-n" inputmode="decimal"></label><label style="width:150px">Perímetro de 1 torre (m)<input class="fa-p" inputmode="decimal"></label><label style="width:130px">Altura (m)<input class="fa-a" inputmode="decimal"></label><label style="width:170px">Descontar janelas e portas (%)<input class="fa-ab" inputmode="decimal"></label></div>' +
+      '<div class="linha" style="gap:8px"><label style="width:100px">Demãos<input class="fa-d" inputmode="decimal"></label><label style="width:190px">Rendimento (m² por litro, por demão)<input class="fa-r" inputmode="decimal"></label><label style="width:120px">Perda (%)<input class="fa-pe" inputmode="decimal"></label><label style="width:120px">Lata (litros)<input class="fa-l" inputmode="decimal"></label></div>' +
+      '<label>Serviço da tabela para o preço<select class="fa-s">' + (serv.length ? serv.map(function (s) { return '<option value="' + esc(s.descricao) + '"' + (padrao && s.descricao === padrao.descricao ? " selected" : "") + ">" + esc(s.descricao) + " · " + din(s.valor) + "/m²</option>"; }).join("") : '<option value="">(tabela de pintura não carregada: o serviço entra sem preço)</option>') + "</select></label>" +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" class="fa-tinta" checked> Colocar também a <b>tinta</b> na lista (você preenche o preço)</label>' +
+      '<label class="marca-linha" style="font-weight:400"><input type="checkbox" class="fa-acesso" checked> Colocar um item de <b>acesso em altura</b> (andaime, balancim ou corda), com preço a definir</label>' +
+      '<div id="fa-res" class="cartao" style="margin-top:8px"></div><p class="peq mudo" style="margin:4px 0 0">Altura e janelas são estimativas: confirme com as elevações do projeto ou medindo uma torre no local. Fora da conta: selador, massa, textura, preparo e lavagem.</p>' +
+      '<div class="acoes"><button class="prim" id="fa-ok">➕ Adicionar à lista</button><button id="fa-x">Cancelar</button></div>', { titulo: "🏢 Fachadas (torres / prédios)", larga: true, semRascunho: true });
+    var K = { n: ".fa-n", perim: ".fa-p", alt: ".fa-a", aber: ".fa-ab", demaos: ".fa-d", rend: ".fa-r", perda: ".fa-pe", lata: ".fa-l" };
+    Object.keys(K).forEach(function (k) { $(K[k], j.el).value = fq(o[k]); });
+    function ler() { var v = {}; Object.keys(K).forEach(function (k) { v[k] = A.lerNumero($(K[k], j.el).value) || 0; }); return v; }
+    function calc(v) {
+      var area = v.n * v.perim * v.alt * Math.max(0, 1 - v.aber / 100), litros = v.rend > 0 ? area * v.demaos / v.rend * (1 + v.perda / 100) : 0, lt = v.lata > 0 ? Math.ceil(litros / v.lata - 1e-9) : 0;
+      return { area: Math.round(area * 10) / 10, litros: Math.round(litros), latas: lt, porTorre: v.n > 0 ? Math.round(area / v.n) : 0, latasTorre: v.n > 0 && v.lata > 0 ? Math.ceil(litros / v.n / v.lata - 1e-9) : 0 };
+    }
+    function pintar() {
+      var v = ler(), r = calc(v), s = serv.filter(function (x) { return x.descricao === $(".fa-s", j.el).value; })[0];
+      $("#fa-res", j.el).innerHTML = '<div class="linha" style="justify-content:space-between"><span>Área líquida por torre</span><b>' + A.numero(r.porTorre, 0) + ' m²</b></div><div class="linha" style="justify-content:space-between"><span>Área total a pintar (' + A.numero(v.n, 0) + ' torres)</span><b>' + A.numero(r.area, 1) + ' m²</b></div>' +
+        '<div class="linha" style="justify-content:space-between"><span>Tinta (' + A.numero(v.demaos, 0) + ' demãos, ' + A.numero(v.rend, 1) + ' m²/L, ' + A.numero(v.perda, 0) + '% de perda)</span><b>' + A.numero(r.litros, 0) + ' L = ' + r.latas + ' lata(s) de ' + A.numero(v.lata, 0) + ' L</b></div>' +
+        '<div class="linha peq mudo" style="justify-content:space-between"><span>Por torre</span><span>≈ ' + r.latasTorre + ' lata(s)</span></div>' +
+        (s ? '<div class="linha" style="justify-content:space-between;margin-top:4px"><span>Mão de obra pela média da tabela</span><b>' + din(r2(r.area * s.valor)) + "</b></div>" : "");
+    }
+    $$("input[class^=fa-], select", j.el).forEach(function (e) { e.addEventListener("input", pintar); e.addEventListener("change", pintar); });
+    pintar();
+    $("#fa-x", j.el).onclick = function () { j.fechar(); };
+    $("#fa-ok", j.el).onclick = function () {
+      var v = ler(), r = calc(v), s = serv.filter(function (x) { return x.descricao === $(".fa-s", j.el).value; })[0];
+      if (!(r.area > 0)) { A.avisar("Confira o nº de torres, o perímetro e a altura.", "erro"); return; }
+      guardarFach(v);
+      var ds = Math.round(v.demaos);
+      estado.linhas.push({ desc: "Pintura das fachadas externas das " + A.numero(v.n, 0) + " torres (" + ds + " demãos de tinta acrílica)", ref: s ? s.descricao : undefined, un: "m²", qtd: r.area, valor: s ? s.valor : 0, media: s ? s.valor : null, min: s ? s.min : null, max: s ? s.max : null, cat: "pintura" });
+      if ($(".fa-tinta", j.el).checked) estado.linhas.push({ tipo: "material", custo: 0, desc: "Tinta acrílica para fachada, lata de " + A.numero(v.lata, 0) + " L (" + A.numero(r.litros, 0) + " L para " + ds + " demãos)", un: "lata", qtd: r.latas, valor: 0, media: null, min: null, max: null, cat: "pintura" });
+      if ($(".fa-acesso", j.el).checked) estado.linhas.push({ desc: "Acesso em altura para as fachadas (andaime, balancim ou corda)", un: "vb", qtd: 1, valor: 0, media: null, min: null, max: null, cat: "pintura" });
+      guardar(); j.fechar(); lista(c); A.avisar("Fachadas adicionadas à lista. Preencha os preços que faltam.", "ok");
+    };
+  }
+
   function livre(c) {
     var j = A.janela('<label>Tipo<select class="lv-t"><option value="servico">Mão de obra / serviço</option><option value="material">🧱 Material</option></select></label><label>Descrição<input class="lv-d" maxlength="300" placeholder="Ex.: Limpeza e preparo do piso antes da repintura"></label><div class="duas"><div><label>Quantidade<input class="lv-q" inputmode="decimal" value="1"></label></div><div><label>Unidade<select class="lv-u">' +
       ["un", "m", "m²", "serv", "vb", "h", "dia"].map(function (u) { return "<option>" + u + "</option>"; }).join("") + '</select></label></div></div><label>Preço por unidade (R$)<input class="lv-v" inputmode="decimal" placeholder="Pode deixar vazio e preencher na lista"></label>' +
@@ -448,15 +495,15 @@
     var el = $("#cl-lista", c);
     if (!estado.linhas.length) { resumoEquipe(c); el.innerHTML = '<div class="cartao vazio">Sua lista está vazia. Escolha um serviço, digite a metragem e toque em ➕ Adicionar.</div>'; return; }
     resumoEquipe(c);
-    var t = totais(), dif = t.media ? ((t.seu - t.media) / t.media * 100) : 0;
-    el.innerHTML = '<div class="cartao"><h3 style="margin-top:0">Sua lista</h3>' + (t.mat ? '<div class="acoes" style="margin-top:0"><button class="peq" id="cl-margem" title="Aplica um percentual sobre o custo da loja em todos os materiais">💹 Margem nos materiais</button><button class="peq" id="cl-custo" title="Volta todos os materiais ao custo da loja">↺ Tudo ao custo</button></div>' : "") + estado.linhas.map(function (l, i) {
+    var t = totais(), dif = t.media ? ((t.seu - t.media) / t.media * 100) : 0, temMat = estado.linhas.some(function (l) { return l.tipo === "material"; });
+    el.innerHTML = '<div class="cartao"><h3 style="margin-top:0">Sua lista</h3>' + (temMat ? '<div class="acoes" style="margin-top:0"><button class="peq" id="cl-margem" title="Aplica um percentual sobre o custo da loja em todos os materiais">💹 Margem nos materiais</button><button class="peq" id="cl-custo" title="Volta todos os materiais ao custo da loja">↺ Tudo ao custo</button></div>' : "") + estado.linhas.map(function (l, i) {
       return '<div class="cl-lin" data-i="' + i + '" style="border-top:1px solid var(--borda);padding:8px 0">' + (l.tipo === "material" ? '<span class="selo">🧱 material</span>' : "") + '<input class="l-desc" maxlength="300" value="' + esc(l.desc) + '" style="width:100%">' +
         '<div class="linha" style="gap:8px;margin-top:6px;align-items:flex-end"><label style="width:110px">Qtd (' + esc(l.un) + ')<input class="l-q" inputmode="decimal" value="' + esc(fq(l.qtd)) + '"></label>' +
         '<label style="width:130px">R$ por ' + esc(l.un) + '<input class="l-v" inputmode="decimal" value="' + esc(f2(l.valor)) + '"></label>' +
         '<div style="flex:1;min-width:120px"><b class="l-sub">' + din(r2(l.qtd * l.valor)) + '</b><div class="peq mudo l-ref">' + esc(faixaTxt(l)) + '</div><div class="l-av">' + aviso(l) + '</div></div>' +
         '<button class="peq" data-med="' + i + '" title="' + (l.tipo === "material" ? "Volta ao custo da loja (tira a margem)" : "Volta ao preço médio da tabela") + '"' + ((l.tipo === "material" ? !(Number(l.custo) > 0) : (l.media === null || l.media === undefined)) ? " disabled" : "") + '>' + (l.tipo === "material" ? "↺ custo" : "↺ média") + '</button><button class="peq perigo" data-tirar="' + i + '" aria-label="Tirar da lista">🗑</button></div></div>';
-    }).join("") + '<div style="border-top:2px solid var(--borda);margin-top:8px;padding-top:8px"><div class="linha" style="justify-content:space-between"><span>' + (t.mat ? "Mão de obra" : "Total pelo seu preço") + '</span><b id="cl-tot" style="font-size:' + (t.mat ? "16" : "20") + 'px">' + din(t.seu) + "</b></div>" +
-      (t.mat ? '<div class="linha" style="justify-content:space-between"><span>Materiais</span><b id="cl-tmat" style="font-size:16px">' + din(t.mat) + '</b></div><div class="linha peq mudo" style="justify-content:space-between"><span>Custo dos materiais na loja · margem</span><span id="cl-tcusto">' + din(t.matCusto) + " · " + din(r2(t.mat - t.matCusto)) + '</span></div><div class="linha" style="justify-content:space-between"><span>Total geral</span><b id="cl-tgeral" style="font-size:20px">' + din(r2(t.seu + t.mat)) + "</b></div>" : "") +
+    }).join("") + '<div style="border-top:2px solid var(--borda);margin-top:8px;padding-top:8px"><div class="linha" style="justify-content:space-between"><span>' + (temMat ? "Mão de obra" : "Total pelo seu preço") + '</span><b id="cl-tot" style="font-size:' + (temMat ? "16" : "20") + 'px">' + din(t.seu) + "</b></div>" +
+      (temMat ? '<div class="linha" style="justify-content:space-between"><span>Materiais</span><b id="cl-tmat" style="font-size:16px">' + din(t.mat) + '</b></div><div class="linha peq mudo" style="justify-content:space-between"><span>Custo dos materiais na loja · margem</span><span id="cl-tcusto">' + din(t.matCusto) + " · " + din(r2(t.mat - t.matCusto)) + '</span></div><div class="linha" style="justify-content:space-between"><span>Total geral</span><b id="cl-tgeral" style="font-size:20px">' + din(r2(t.seu + t.mat)) + "</b></div>" : "") +
       '<div class="linha peq mudo" style="justify-content:space-between"><span>Pela média da tabela' + (t.semMedia ? " (sem " + t.semMedia + " item(ns) sem preço)" : "") + '</span><span id="cl-tmed">' + din(t.media) + (t.media ? " (" + (dif >= 0 ? "+" : "") + A.numero(dif, 1) + "%)" : "") + "</span></div></div>" +
       '<label style="display:block;margin-top:10px">Como o cliente vê o orçamento no PDF<select id="cl-visao"><option value="t_servicos">Só os serviços (sem valores) e o valor total — materiais não aparecem</option><option value="itens">Cada serviço com o seu valor</option><option value="total">Só mão de obra e o total (materiais por conta do cliente, lista à parte)</option></select></label><span class="peq mudo">Os materiais você acrescenta no orçamento (+ Material, 📋 Escolher da lista ou 📷 Ler nota da loja).</span>' +
       '<div class="acoes"><button class="prim" id="cl-orc">📄 Criar orçamento com esta lista</button><button id="cl-copiar">📋 Copiar</button><button class="perigo" id="cl-limpar">🧹 Limpar lista</button></div></div>';
