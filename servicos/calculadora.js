@@ -239,7 +239,7 @@
 
   // ---- 🏢 fachadas de torres / prédios: área, tinta e serviço na lista ----
   var CH_FACH = "age_calc_fachadas_v1", FACH_PAD = { n: 34, perim: 72, alt: 12, aber: 20, demaos: 2, rend: 10, perda: 10, lata: 18 };
-  function lerFach() { try { return Object.assign({}, FACH_PAD, JSON.parse(localStorage.getItem(CH_FACH) || "{}")); } catch (e) { return Object.assign({}, FACH_PAD); } }
+  function lerFach() { var o; try { o = Object.assign({}, FACH_PAD, JSON.parse(localStorage.getItem(CH_FACH) || "{}")); } catch (e) { o = Object.assign({}, FACH_PAD); } o.lata = Number(o.lata) > 0 && Number(o.lata) < 10 ? 3.6 : 18; return o; }
   function guardarFach(o) { try { localStorage.setItem(CH_FACH, JSON.stringify(o)); } catch (e) { /* ignora */ } }
   function fachadas(c) {
     var o = lerFach();
@@ -247,7 +247,7 @@
     var padrao = serv.filter(function (s) { return /standard fosco 2 dem/i.test(s.descricao); })[0] || serv[0];
     var j = A.janela('<p class="mudo peq" style="margin-top:0">Informe as medidas de <b>uma torre</b> e quantas são. O app calcula a área líquida, a tinta para as demãos e coloca o serviço na lista, com o preço da tabela (acima de 3 m de altura), que você ajusta depois.</p>' +
       '<div class="linha" style="gap:8px"><label style="width:110px">Nº de torres<input class="fa-n" inputmode="decimal"></label><label style="width:150px">Perímetro de 1 torre (m)<input class="fa-p" inputmode="decimal"></label><label style="width:130px">Altura (m)<input class="fa-a" inputmode="decimal"></label><label style="width:170px">Descontar janelas e portas (%)<input class="fa-ab" inputmode="decimal"></label></div>' +
-      '<div class="linha" style="gap:8px"><label style="width:100px">Demãos<input class="fa-d" inputmode="decimal"></label><label style="width:190px">Rendimento (m² por litro, por demão)<input class="fa-r" inputmode="decimal"></label><label style="width:120px">Perda (%)<input class="fa-pe" inputmode="decimal"></label><label style="width:120px">Lata (litros)<input class="fa-l" inputmode="decimal"></label></div>' +
+      '<div class="linha" style="gap:8px"><label style="width:100px">Demãos<input class="fa-d" inputmode="decimal"></label><label style="width:190px">Rendimento (m² por litro, por demão)<input class="fa-r" inputmode="decimal"></label><label style="width:120px">Perda (%)<input class="fa-pe" inputmode="decimal"></label><label style="width:200px">Embalagem da tinta<select class="fa-l"><option value="18">Lata de 18 L</option><option value="3,6">Galão de 3,6 L</option></select></label></div>' +
       '<label>Serviço da tabela para o preço<select class="fa-s">' + (serv.length ? serv.map(function (s) { return '<option value="' + esc(s.descricao) + '"' + (padrao && s.descricao === padrao.descricao ? " selected" : "") + ">" + esc(s.descricao) + " · " + din(s.valor) + "/m²</option>"; }).join("") : '<option value="">(tabela de pintura não carregada: o serviço entra sem preço)</option>') + "</select></label>" +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" class="fa-tinta" checked> Colocar também a <b>tinta</b> na lista (você preenche o preço)</label>' +
       '<label class="marca-linha" style="font-weight:400"><input type="checkbox" class="fa-acesso" checked> Colocar um item de <b>acesso em altura</b> (andaime, balancim ou corda), com preço a definir</label>' +
@@ -258,13 +258,15 @@
     function ler() { var v = {}; Object.keys(K).forEach(function (k) { v[k] = A.lerNumero($(K[k], j.el).value) || 0; }); return v; }
     function calc(v) {
       var area = v.n * v.perim * v.alt * Math.max(0, 1 - v.aber / 100), litros = v.rend > 0 ? area * v.demaos / v.rend * (1 + v.perda / 100) : 0, lt = v.lata > 0 ? Math.ceil(litros / v.lata - 1e-9) : 0;
-      return { area: Math.round(area * 10) / 10, litros: Math.round(litros), latas: lt, porTorre: v.n > 0 ? Math.round(area / v.n) : 0, latasTorre: v.n > 0 && v.lata > 0 ? Math.ceil(litros / v.n / v.lata - 1e-9) : 0 };
+      var outra = v.lata > 10 ? 3.6 : 18;
+      return { area: Math.round(area * 10) / 10, litros: Math.round(litros), latas: lt, porTorre: v.n > 0 ? Math.round(area / v.n) : 0, latasTorre: v.n > 0 && v.lata > 0 ? Math.ceil(litros / v.n / v.lata - 1e-9) : 0, outra: outra, outras: Math.ceil(litros / outra - 1e-9) };
     }
     function pintar() {
       var v = ler(), r = calc(v), s = serv.filter(function (x) { return x.descricao === $(".fa-s", j.el).value; })[0];
       $("#fa-res", j.el).innerHTML = '<div class="linha" style="justify-content:space-between"><span>Área líquida por torre</span><b>' + A.numero(r.porTorre, 0) + ' m²</b></div><div class="linha" style="justify-content:space-between"><span>Área total a pintar (' + A.numero(v.n, 0) + ' torres)</span><b>' + A.numero(r.area, 1) + ' m²</b></div>' +
-        '<div class="linha" style="justify-content:space-between"><span>Tinta (' + A.numero(v.demaos, 0) + ' demãos, ' + A.numero(v.rend, 1) + ' m²/L, ' + A.numero(v.perda, 0) + '% de perda)</span><b>' + A.numero(r.litros, 0) + ' L = ' + r.latas + ' lata(s) de ' + A.numero(v.lata, 0) + ' L</b></div>' +
-        '<div class="linha peq mudo" style="justify-content:space-between"><span>Por torre</span><span>≈ ' + r.latasTorre + ' lata(s)</span></div>' +
+        '<div class="linha" style="justify-content:space-between"><span>Tinta (' + A.numero(v.demaos, 0) + ' demãos, ' + A.numero(v.rend, 1) + ' m²/L, ' + A.numero(v.perda, 0) + '% de perda)</span><b>' + A.numero(r.litros, 0) + ' L = ' + A.numero(r.latas, 0) + (v.lata > 10 ? " lata(s) de " : " galão(ões) de ") + A.numero(v.lata, 1) + ' L</b></div>' +
+        '<div class="linha peq mudo" style="justify-content:space-between"><span>Por torre</span><span>≈ ' + r.latasTorre + (v.lata > 10 ? " lata(s)" : " galão(ões)") + '</span></div>' +
+        '<div class="linha peq mudo" style="justify-content:space-between"><span>Para comparar: em ' + (r.outra > 10 ? "latas de 18 L" : "galões de 3,6 L") + '</span><span>' + A.numero(r.outras, 0) + ' ' + (r.outra > 10 ? "lata(s)" : "galão(ões)") + '</span></div>' +
         (s ? '<div class="linha" style="justify-content:space-between;margin-top:4px"><span>Mão de obra pela média da tabela</span><b>' + din(r2(r.area * s.valor)) + "</b></div>" : "");
     }
     $$("input[class^=fa-], select", j.el).forEach(function (e) { e.addEventListener("input", pintar); e.addEventListener("change", pintar); });
@@ -276,7 +278,7 @@
       guardarFach(v);
       var ds = Math.round(v.demaos);
       estado.linhas.push({ desc: "Pintura das fachadas externas das " + A.numero(v.n, 0) + " torres (" + ds + " demãos de tinta acrílica)", ref: s ? s.descricao : undefined, un: "m²", qtd: r.area, valor: s ? s.valor : 0, media: s ? s.valor : null, min: s ? s.min : null, max: s ? s.max : null, cat: "pintura" });
-      if ($(".fa-tinta", j.el).checked) estado.linhas.push({ tipo: "material", custo: 0, desc: "Tinta acrílica para fachada, lata de " + A.numero(v.lata, 0) + " L (" + A.numero(r.litros, 0) + " L para " + ds + " demãos)", un: "lata", qtd: r.latas, valor: 0, media: null, min: null, max: null, cat: "pintura" });
+      if ($(".fa-tinta", j.el).checked) estado.linhas.push({ tipo: "material", custo: 0, desc: "Tinta acrílica para fachada, " + (v.lata > 10 ? "lata de 18" : "galão de 3,6") + " L (" + A.numero(r.litros, 0) + " L para " + ds + " demãos)", un: v.lata > 10 ? "lata" : "galão", qtd: r.latas, valor: 0, media: null, min: null, max: null, cat: "pintura" });
       if ($(".fa-acesso", j.el).checked) estado.linhas.push({ desc: "Acesso em altura para as fachadas (andaime, balancim ou corda)", un: "vb", qtd: 1, valor: 0, media: null, min: null, max: null, cat: "pintura" });
       guardar(); j.fechar(); lista(c); A.avisar("Fachadas adicionadas à lista. Preencha os preços que faltam.", "ok");
     };
