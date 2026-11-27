@@ -96,7 +96,7 @@
   }
 
   // ---------------- tela ----------------
-  function ver(c, ctx) { P = ctx; raiz = c; ler(); c.innerHTML = '<div class="cab-secao"><h2>🧮 Calculadora de mão de obra</h2></div><div class="cartao vazio">Carregando...</div>'; carregarCot(function () { desenhar(c); }); }
+  function ver(c, ctx) { P = ctx; raiz = c; MEDIA = undefined; ler(); c.innerHTML = '<div class="cab-secao"><h2>🧮 Calculadora de mão de obra</h2></div><div class="cartao vazio">Carregando...</div>'; carregarCot(function () { desenhar(c); }); }
   function desenhar(c) {
     var L = servicos(estado.cat), grupos = [];
     L.forEach(function (s) { if (grupos.indexOf(s.grupo) < 0) grupos.push(s.grupo); });
@@ -425,6 +425,7 @@
   }
   function resumoEquipe(c) {
     var el = c && $("#eq-res", c); if (!el) return;
+    pintarMedia(c);
     var k = custoEquipe(), t = totais(), e = eq(), cobra = t.seu, res = r2(cobra - k.total), pct = cobra ? res / cobra * 100 : 0, mg = Number(e.margem) || 0;
     var minimo = mg > 0 && mg < 100 ? r2(k.total / (1 - mg / 100)) : null;
     el.innerHTML = '<div class="linha peq" style="justify-content:space-between"><span>Diárias</span><span>' + din(k.dia) + '</span></div>' +
@@ -434,6 +435,34 @@
       '<div class="linha" style="justify-content:space-between;border-top:1px solid var(--borda);margin-top:4px;padding-top:4px"><b>Custo total da equipe</b><b>' + din(k.total) + "</b></div>" +
       (cobra ? '<div class="linha" style="justify-content:space-between;margin-top:6px"><span>Mão de obra cobrada na lista</span><span>' + din(cobra) + '</span></div><div class="linha" style="justify-content:space-between"><b>Sobra (cobrado − custo da equipe)</b><b style="color:' + (res >= 0 ? "var(--bom,#1b7f3b)" : "var(--perigo,#c0392b)") + '">' + din(res) + " (" + A.numero(pct, 1) + "%)</b></div>" : '<p class="peq mudo" style="margin:6px 0 0">Adicione serviços à lista acima para comparar com o que você cobra.</p>') +
       (minimo !== null && k.total > 0 ? '<div class="linha" style="justify-content:space-between;margin-top:4px"><span>Preço mínimo da mão de obra para ter ' + A.numero(mg, 1) + '% de sobra</span><b>' + din(minimo) + "</b></div>" + (cobra && cobra < minimo ? '<p class="peq" style="color:var(--perigo,#c0392b);margin:4px 0 0">⚠ O que você cobra está ' + din(r2(minimo - cobra)) + " abaixo desse mínimo.</p>" : "") : "");
+  }
+  // ---- 📈 preço sugerido pela média das obras concluídas (aba Custo de obras) ----
+  var MEDIA, medBusy = false;   // undefined = ainda não carregou; null = sem obras concluídas
+  function pintarMedia(c) {
+    var el = c && $("#eq-media", c); if (!el) return;
+    if (MEDIA === undefined) { el.innerHTML = ""; return; }
+    if (!MEDIA) { el.innerHTML = '<p class="peq mudo" style="margin:8px 0 0">📈 Quando você marcar obras como <b>Concluídas</b> na aba Custo de obras, aqui aparece o preço sugerido pela média delas.</p>'; return; }
+    var e = eq(), t = totais(), mg = Number(e.margem) || 0, fm = mg > 0 && mg < 100 ? 1 - mg / 100 : 1, area = 0, sug = [];
+    estado.linhas.forEach(function (l) { if (l.tipo !== "material" && /^m(²|2)$/i.test(String(l.un || "").trim())) area += Number(l.qtd) || 0; });
+    if (MEDIA.moPorM2 > 0 && area > 0) sug.push({ rot: "Média por m² (" + din(MEDIA.moPorM2) + "/m² × " + A.numero(area, 0) + " m²)", custo: r2(MEDIA.moPorM2 * area) });
+    if (MEDIA.moPorDia > 0 && Number(e.dias) > 0) sug.push({ rot: "Média por dia (" + din(MEDIA.moPorDia) + "/dia × " + A.numero(e.dias, 0) + " dias)", custo: r2(MEDIA.moPorDia * e.dias) });
+    el.innerHTML = '<div style="border-top:1px solid var(--borda);margin-top:8px;padding-top:6px"><b>📈 Pela média das suas obras</b> <span class="peq mudo">(' + MEDIA.obras + " obra(s) concluída(s))</span>" +
+      (sug.length ? sug.map(function (o, i) { var pr = r2(o.custo / fm); return '<div class="linha peq" style="justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:4px"><span>' + esc(o.rot) + ": custo <b>" + din(o.custo) + "</b> → preço com " + A.numero(mg, 1) + '% de sobra <b>' + din(pr) + '</b></span><button class="peq" data-aj="' + pr + '">Usar este valor</button></div>'; }).join("") + '<p class="peq mudo" style="margin:4px 0 0">“Usar este valor” ajusta os preços dos serviços da lista, na mesma proporção, para a mão de obra chegar a esse total (materiais não mudam). Hoje a lista cobra ' + din(t.seu) + ".</p>"
+        : '<p class="peq mudo" style="margin:4px 0 0">Coloque serviços em m² na lista (e/ou os dias de obra) para ver o preço sugerido.' + (MEDIA.moPorM2 > 0 ? "" : " Lance a área das etapas na aba Custo de obras para ter a média por m².") + "</p>") + "</div>";
+    $$("[data-aj]", el).forEach(function (b) {
+      b.onclick = function () {
+        var alvo = Number(b.dataset.aj), cur = totais().seu;
+        if (!(cur > 0)) { A.avisar("Coloque os serviços na lista primeiro.", "erro"); return; }
+        var fat = alvo / cur;
+        if (!A.confirmar("Mudar os preços dos serviços da lista de " + din(cur) + " para cerca de " + din(alvo) + " (todos x " + A.numero(fat, 3) + ")? Os materiais não mudam.")) return;
+        estado.linhas.forEach(function (l) { if (l.tipo !== "material") l.valor = r2(l.valor * fat); });
+        guardar(); desenhar(c); A.avisar("Preços ajustados pela média das obras", "ok");
+      };
+    });
+  }
+  function carregarMedia(c) {
+    if (MEDIA !== undefined || medBusy || !P || !window.AGE_CUSTOS || !window.AGE_CUSTOS.mediaAtual) return;
+    medBusy = true; window.AGE_CUSTOS.mediaAtual(P).then(function (m) { MEDIA = m || null; medBusy = false; pintarMedia(c); });
   }
   function equipeCartao(c) {
     var el = $("#cl-equipe", c); if (!el) return;
@@ -451,7 +480,7 @@
       '<div id="eq-out">' + e.outros.map(function (o, i) {
         return '<div class="linha eq-ou" data-i="' + i + '" style="gap:6px;margin-top:6px;align-items:flex-end"><label style="flex:3;min-width:200px">Outro honorário (ART, responsável técnico, terceiro...)<input class="eq-od" maxlength="120" value="' + esc(o.desc || "") + '"></label><label style="width:130px">Valor (R$)<input class="eq-ov" inputmode="decimal" value="' + esc(f2(o.valor)) + '"></label><button class="peq perigo" data-eq-tirar-o="' + i + '" aria-label="Tirar">🗑</button></div>';
       }).join("") + "</div>" +
-      '<div class="acoes"><button class="peq" id="eq-add">➕ Função / funcionário</button><button class="peq" id="eq-add-o">➕ Outro honorário</button></div><div class="linha" style="gap:6px;margin-top:4px"><input class="eq-nf" maxlength="60" placeholder="Nova função (ex.: Soldador)" style="flex:1;min-width:180px"><button class="peq" id="eq-nf-ok">Adicionar à lista de funções</button></div><div id="eq-res" style="margin-top:8px"></div></details>';
+      '<div class="acoes"><button class="peq" id="eq-add">➕ Função / funcionário</button><button class="peq" id="eq-add-o">➕ Outro honorário</button></div><div class="linha" style="gap:6px;margin-top:4px"><input class="eq-nf" maxlength="60" placeholder="Nova função (ex.: Soldador)" style="flex:1;min-width:180px"><button class="peq" id="eq-nf-ok">Adicionar à lista de funções</button></div><div id="eq-media"></div><div id="eq-res" style="margin-top:8px"></div></details>';
     function salvar() { guardar(); }
     $(".eq-dias", el).oninput = function () { e.dias = A.lerNumero(this.value) || 0; salvar(); };
     $(".eq-enc", el).oninput = function () { e.enc = A.lerNumero(this.value) || 0; salvar(); resumoEquipe(c); };
@@ -490,6 +519,7 @@
     $$("[data-eq-tirar]", el).forEach(function (b) { b.onclick = function () { e.func.splice(Number(b.dataset.eqTirar), 1); salvar(); equipeCartao(c); }; });
     $$("[data-eq-tirar-o]", el).forEach(function (b) { b.onclick = function () { e.outros.splice(Number(b.dataset.eqTirarO), 1); salvar(); equipeCartao(c); }; });
     resumoEquipe(c);
+    carregarMedia(c);
   }
 
   // ---- lista de serviços ----

@@ -689,3 +689,20 @@ Botão **📷 Escanear** (azul, no topo de Impostos e dívidas): **📷 Tirar fo
 - O app soma e mostra o **custo total da obra**, o custo de cada etapa, a média de dias por etapa, a mão de obra **por etapa, por dia e por m²** e a **sobra** sobre o valor cobrado. Tudo **salva sozinho** e fica na lista para **abrir e editar** quando quiser (e **duplicar**, para começar uma obra parecida).
 - Marque a obra como **✅ Concluída** e ela entra nas **📊 Médias das obras concluídas** (dias por torre, mão de obra por torre, por dia e por m², custo total por obra e margem média). **🔮 Estimar uma obra nova** aplica essas médias a um nº de torres (e à área) para uma primeira estimativa. As diárias digitadas são lembradas por função (as mesmas da Calculadora). Rode o `custos-obras.sql` no Supabase (tabela `obras_custos`).
 
+
+## 🚛 Lava-jato de caminhões (`lavajato.js`, tabela `lavajato`)
+Aba para um lava-jato de caminhões (inclusive com sócio). Rode o `lavajato.sql` no Supabase.
+- **🏢 Empresas** contratantes (CNPJ, contato, fechamento) com **preço combinado por serviço**; **🚛 Caminhões** com placa, marca, modelo, tipo e empresa; **👷 Lavadores** com comissão (% do valor ou R$ fixo por caminhão, dividido entre os lavadores marcados); **🧴 Serviços** (lavagem, lubrificação, outros) com preço, custo e intervalo em dias (avisa os caminhões vencidos).
+- **🧽 Lavagens:** lança por dia (empresa, caminhão, lavadores, serviços, valor, pago/a receber); caminhão novo pode ser cadastrado na hora.
+- **💸 Despesas** do mês e **📊 Resultado:** faturado, recebido, a receber, comissões, produtos, despesas, lucro, parte do sócio (% em ⚙) e minha parte; por empresa, lavador e serviço. Lucro sobre o valor faturado.
+- **Impressão:** 🧾 extrato do mês de cada empresa (para cobrar) e 🖨 prestação de contas ao sócio.
+- **📜 Contratos:** modelos `lj_frota` (empresa contratante: frota com marca/placa, tabela de preços, fechamento mensal, responsabilidades, meio ambiente) e `lj_socio` (sociedade em conta de participação: aporte, % do lucro, prestação de contas, saída). Vêm preenchidos pelo cadastro; ficam na aba 📜 Contratos.
+- Os modelos são apoio: contrato de sócio e licença ambiental pedem conferência de contador/advogado.
+
+## ⏰ Aviso de fim de contrato
+Cada contrato tem o campo **Término do contrato** (calculado sozinho a partir de *Início + prazo/vigência*, e editável). Com ele o app avisa:
+- na aba 📜 Contratos: faixa **amarela** a 10 dias do fim e **vermelha** a 3 dias (ou vencido), com selo no cartão do contrato;
+- no **Telegram**: o app cria dois compromissos na Agenda (10 e 3 dias antes, às 8h) e o lembrete da Agenda avisa. Mudar a data do término atualiza os dois; marcar o contrato como *Encerrado*, ou apagá-lo, tira os avisos.
+
+## 📈 Custo de obras → Calculadora
+No cartão **👷 Custo da equipe** da Calculadora aparece **📈 Pela média das suas obras** (obras *Concluídas* em Custo de obras): custo médio por m² (× metragem da lista) e por dia (× dias da obra), com o preço que dá a sobra desejada. **Usar este valor** ajusta os preços dos serviços da lista, na mesma proporção (materiais não mudam).
