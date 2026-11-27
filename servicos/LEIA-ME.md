@@ -706,3 +706,6 @@ Cada contrato tem o campo **Término do contrato** (calculado sozinho a partir d
 
 ## 📈 Custo de obras → Calculadora
 No cartão **👷 Custo da equipe** da Calculadora aparece **📈 Pela média das suas obras** (obras *Concluídas* em Custo de obras): custo médio por m² (× metragem da lista) e por dia (× dias da obra), com o preço que dá a sobra desejada. **Usar este valor** ajusta os preços dos serviços da lista, na mesma proporção (materiais não mudam).
+
+## ✉️ Enviar contrato por e-mail
+No contrato aberto, o botão **✉️ Enviar por e-mail** abre o seu programa de e-mail já com o destinatário (e-mail do cliente/parceiro do contrato), o assunto e uma mensagem pronta. O navegador não anexa arquivos sozinho: antes, use **🖨 Imprimir / salvar PDF**, salve o arquivo e anexe. Depois o app oferece marcar o contrato como "Enviado ao cliente".

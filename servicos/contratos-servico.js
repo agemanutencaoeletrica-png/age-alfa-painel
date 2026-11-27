@@ -445,7 +445,7 @@
       '<div class="linha" style="gap:8px">' + campo("garantia", "Garantia dos serviços") + campo("multa", "Multa por atraso (%)") + campo("juros", "Juros ao mês (%)") + campo("foro", "Foro (cidade/UF)") + '</div>' + campo("condicoes", "Condições comerciais da proposta (opcional)", "area", 3) + "</details>") +
       '<div class="acoes"><button class="prim" id="ct-gerar">🔄 Gerar o texto com estes campos</button><span class="peq mudo">Situação:</span><select id="ct-status" aria-label="Situação">' + Object.keys(STATUS).map(function (k) { return '<option value="' + k + '">' + STATUS[k] + "</option>"; }).join("") + "</select></div>" +
       '<p class="peq mudo" style="margin:2px 0 0">⏳ <b>Pré-aprovado</b> deixa o contrato guardado para você finalizar em outro dia: ele aparece na lista com o que ainda falta preencher.</p><label>Texto do contrato <span class="peq mudo">— muda sozinho quando você edita os campos acima; se você editar o texto à mão, ele deixa de mudar sozinho (use 🔄 para refazer)</span><textarea class="ct-texto" rows="22" data-sem-correcao style="font-family:inherit;line-height:1.45"></textarea></label>' +
-      '<div class="acoes"><button class="prim" id="ct-imp">🖨 Imprimir / salvar PDF</button><button id="ct-fechar">Fechar</button></div>';
+      '<div class="acoes"><button class="prim" id="ct-imp">🖨 Imprimir / salvar PDF</button><button id="ct-mail">✉️ Enviar por e-mail</button><button id="ct-fechar">Fechar</button></div>';
     var j = A.janela(html, { titulo: "📜 " + (x.titulo || "Contrato"), larga: true, semRascunho: true, aoFechar: function () { salvarJa(); desenhar(c); } });
     $$("[class^=f-]", j.el).forEach(function (e) { var k = String(e.className).split(" ")[0].replace(/^f-/, ""); e.value = d[k] === undefined || d[k] === null ? "" : d[k]; });
     $(".ct-texto", j.el).value = x.texto || ""; $("#ct-status", j.el).value = x.status || "rascunho";
@@ -501,6 +501,16 @@
       var t = gerar(m, d); $(".ct-texto", j.el).value = t; ultimoGerado = t; salvarJa();
     };
     $("#ct-imp", j.el).onclick = function () { salvarJa().then(function () { imprimir(x); }); };
+    // e-mail: abre o programa de e-mail com destinatário, assunto e mensagem prontos; o PDF você anexa (o navegador não anexa sozinho)
+    $("#ct-mail", j.el).onclick = function () {
+      salvarJa(); ler();
+      var E = A.CFG.EMPRESA || {}, para = String(d.cli_email || d.pessoa_email || "").trim(), nome = d.cli_nome || d.pessoa_nome || "", de = d.emp_nome || E.nome || "AGE";
+      var assunto = (MODELOS[m] ? MODELOS[m].nome : "Contrato") + (d.numero ? " nº " + d.numero : "") + " – " + de;
+      var corpo = "Olá" + (nome ? ", " + nome : "") + ",\n\nSegue em anexo o contrato" + (d.numero ? " nº " + d.numero : "") + " (" + (MODELOS[m] ? MODELOS[m].nome : "contrato") + ") para sua leitura e assinatura.\nPor favor, confira os dados, assine e devolva uma via por e-mail ou entregue em mãos.\n\nQualquer dúvida, estou à disposição.\n\nAtenciosamente,\n" + de + (d.emp_rep ? "\n" + d.emp_rep : "") + (d.emp_tel || E.telefone ? "\n" + (d.emp_tel || E.telefone) : "");
+      var a = document.createElement("a"); a.href = "mailto:" + encodeURIComponent(para).replace(/%40/g, "@") + "?subject=" + encodeURIComponent(assunto) + "&body=" + encodeURIComponent(corpo); document.body.appendChild(a); a.click(); a.remove();
+      A.avisar(para ? "E-mail aberto. Anexe o PDF: use 🖨 Imprimir / salvar PDF, salve o arquivo e anexe." : "E-mail aberto, mas falta o e-mail do cliente (preencha no contrato). Anexe o PDF salvo em 🖨 Imprimir / salvar PDF.", "ok");
+      if (x.status === "rascunho" || x.status === "pre_aprovado") { var st = $("#ct-status", j.el); if (st && A.confirmar("Marcar este contrato como “Enviado ao cliente”?")) { st.value = "enviado"; salvarJa(); } }
+    };
     $("#ct-fechar", j.el).onclick = function () { j.fechar(); };
   }
 
