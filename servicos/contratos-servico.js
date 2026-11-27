@@ -9,15 +9,25 @@
   var STATUS = { rascunho: "Rascunho", pre_aprovado: "⏳ Pré-aprovado (falta finalizar)", enviado: "Enviado ao cliente", assinado: "Assinado", encerrado: "Encerrado" };
   // campos importantes: o que ainda faltar aparece no contrato (em amarelo) e na lista
   var IMPORTANTES = { cli_nome: "cliente", cli_doc: "CPF/CNPJ do cliente", cli_end: "endereço do cliente", cli_rep: "representante do cliente", emp_rep: "representante da AGE", valor: "valor", pagamento: "forma de pagamento", prazo: "prazo", inicio: "início", foro: "foro" };
-  function faltas(d, m) { d = d || {}; return Object.keys(IMPORTANTES).filter(function (k) { return !String(d[k] === undefined || d[k] === null ? "" : d[k]).trim() && !(k === "inicio" && m === "aditivo"); }).map(function (k) { return IMPORTANTES[k]; }); }
+  function faltas(d, m) { d = d || {}; var I = importantes(m); return Object.keys(I).filter(function (k) { return !String(d[k] === undefined || d[k] === null ? "" : d[k]).trim() && !(k === "inicio" && m === "aditivo"); }).map(function (k) { return I[k]; }); }
+  // modelos com a EQUIPE (a AGE é a contratante/empregadora e a outra parte é uma pessoa): parceiro autônomo por temporada e contratos CLT
+  var PESSOAS = { parceiro: 1, clt_exp: 1, clt_det: 1, clt_ind: 1 };
+  var IMPORTANTES_P = { pessoa_nome: "nome", pessoa_doc: "CPF", pessoa_rg: "RG", pessoa_end: "endereço", pessoa_funcao: "função", emp_rep: "representante da AGE", valor: "valor", pagamento: "forma de pagamento", prazo: "prazo", inicio: "início", foro: "foro" };
+  function ehPessoa(m) { return !!PESSOAS[m]; }
+  function importantes(m) { return ehPessoa(m) ? IMPORTANTES_P : IMPORTANTES; }
   var MODELOS = {
     servico_obra: { nome: "Prestação de serviços com materiais", desc: "Obra, pintura, sinalização, reforma: a AGE executa e fornece mão de obra e materiais." },
     maodeobra: { nome: "Prestação de serviços só com mão de obra", desc: "O cliente fornece os materiais; a AGE executa." },
     eletrico: { nome: "Serviços de instalações elétricas", desc: "Instalação, adequação e manutenção elétrica (NR-10, ART quando exigida, testes e entrega)." },
     manutencao: { nome: "Manutenção periódica (mensal)", desc: "Condomínios e empresas: visitas e atendimento por valor mensal, com vigência e reajuste." },
     tecnologia: { nome: "CFTV, redes (TI) e portão eletrônico", desc: "Fornecimento, instalação e configuração de equipamentos, com garantia do fabricante e proteção de dados." },
-    aditivo: { nome: "Termo aditivo", desc: "Altera valor, prazo ou escopo de um contrato já assinado." }
+    aditivo: { nome: "Termo aditivo", desc: "Altera valor, prazo ou escopo de um contrato já assinado." },
+    parceiro: { nome: "Parceiro autônomo – mão de obra por temporada", desc: "Pintor, eletricista, ajudante... contratados como parceiros (autônomos), por diária, metro ou etapa, durante uma temporada de obra. Sem vínculo de emprego." },
+    clt_exp: { nome: "Funcionário CLT – contrato de experiência", desc: "Contratação com carteira assinada, com período de experiência (45 + 45 dias, no máximo 90)." },
+    clt_det: { nome: "Funcionário CLT – prazo determinado (obra / serviço transitório)", desc: "Carteira assinada com data de término, para um serviço de natureza transitória (máximo 2 anos)." },
+    clt_ind: { nome: "Funcionário CLT – prazo indeterminado", desc: "Carteira assinada sem data de término, para quem vai fazer parte da equipe fixa." }
   };
+  var GRUPO_CLIENTE = ["servico_obra", "maodeobra", "eletrico", "manutencao", "tecnologia", "aditivo"], GRUPO_EQUIPE = ["parceiro", "clt_exp", "clt_det", "clt_ind"];
 
   function semT(e) { return /does not exist|schema cache|PGRST205|42P01/i.test(String((e && (e.message || e.code)) || e)); }
   function run(b) { return Promise.resolve(b).then(function (r) { if (r && r.error) throw r.error; return r; }); }
@@ -72,6 +82,7 @@
   // ---------- texto do contrato ----------
   function ph(v, t) { v = v === undefined || v === null ? "" : String(v).trim(); return v || "[" + (t || "preencher") + "]"; }
   function gerar(m, d) {
+    if (ehPessoa(m)) return gerarPessoa(m, d);
     var cl = [], n = 0;
     function cla(titulo, ps) { n++; cl.push("CLÁUSULA " + n + "ª – " + titulo + "\n" + ps.map(function (p, i) { return n + "." + (i + 1) + " " + p; }).join("\n")); }
     var valor = Number(String(d.valor || "").replace(/\./g, "").replace(",", ".")) || 0, vtxt = valor > 0 ? din(valor) + " (" + extenso(valor) + ")" : "[valor]";
@@ -128,12 +139,63 @@
     return cab + "\n" + cl.join("\n\n") + "\n\nE, por estarem de pleno acordo, as partes assinam este contrato em 2 (duas) vias de igual teor, na presença de 2 (duas) testemunhas.";
   }
 
+
+  // ---------- contratos com a equipe: parceiro autônomo e CLT ----------
+  function gerarPessoa(m, d) {
+    var cl = [], n = 0, clt = m !== "parceiro";
+    function cla(titulo, ps) { n++; cl.push("CLÁUSULA " + n + "ª – " + titulo + "\n" + ps.map(function (p, i) { return n + "." + (i + 1) + " " + p; }).join("\n")); }
+    var valor = Number(String(d.valor || "").replace(/\./g, "").replace(",", ".")) || 0, un = String(d.unidade_valor || "").trim();
+    var vtxt = valor > 0 ? din(valor) + " (" + extenso(valor) + ")" + (un ? " " + un : "") : "[valor]";
+    var funcao = ph(d.pessoa_funcao, "função, ex.: pintor, eletricista, ajudante"), local = ph(d.local, "local ou obra"), foro = ph(d.foro, "cidade/UF");
+    var titulo = { parceiro: "CONTRATO DE PRESTAÇÃO DE SERVIÇOS AUTÔNOMOS (MÃO DE OBRA POR TEMPORADA)", clt_exp: "CONTRATO INDIVIDUAL DE TRABALHO POR PRAZO DETERMINADO (CONTRATO DE EXPERIÊNCIA)", clt_det: "CONTRATO INDIVIDUAL DE TRABALHO POR PRAZO DETERMINADO (SERVIÇO TRANSITÓRIO)", clt_ind: "CONTRATO INDIVIDUAL DE TRABALHO POR PRAZO INDETERMINADO" }[m];
+    var contatoE = d.emp_tel || d.emp_email ? " (contato: " + [d.emp_tel, d.emp_email].filter(Boolean).join(" · ") + ")" : "";
+    var emp = ph(d.emp_nome, "nome da empresa") + ", inscrita no CNPJ sob o nº " + ph(d.emp_doc, "CNPJ") + ", com sede em " + ph(d.emp_end, "endereço") + ", neste ato representada por " + ph(d.emp_rep, "representante") + contatoE + ".";
+    var ctt = [d.pessoa_tel, d.pessoa_email].filter(Boolean).join(" · ");
+    var pessoa = ph(d.pessoa_nome, "nome completo") + ", inscrito(a) no CPF sob o nº " + ph(d.pessoa_doc, "CPF") + ", portador(a) do RG nº " + ph(d.pessoa_rg, "RG") +
+      (clt ? ", CTPS nº " + ph(d.pessoa_ctps, "CTPS: nº e série, ou CPF se digital") + ", PIS/NIT nº " + ph(d.pessoa_pis, "PIS/NIT") : (d.pessoa_cnpj ? ", MEI/CNPJ nº " + d.pessoa_cnpj : "")) +
+      ", residente e domiciliado(a) em " + ph(d.pessoa_end, "endereço") + (ctt ? " (contato: " + ctt + ")" : "") + ".";
+    var cab = titulo + " Nº " + ph(d.numero, "nº") + "\n\n" + (clt ? "EMPREGADOR: " : "CONTRATANTE: ") + emp + "\n" + (clt ? "EMPREGADO(A): " : "CONTRATADO(A) (PARCEIRO): ") + pessoa + "\n\n" +
+      "As partes acima identificadas têm entre si justo e contratado o presente instrumento, que se regerá pelas cláusulas e condições a seguir:\n";
+    var inicio = ph(dataBr(d.inicio), "data de início");
+    var atraso = "O atraso no pagamento sujeitará " + (clt ? "o EMPREGADOR" : "a CONTRATANTE") + " à correção monetária pelo IPCA, multa de " + ph(d.multa, "2") + "% e juros de " + ph(d.juros, "1") + "% ao mês sobre o valor em atraso.";
+    if (!clt) {
+      cla("DO OBJETO", ["O(A) PARCEIRO(A) prestará à CONTRATANTE, de forma autônoma e com mão de obra, serviços de " + funcao + " nos serviços e obras a seguir:\n" + ph(d.objeto, "descrever a obra ou os serviços"), "Local de execução: " + local + ".", "O(A) PARCEIRO(A) executará os serviços com boa técnica, de acordo com as especificações da obra e com as normas de segurança, escolhendo a forma e os meios de execução."]);
+      cla("DA NATUREZA DA RELAÇÃO (AUTONOMIA)", ["Este contrato é de prestação de serviços autônomos, de natureza civil. Não gera vínculo empregatício, societário ou de representação entre as partes, nem subordinação jurídica.", "O(A) PARCEIRO(A) não tem exclusividade e pode prestar serviços a terceiros, desde que não prejudique os prazos e a segurança da obra contratada e não use informações da CONTRATANTE.", "Não há controle de jornada nem de ponto. O(A) PARCEIRO(A) organiza o próprio trabalho e responde pelo resultado e pelos prazos de cada etapa. A coordenação do cronograma da obra com os demais serviços não configura subordinação.", "O(A) PARCEIRO(A) poderá fazer-se auxiliar ou substituir por profissional de sua confiança, por sua conta e responsabilidade, mediante aviso prévio à CONTRATANTE.", "O(A) PARCEIRO(A) é responsável pelos seus tributos e contribuições, inclusive previdenciárias (como contribuinte individual ou microempreendedor individual), e pelos encargos de quem o auxiliar. Não faz jus a férias, 13º salário, FGTS, aviso prévio ou outras verbas de natureza trabalhista.", "Quando a lei impuser à CONTRATANTE a retenção de tributos ou contribuições sobre o pagamento, ela será feita e recolhida, e será pago o valor líquido."]);
+      cla("DA TEMPORADA (PRAZO)", ["A temporada tem início em " + inicio + " e duração de " + ph(d.prazo, "prazo, ex.: 3 meses ou até o fim da obra") + ".", "O prazo poderá ser prorrogado por escrito. A temporada se encerra antes do prazo se a obra terminar ou for suspensa, ou nos casos da cláusula de rescisão.", "Dias sem trabalho por chuva, falta de acesso, falta de material ou outro impedimento não causado pelo(a) PARCEIRO(A) não são considerados falta dele(a)" + (/di[aá]ria/i.test(un) ? ", mas só são pagos os dias efetivamente trabalhados, salvo ajuste diferente por escrito" : "") + "."]);
+      cla("DA REMUNERAÇÃO", ["Pelos serviços, a CONTRATANTE pagará ao(à) PARCEIRO(A) o valor de " + vtxt + ".", "Forma e prazo de pagamento: " + ph(d.pagamento, "ex.: quinzenal, até o 5º dia útil após o fechamento do período") + ".", "O pagamento será feito por Pix" + (d.pessoa_pix ? " para a chave " + d.pessoa_pix : "") + " ou transferência bancária, contra recibo" + (d.pessoa_cnpj ? " ou nota fiscal do MEI" : "") + ", com base no fechamento do período ou da etapa, que será conferido pelas duas partes.", atraso]);
+      cla("DAS OBRIGAÇÕES DO(A) PARCEIRO(A)", ["Executar os serviços com qualidade e dentro dos prazos combinados, comunicando de imediato qualquer imprevisto.", "Usar os equipamentos de proteção individual (EPIs) exigidos para a atividade, como capacete, luvas, óculos e calçado de segurança, e, em trabalho em altura, cinto com talabarte e treinamento da NR-35; em serviços elétricos, treinamento da NR-10, apresentando os certificados quando solicitado.", "Zelar pelos materiais, ferramentas e equipamentos recebidos e devolvê-los ao final.", "Refazer, por sua conta, defeitos de execução apontados no prazo de " + ph(d.garantia_p, "30 (trinta) dias") + " após a entrega de cada etapa.", "Manter sigilo sobre as informações e os clientes da CONTRATANTE e não aliciar clientes dela durante a vigência deste contrato.", "Tratar com respeito moradores, clientes e demais profissionais e não trabalhar sob efeito de álcool ou drogas.", "Apresentar os documentos pessoais e os certificados necessários ao serviço."]);
+      cla("DAS OBRIGAÇÕES DA CONTRATANTE", ["Pagar a remuneração nos prazos combinados.", "Fornecer " + ph(d.ferramentas, "ex.: os materiais da obra e os EPIs necessários; as ferramentas manuais pessoais são do parceiro") + ".", "Dar acesso ao local, informar as especificações do serviço e os riscos da obra e indicar um responsável para acompanhar a execução."]);
+      cla("DA SEGURANÇA E DE ACIDENTES", ["O(A) PARCEIRO(A) declara estar apto(a) à atividade e se compromete a seguir as orientações de segurança da obra.", "Seguro de acidentes pessoais em favor do(a) PARCEIRO(A): ( ) sim, contratado por ______________________   ( ) não.", "Em caso de acidente, a CONTRATANTE prestará o socorro imediato e as partes registrarão a ocorrência por escrito."]);
+      cla("DA RESPONSABILIDADE POR DANOS", ["O(A) PARCEIRO(A) responde pelos danos que causar à CONTRATANTE, a clientes ou a terceiros por dolo ou culpa na execução dos serviços."]);
+      cla("DA RESCISÃO", ["Qualquer das partes poderá encerrar este contrato, por escrito, com aviso de " + ph(d.aviso_dias, "3") + " dia(s), pagando-se os serviços já executados.", "O descumprimento grave, como abandono do serviço, desrespeito às normas de segurança, dano doloso ou conduta incompatível com a obra, autoriza o encerramento imediato, sem prejuízo do pagamento do que já foi executado e aceito."]);
+    } else {
+      var motivo = ph(d.motivo, "serviço de natureza transitória: descrever, ex.: obra X, temporada de pintura");
+      cla("DA FUNÇÃO E DO LOCAL DE TRABALHO", ["O(A) EMPREGADO(A) é contratado(a) para exercer a função de " + funcao + (d.objeto && String(d.objeto).trim() ? ", com as seguintes atividades:\n" + String(d.objeto).trim() : "") + ", além de outras atividades compatíveis com a sua condição pessoal.", "O trabalho será prestado " + (d.local && String(d.local).trim() ? "em " + d.local : "nas obras e nos serviços indicados pelo EMPREGADOR, em diferentes endereços de clientes, o que é próprio da atividade") + ".", "Poderá haver prestação de serviços em outros locais da cidade e da região, conforme a necessidade das obras."]);
+      var prazoTxt = m === "clt_exp" ? ["Este contrato é celebrado a título de EXPERIÊNCIA (art. 443, §2º, alínea “c”, da CLT), com início em " + inicio + " e prazo de " + ph(d.prazo, "45 dias, prorrogável por mais 45") + ". O prazo total não pode ultrapassar 90 (noventa) dias, e o contrato só pode ser prorrogado uma vez, dentro desse limite.", "Terminado o prazo e continuando o empregado a prestar serviços sem rescisão, o contrato passa a vigorar por prazo indeterminado."]
+        : m === "clt_det" ? ["Este contrato é celebrado por PRAZO DETERMINADO (art. 443, §§ 1º e 2º, da CLT), em razão do caráter transitório do serviço: " + motivo + ".", "Início em " + inicio + " e prazo de " + ph(d.prazo, "duração ou data de término") + ", que não poderá exceder 2 (dois) anos (art. 445 da CLT).", "Terminado o prazo, o contrato se extingue sem aviso prévio, pagas as verbas rescisórias devidas. A prorrogação, quando admitida, será por escrito e uma única vez."]
+        : ["Este contrato é celebrado por PRAZO INDETERMINADO, com início em " + inicio + ".", "Os primeiros 90 (noventa) dias só serão considerados período de experiência se houver contrato próprio de experiência assinado."];
+      cla("DO PRAZO", prazoTxt);
+      cla("DA JORNADA DE TRABALHO", ["A jornada será de " + ph(d.jornada, "dias e horários, ex.: segunda a sexta, 7h às 16h48, com 1h de intervalo (44 horas semanais)") + ".", "As horas trabalhadas além da jornada serão pagas com o adicional legal ou compensadas conforme a lei e o acordo entre as partes. O controle da jornada será feito pelos meios adotados pelo EMPREGADOR."]);
+      cla("DA REMUNERAÇÃO", ["O(A) EMPREGADO(A) receberá o salário de " + vtxt + ", pago " + ph(d.pagamento, "ex.: mensalmente, até o 5º dia útil do mês seguinte") + ".", "Adicionais e benefícios: " + ph(d.adicionais, "ex.: nenhum; adicional de periculosidade, se devido") + "; " + ph(d.beneficios, "ex.: vale-transporte e alimentação") + ".", "Serão descontados os valores previstos em lei (INSS e imposto de renda, quando devidos), o vale-transporte (até 6% do salário-base) e os adiantamentos recebidos.", "Em caso de dano causado pelo(a) EMPREGADO(A), o desconto será feito na forma do art. 462, §1º, da CLT: havendo culpa, mediante esta autorização, e havendo dolo, independentemente dela."]);
+      cla("DAS OBRIGAÇÕES DO(A) EMPREGADO(A)", ["Cumprir as normas da empresa e as ordens de serviço, inclusive as de segurança e saúde do trabalho.", "Usar os EPIs fornecidos, pois a recusa injustificada constitui falta (art. 158 da CLT), e participar dos treinamentos exigidos.", "Zelar pelas ferramentas e equipamentos, e comunicar defeitos e acidentes de imediato.", "Ser pontual, comunicar faltas e apresentar atestados no prazo.", "Manter sigilo sobre as informações e os clientes do EMPREGADOR."]);
+      cla("DAS OBRIGAÇÕES DO EMPREGADOR", ["Registrar o(a) EMPREGADO(A), anotar a CTPS (digital) e prestar as informações no eSocial antes do início das atividades.", "Recolher o FGTS e as contribuições previdenciárias, e conceder férias com adicional de um terço, 13º salário e descanso semanal remunerado, na forma da lei.", "Fornecer gratuitamente os EPIs e os treinamentos necessários, como NR-35 e NR-10, quando for o caso, e manter ambiente de trabalho seguro.", "Realizar os exames médicos admissional, periódico e demissional."]);
+      cla("DA RESCISÃO", [m === "clt_ind" ? "A rescisão por qualquer das partes seguirá a lei, com aviso prévio e pagamento das verbas rescisórias devidas." : "Terminado o prazo, o contrato se extingue sem aviso prévio, pagas as verbas devidas.", m === "clt_ind" ? "O descumprimento grave das obrigações poderá levar à rescisão por justa causa, nos casos do art. 482 da CLT." : "Se qualquer das partes rescindir o contrato antes do prazo, sem justa causa, aplicam-se os arts. 479 e 480 da CLT (indenização, devida pelo empregador, de metade da remuneração a que teria direito até o término, e indenização por prejuízos, devida pelo empregado). Havendo justa causa, aplica-se o art. 482 da CLT."]);
+    }
+    cla("DA PROTEÇÃO DE DADOS", ["As partes tratarão os dados pessoais apenas para a execução deste contrato e o cumprimento de obrigações legais, nos termos da Lei nº 13.709/2018 (LGPD)."]);
+    cla("DISPOSIÇÕES GERAIS", ["Este contrato representa o acordo integral entre as partes. A tolerância de uma delas quanto a um descumprimento não importa renúncia ao direito de exigir o cumprimento.", "As comunicações poderão ser feitas por e-mail ou por aplicativo de mensagens, nos contatos informados neste contrato.", "As partes declaram ter lido o contrato, entendido todas as cláusulas e concordado livremente com elas."]);
+    cla("DO FORO", [clt ? "Fica eleito o foro da Justiça do Trabalho da comarca de " + foro + " para dirimir quaisquer questões decorrentes deste contrato." : "Fica eleito o foro da comarca de " + foro + " para dirimir quaisquer questões decorrentes deste contrato, com renúncia a qualquer outro."]);
+    return cab + "\n" + cl.join("\n\n") + "\n\nE, por estarem de pleno acordo, as partes assinam este contrato em 2 (duas) vias de igual teor, na presença de 2 (duas) testemunhas.";
+  }
+
   // ---------- dados iniciais ----------
   function dadosBase() {
     var E = A.CFG.EMPRESA || {}, ano = new Date().getFullYear();
     return { numero: ano + "/" + String(lista.length + 1).padStart(3, "0"), emp_nome: EMP.nome || E.nome || "AGE Elétrica e Pintura", emp_doc: EMP.cnpj || String(E.documento || "").replace(/^CNPJ\s*/i, ""), emp_end: EMP.end || [E.endereco, E.cidade].filter(Boolean).join(", "), emp_rep: "",
       emp_tel: EMP.tel || E.telefone || "", emp_email: EMP.email || E.email || "", banco: EMP.banco || "", rt: EMP.rt || "",
-      multa: "2", juros: "1", garantia: "90 (noventa) dias", foro: String(E.cidade || "").replace(/,.*$/, "").replace(/\s*-\s*/, "/").trim(), cidade_ass: String(E.cidade || "").replace(/,.*$/, "").trim() };
+      multa: "2", juros: "1", garantia: "90 (noventa) dias", garantia_p: "30 (trinta) dias", aviso_dias: "3",
+      ferramentas: "os materiais da obra e os EPIs necessários; as ferramentas manuais pessoais são do(a) parceiro(a)",
+      jornada: "segunda a sexta-feira, das 7h00 às 16h48, com 1 hora de intervalo para refeição e descanso (44 horas semanais)",
+      beneficios: "vale-transporte e vale-alimentação, quando devidos", foro: String(E.cidade || "").replace(/,.*$/, "").replace(/\s*-\s*/, "/").trim(), cidade_ass: String(E.cidade || "").replace(/,.*$/, "").trim() };
   }
   function doOrcamento(o) {
     var t = P.calcOrc ? P.calcOrc(o) : { total: 0 }, serv = (o.itens || []).filter(function (i) { return i.tipo !== "material"; });
@@ -201,24 +263,48 @@
       var x = (r.data || [])[0]; if (!x) return; lista.unshift(x); desenhar(c); if (abrir !== false) editar(x, c); else A.avisar("Contrato duplicado", "ok");
     }).catch(function (e) { A.avisar(A.msgErro ? A.msgErro(e) : e.message, "erro"); });
   }
+  // padrões de cada modelo da equipe (só entram se o campo estiver vazio)
+  function padroesPessoa(m, d) {
+    var P0 = { parceiro: { unidade_valor: "por diária", prazo: "3 (três) meses, ou até o fim da obra, o que ocorrer primeiro", pagamento: "quinzenal, até o 5º dia útil após cada fechamento" },
+      clt_exp: { unidade_valor: "por mês", prazo: "45 (quarenta e cinco) dias, prorrogável por mais 45 (quarenta e cinco) dias", pagamento: "mensalmente, até o 5º dia útil do mês seguinte" },
+      clt_det: { unidade_valor: "por mês", prazo: "", pagamento: "mensalmente, até o 5º dia útil do mês seguinte" },
+      clt_ind: { unidade_valor: "por mês", prazo: "", pagamento: "mensalmente, até o 5º dia útil do mês seguinte" } }[m] || {};
+    Object.keys(P0).forEach(function (k) { if (!String(d[k] || "").trim()) d[k] = P0[k]; });
+    return d;
+  }
   function criarDe(c, m, d, o) {
     if (m === "manutencao" && !d.vigencia) d.vigencia = "12 meses";
+    if (ehPessoa(m)) padroesPessoa(m, d);
     d.inicio = d.inicio || "";
-    var texto = gerar(m, d), cli = d.cli_nome || "";
+    var texto = gerar(m, d), cli = d.cli_nome || d.pessoa_nome || "";
     d._gerado = texto;   // marca o texto como "não editado à mão": ele acompanha os campos
     criar({ modelo: m, titulo: MODELOS[m].nome + (cli ? " – " + cli : ""), cliente: cli || null, valor: Number(String(d.valor || "").replace(/\./g, "").replace(",", ".")) || null, dados: d, texto: texto, status: "rascunho", orcamento_id: o ? o.id : null }, c);
   }
   function novo(c) {
     var orcs = ((P.S.orc) || []).slice().sort(function (a, b) { return String(b.criado_em).localeCompare(String(a.criado_em)); }),
       props = ((P.S.propostas) || []).slice().sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
-    var j = A.janela('<p class="mudo peq" style="margin-top:0">1) Escolha o modelo. 2) Traga os dados de uma <b>proposta pronta</b> ou de um orçamento (cliente, valor, serviços, condições); o que faltar você edita no contrato.</p>' +
-      Object.keys(MODELOS).map(function (k, i2) { return '<label class="marca-linha" style="font-weight:400;display:block;margin:6px 0"><input type="radio" name="ct-mod" value="' + k + '"' + (i2 === 0 ? " checked" : "") + '> <b>' + esc(MODELOS[k].nome) + '</b><br><span class="peq mudo">' + esc(MODELOS[k].desc) + "</span></label>"; }).join("") +
-      '<label>Trazer dados de uma <b>proposta pronta</b><select class="ct-prop"><option value="">— nenhuma —</option>' + props.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc((o.cliente || "Cliente") + " · " + String(o.titulo || "").replace(/^SERVI[ÇC]O:\s*/i, "").slice(0, 60) + (Number(o.total) ? " · " + din(o.total) : "")) + "</option>"; }).join("") + "</select></label>" +
-      '<label>ou de um <b>orçamento</b><select class="ct-orc"><option value="">— nenhum: eu preencho —</option>' + orcs.map(function (o) { var t = P.calcOrc ? P.calcOrc(o).total : 0; return '<option value="' + esc(o.id) + '">' + esc(String(o.numero || "").padStart(4, "0") + " · " + (o.cliente || "") + (t ? " · " + din(t) : "")) + "</option>"; }).join("") + "</select></label>" +
+    var primeiro = true;
+    function radioModelo(k) { var ch = primeiro ? " checked" : ""; primeiro = false; return '<label class="marca-linha" style="font-weight:400;display:block;margin:6px 0"><input type="radio" name="ct-mod" value="' + k + '"' + ch + '> <b>' + esc(MODELOS[k].nome) + '</b><br><span class="peq mudo">' + esc(MODELOS[k].desc) + "</span></label>"; }
+    var pars = ((P.S.parceiros) || []).filter(function (x) { return x.ativo !== false; }), funcs = ((P.S.func) || []).filter(function (x) { return x.ativo !== false; });
+    var j = A.janela('<p class="mudo peq" style="margin-top:0">1) Escolha o modelo. 2) Para contratos com clientes, traga os dados de uma <b>proposta pronta</b> ou de um orçamento; para contratos com a equipe, escolha o <b>parceiro ou funcionário cadastrado</b>. O que faltar você edita no contrato.</p>' +
+      '<h4 style="margin:10px 0 2px">👥 Contratos com clientes</h4>' + GRUPO_CLIENTE.map(radioModelo).join("") +
+      '<h4 style="margin:12px 0 2px">🤝 Contratos com a equipe (parceiros e funcionários)</h4>' + GRUPO_EQUIPE.map(radioModelo).join("") +
+      '<div class="ct-bloco-pes oculto"><label>Preencher com um <b>parceiro ou funcionário cadastrado</b><select class="ct-pes"><option value="">— nenhum: eu preencho —</option>' + (pars.length ? '<optgroup label="🤝 Parceiros">' + pars.map(function (x) { return '<option value="p:' + esc(x.id) + '">' + esc(x.nome) + (x.tipo ? " · " + esc(x.tipo) : "") + "</option>"; }).join("") + "</optgroup>" : "") + (funcs.length ? '<optgroup label="👷 Funcionários">' + funcs.map(function (x) { return '<option value="f:' + esc(x.id) + '">' + esc(x.nome) + "</option>"; }).join("") + "</optgroup>" : "") + '</select></label><p class="peq mudo" style="margin:4px 0 0">Vêm só os dados que já estão cadastrados (nome, telefone, e-mail, endereço, Pix). CPF, RG e endereço você completa no contrato.</p></div>' +
+      '<div class="ct-bloco-cli"><label>Trazer dados de uma <b>proposta pronta</b><select class="ct-prop"><option value="">— nenhuma —</option>' + props.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc((o.cliente || "Cliente") + " · " + String(o.titulo || "").replace(/^SERVI[ÇC]O:\s*/i, "").slice(0, 60) + (Number(o.total) ? " · " + din(o.total) : "")) + "</option>"; }).join("") + "</select></label>" +
+      '<label>ou de um <b>orçamento</b><select class="ct-orc"><option value="">— nenhum: eu preencho —</option>' + orcs.map(function (o) { var t = P.calcOrc ? P.calcOrc(o).total : 0; return '<option value="' + esc(o.id) + '">' + esc(String(o.numero || "").padStart(4, "0") + " · " + (o.cliente || "") + (t ? " · " + din(t) : "")) + "</option>"; }).join("") + "</select></label></div>" +
       '<div class="acoes"><button class="prim" id="ct-criar">Criar contrato</button><button id="ct-x">Cancelar</button></div>', { titulo: "📜 Novo contrato", semRascunho: true });
     $(".ct-prop", j.el).onchange = function () { var pr = this.value ? P.porId(P.S.propostas || [], this.value) : null; if (pr) { var r = $('input[name="ct-mod"][value="' + modeloDe(pr.categoria) + '"]', j.el); if (r) r.checked = true; } };
+    function mostrarBlocos() { var m0 = $('input[name="ct-mod"]:checked', j.el).value, eq = ehPessoa(m0); $(".ct-bloco-pes", j.el).classList.toggle("oculto", !eq); $(".ct-bloco-cli", j.el).classList.toggle("oculto", eq); }
+    $$('input[name="ct-mod"]', j.el).forEach(function (r) { r.addEventListener("change", mostrarBlocos); });
+    mostrarBlocos();
     $("#ct-x", j.el).onclick = function () { j.fechar(); };
     $("#ct-criar", j.el).onclick = function () {
+      var mSel = $('input[name="ct-mod"]:checked', j.el).value;
+      if (ehPessoa(mSel)) {
+        var dp = dadosBase(), sel = $(".ct-pes", j.el).value, ref = sel ? P.porId(sel.charAt(0) === "p" ? (P.S.parceiros || []) : (P.S.func || []), sel.slice(2)) : null;
+        if (ref) { dp.pessoa_nome = ref.nome || ""; dp.pessoa_tel = ref.whatsapp || ref.telefone || ""; dp.pessoa_email = ref.email || ""; dp.pessoa_end = [ref.endereco, ref.cidade].filter(Boolean).join(", "); if (sel.charAt(0) === "f" && ref.pix) dp.pessoa_pix = ref.pix; if (sel.charAt(0) === "f" && Number(ref.diaria) > 0 && mSel === "parceiro") dp.valor = A.numero(Number(ref.diaria), 2); if (sel.charAt(0) === "p" && ref.tipo) dp.pessoa_funcao = ref.tipo; }
+        j.fechar(); criarDe(c, mSel, dp, null); return;
+      }
       var m = $('input[name="ct-mod"]:checked', j.el).value, oid = $(".ct-orc", j.el).value, o = oid ? P.porId(P.S.orc, oid) : null, pid = $(".ct-prop", j.el).value, pr = pid ? P.porId(P.S.propostas || [], pid) : null;
       var d = Object.assign(dadosBase(), pr ? daPropostaDados(pr) : {}, o ? doOrcamento(o) : {});
       j.fechar(); criarDe(c, m, d, o);
@@ -228,13 +314,28 @@
   // ---------- editor ----------
   function editar(x, c) {
     var d = Object.assign({}, x.dados || {}), m = x.modelo, tm = null, ultimoGerado = d._gerado || "";
-    function campo(k, rot, tipo, extra) { return '<label style="flex:1;min-width:220px">' + rot + (tipo === "area" ? '<textarea class="f-' + k + '" rows="' + (extra || 3) + '" maxlength="3000"></textarea>' : '<input class="f-' + k + '"' + (tipo === "date" ? ' type="date"' : ' maxlength="300"') + (/^(cli_nome|cli_doc|cli_end|cli_rep|cli_tel|cli_email|emp_nome|emp_doc|emp_end|emp_rep|emp_tel|emp_email|valor|numero|foro|multa|juros)$/.test(k) ? " data-sem-correcao" : "") + ">") + "</label>"; }
+    function campo(k, rot, tipo, extra) { return '<label style="flex:1;min-width:220px">' + rot + (tipo === "area" ? '<textarea class="f-' + k + '" rows="' + (extra || 3) + '" maxlength="3000"></textarea>' : '<input class="f-' + k + '"' + (tipo === "date" ? ' type="date"' : ' maxlength="300"') + (/^(cli_nome|cli_doc|cli_end|cli_rep|cli_tel|cli_email|emp_nome|emp_doc|emp_end|emp_rep|emp_tel|emp_email|valor|numero|foro|multa|juros|pessoa_nome|pessoa_doc|pessoa_rg|pessoa_ctps|pessoa_pis|pessoa_cnpj|pessoa_pix|pessoa_end|pessoa_tel|pessoa_email|unidade_valor|aviso_dias)$/.test(k) ? " data-sem-correcao" : "") + ">") + "</label>"; }
+    function htmlPessoa() {
+      var clt = m !== "parceiro", RT = clt ? "Empregado(a)" : "Parceiro(a)";
+      var aviso = clt ? '<div class="aviso" style="margin:6px 0"><b>⚠ Antes de começar (CLT):</b> exame médico admissional (ASO) e registro na CTPS digital e no eSocial <b>antes do primeiro dia de trabalho</b>; EPIs e treinamentos (NR-35, NR-10 quando for o caso). O salário não pode ser menor que o <b>piso da categoria</b> (convenção coletiva) nem que o salário mínimo. Eletricista: avalie o <b>adicional de periculosidade</b>. Contrato de trabalho <b>não precisa de cartório</b>. Confirme valores e encargos com o contador.</div>'
+        : '<div class="aviso" style="margin:6px 0"><b>⚠ Para manter a relação autônoma:</b> não controle horário nem exija presença diária fixa; pague por <b>diária, metro ou etapa</b> (não salário fixo); deixe o parceiro usar seus próprios meios e se fazer auxiliar ou substituir; não imponha exclusividade; peça <b>recibo</b> (ou nota do MEI). Se na prática o parceiro trabalhar todos os dias, só para a AGE, com valor fixo e sob ordens, a Justiça do Trabalho pode reconhecer <b>vínculo de emprego</b>, mesmo com este contrato. Confirme com o contador ou advogado.<br><b>Cartório:</b> vale com as assinaturas e 2 testemunhas; <b>reconhecimento de firma</b> e <b>registro em Cartório de Títulos e Documentos</b> são opcionais e dão mais segurança sobre a assinatura e a data. Leve 2 vias e documento com foto de todos.</div>';
+      return aviso + '<details open class="cartao"><summary><b>👤 ' + RT + '</b></summary><div class="linha" style="gap:8px;align-items:flex-start">' + campo("pessoa_nome", "Nome completo") + campo("pessoa_funcao", clt ? "Função / cargo" : "Função (pintor, eletricista, ajudante...)") + '</div>' +
+        '<div class="linha" style="gap:8px">' + campo("pessoa_doc", "CPF") + campo("pessoa_rg", "RG") + (clt ? campo("pessoa_ctps", "CTPS (nº e série, ou CPF se digital)") + campo("pessoa_pis", "PIS / NIT") : campo("pessoa_cnpj", "CNPJ do MEI (se tiver)") + campo("pessoa_pix", "Chave Pix para pagamento")) + '</div>' +
+        '<div class="linha" style="gap:8px">' + campo("pessoa_end", "Endereço completo") + campo("pessoa_tel", "Telefone / WhatsApp") + campo("pessoa_email", "E-mail") + '</div></details>' +
+        '<details open class="cartao"><summary><b>🏢 AGE (' + (clt ? "empregador" : "contratante") + ')</b></summary><div class="linha" style="gap:8px">' + campo("emp_nome", "Nome da empresa") + campo("emp_doc", "CNPJ") + '</div><div class="linha" style="gap:8px">' + campo("emp_end", "Endereço") + campo("emp_rep", "Representante que assina pela AGE") + '</div><div class="linha" style="gap:8px">' + campo("emp_tel", "Telefone / WhatsApp") + campo("emp_email", "E-mail") + '</div></details>' +
+        '<details open class="cartao"><summary><b>📋 Condições</b></summary>' + campo("objeto", clt ? "Atividades da função (opcional, uma por linha)" : "Obra / serviços que o parceiro vai fazer (um por linha)", "area", 4) + '<div class="linha" style="gap:8px">' + campo("local", clt ? "Local de trabalho (vazio = obras indicadas pela empresa)" : "Local de execução (obra)") + campo("valor", clt ? "Salário (R$)" : "Valor (R$)") + campo("unidade_valor", clt ? "Por (mês, hora...)" : "Por (diária, m², etapa...)") + '</div>' +
+        '<div class="linha" style="gap:8px">' + campo("pagamento", "Forma e prazo de pagamento") + campo("prazo", m === "clt_ind" ? "Prazo (não se aplica)" : (m === "parceiro" ? "Duração da temporada" : "Prazo do contrato")) + '</div>' +
+        '<div class="linha" style="gap:8px">' + campo("inicio", "Início", "date") + campo("numero", "Nº do contrato") + campo("foro", "Foro (cidade/UF)") + '</div>' +
+        (m === "clt_det" ? campo("motivo", "Motivo do prazo determinado (serviço transitório)", "area", 2) : "") +
+        (clt ? '<div class="linha" style="gap:8px">' + campo("jornada", "Jornada de trabalho") + '</div><div class="linha" style="gap:8px">' + campo("adicionais", "Adicionais (periculosidade, insalubridade...)") + campo("beneficios", "Benefícios (VT, alimentação...)") + '</div>'
+          : '<div class="linha" style="gap:8px">' + campo("ferramentas", "A AGE fornece (materiais, EPIs, ferramentas)") + campo("garantia_p", "Retrabalho de defeitos (prazo)") + '</div><div class="linha" style="gap:8px">' + campo("aviso_dias", "Aviso para encerrar (dias)") + campo("multa", "Multa por atraso (%)") + campo("juros", "Juros ao mês (%)") + '</div>') + '</details>';
+    }
     var html = '<div class="peq" id="ct-st-info" style="margin-bottom:2px;color:var(--mudo)">salva sozinho</div><div class="peq" id="ct-falta" style="margin-bottom:6px"></div>' +
-      '<details open class="cartao"><summary><b>👥 Partes</b></summary><div class="linha" style="gap:8px;align-items:flex-start">' + campo("cli_nome", "Contratante (cliente)") + campo("cli_doc", "CPF / CNPJ do cliente") + '</div><div class="linha" style="gap:8px">' + campo("cli_end", "Endereço do cliente") + campo("cli_rep", "Representante (síndico, sócio...)") + '</div><div class="linha" style="gap:8px">' + campo("cli_tel", "Telefone / WhatsApp do cliente") + campo("cli_email", "E-mail do cliente") + '</div>' +
+      (ehPessoa(m) ? htmlPessoa() : '<details open class="cartao"><summary><b>👥 Partes</b></summary><div class="linha" style="gap:8px;align-items:flex-start">' + campo("cli_nome", "Contratante (cliente)") + campo("cli_doc", "CPF / CNPJ do cliente") + '</div><div class="linha" style="gap:8px">' + campo("cli_end", "Endereço do cliente") + campo("cli_rep", "Representante (síndico, sócio...)") + '</div><div class="linha" style="gap:8px">' + campo("cli_tel", "Telefone / WhatsApp do cliente") + campo("cli_email", "E-mail do cliente") + '</div>' +
       '<div class="linha" style="gap:8px">' + campo("emp_nome", "Contratada (sua empresa)") + campo("emp_doc", "CNPJ da contratada") + '</div><div class="linha" style="gap:8px">' + campo("emp_end", "Endereço da contratada") + campo("emp_rep", "Representante da contratada") + '</div><div class="linha" style="gap:8px">' + campo("emp_tel", "Telefone / WhatsApp da AGE") + campo("emp_email", "E-mail da AGE") + '</div><div class="linha" style="gap:8px">' + campo("banco", "Dados para pagamento (banco, agência, conta, Pix)") + campo("rt", "Responsável técnico (nome e CREA)") + "</div></details>" +
       '<details open class="cartao"><summary><b>📋 Condições</b></summary>' + campo("objeto", "Objeto: o que será feito (um item por linha)", "area", 5) + '<div class="linha" style="gap:8px">' + campo("local", "Local de execução") + campo("valor", m === "manutencao" ? "Valor mensal (R$)" : "Valor total (R$)") + '</div>' +
       '<div class="linha" style="gap:8px">' + campo("pagamento", "Forma de pagamento") + campo("prazo", "Prazo / duração") + '</div><div class="linha" style="gap:8px">' + campo("inicio", "Início previsto", "date") + (m === "manutencao" ? campo("vigencia", "Vigência (ex.: 12 meses)") : "") + (m === "aditivo" ? campo("contrato_ref", "Contrato original (nº e data)") : "") + campo("numero", "Nº do contrato") + '</div>' +
-      '<div class="linha" style="gap:8px">' + campo("garantia", "Garantia dos serviços") + campo("multa", "Multa por atraso (%)") + campo("juros", "Juros ao mês (%)") + campo("foro", "Foro (cidade/UF)") + '</div>' + campo("condicoes", "Condições comerciais da proposta (opcional)", "area", 3) + "</details>" +
+      '<div class="linha" style="gap:8px">' + campo("garantia", "Garantia dos serviços") + campo("multa", "Multa por atraso (%)") + campo("juros", "Juros ao mês (%)") + campo("foro", "Foro (cidade/UF)") + '</div>' + campo("condicoes", "Condições comerciais da proposta (opcional)", "area", 3) + "</details>") +
       '<div class="acoes"><button class="prim" id="ct-gerar">🔄 Gerar o texto com estes campos</button><span class="peq mudo">Situação:</span><select id="ct-status" aria-label="Situação">' + Object.keys(STATUS).map(function (k) { return '<option value="' + k + '">' + STATUS[k] + "</option>"; }).join("") + "</select></div>" +
       '<p class="peq mudo" style="margin:2px 0 0">⏳ <b>Pré-aprovado</b> deixa o contrato guardado para você finalizar em outro dia: ele aparece na lista com o que ainda falta preencher.</p><label>Texto do contrato <span class="peq mudo">— muda sozinho quando você edita os campos acima; se você editar o texto à mão, ele deixa de mudar sozinho (use 🔄 para refazer)</span><textarea class="ct-texto" rows="22" data-sem-correcao style="font-family:inherit;line-height:1.45"></textarea></label>' +
       '<div class="acoes"><button class="prim" id="ct-imp">🖨 Imprimir / salvar PDF</button><button id="ct-fechar">Fechar</button></div>';
@@ -244,10 +345,10 @@
     function ler() { $$("[class^=f-]", j.el).forEach(function (e) { d[e.className.replace(/^f-/, "")] = e.value; }); }
     // campos importantes que ainda faltam ficam destacados em amarelo
     function marcarFaltas() {
-      var f2 = [];
-      Object.keys(IMPORTANTES).forEach(function (k) {
+      var f2 = [], IMP = importantes(m);
+      Object.keys(IMP).forEach(function (k) {
         var e = $(".f-" + k, j.el); if (!e) return;
-        var vazio = !String(e.value || "").trim(); e.classList.toggle("ct-falta", vazio); if (vazio && !(k === "inicio" && m === "aditivo")) f2.push(IMPORTANTES[k]);
+        var vazio = !String(e.value || "").trim(); e.classList.toggle("ct-falta", vazio); if (vazio && !(k === "inicio" && m === "aditivo") && !(k === "prazo" && m === "clt_ind")) f2.push(IMP[k]);
       });
       $("#ct-falta", j.el).innerHTML = f2.length ? '<span style="color:var(--atencao,#b7791f)">⚠ Faltam ' + f2.length + " campo(s) importante(s): " + esc(f2.join(", ")) + ".</span>" : '<span style="color:var(--bom,#1b7f3b)">✓ Campos importantes preenchidos.</span>';
     }
@@ -258,7 +359,7 @@
     }
     function salvarJa() {
       clearTimeout(tm); ler();
-      var reg = { dados: Object.assign({}, d, { _gerado: ultimoGerado }), texto: $(".ct-texto", j.el) ? $(".ct-texto", j.el).value : x.texto, status: $("#ct-status", j.el) ? $("#ct-status", j.el).value : x.status, cliente: d.cli_nome || null,
+      var reg = { dados: Object.assign({}, d, { _gerado: ultimoGerado }), texto: $(".ct-texto", j.el) ? $(".ct-texto", j.el).value : x.texto, status: $("#ct-status", j.el) ? $("#ct-status", j.el).value : x.status, cliente: d.cli_nome || d.pessoa_nome || null,
         valor: Number(String(d.valor || "").replace(/\./g, "").replace(",", ".")) || null, atualizado_em: new Date().toISOString() };
       Object.assign(x, reg);
       return run(P.sb.from("contratos_servico").update(reg).eq("id", x.id)).then(function () { var s = $("#ct-st-info", j.el); if (s) { s.textContent = "💾 Salvo às " + agora(); s.style.color = ""; } })
@@ -297,6 +398,10 @@
       return "<p>" + esc(l) + "</p>";
     }).join("");
     var cidade = d.cidade_ass || String(E.cidade || "").replace(/,.*$/, "") || "__________";
+    var m0 = x.modelo, clt0 = ehPessoa(m0) && m0 !== "parceiro", ehP = ehPessoa(m0);
+    var assinaturas = ehP
+      ? "<div>" + esc(d.pessoa_nome || (clt0 ? "EMPREGADO(A)" : "PARCEIRO(A)")) + "<br>" + (clt0 ? "EMPREGADO(A)" : "CONTRATADO(A) / PARCEIRO(A)") + (d.pessoa_doc ? "<br>CPF " + esc(d.pessoa_doc) : "") + "</div><div>" + esc(d.emp_nome || E.nome || "AGE") + "<br>" + (clt0 ? "EMPREGADOR" : "CONTRATANTE") + (d.emp_rep ? "<br>" + esc(d.emp_rep) : "") + "</div>"
+      : "<div>" + esc(d.cli_nome || "CONTRATANTE") + "<br>CONTRATANTE" + (d.cli_rep ? "<br>" + esc(d.cli_rep) : "") + "</div><div>" + esc(d.emp_nome || E.nome || "CONTRATADA") + "<br>CONTRATADA" + (d.emp_rep ? "<br>" + esc(d.emp_rep) : "") + "</div>";
     var info = [E.documento || (d.emp_doc ? "CNPJ " + d.emp_doc : ""), E.inscricoes].filter(Boolean).map(esc).join(" · "), cont = [d.emp_tel || E.telefone, d.emp_email || E.email, E.sitePintura && E.sitePintura.replace(/^https?:\/\//, "").replace(/\/$/, "")].filter(Boolean).map(esc).join(" · ");
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' + esc(x.titulo || "Contrato") + "</title><style>" +
       "body{font:13px/1.5 Arial,Helvetica,sans-serif;color:#111;margin:0 auto;padding:28px 28px 70px;max-width:800px}.cab{display:flex;gap:14px;align-items:center;border-bottom:3px solid #14325c;padding-bottom:10px;margin-bottom:12px}.cab .t{flex:1}.cab b{font-size:19px;color:#14325c}.cab .s{font-size:11px;color:#444;line-height:1.35}.cab .d{text-align:right;font-size:11px;color:#444;line-height:1.35}" +
@@ -306,9 +411,9 @@
       '<button onclick="window.print()">🖨 Imprimir / salvar PDF</button>' +
       '<div class="cab">' + LOGO + '<div class="t"><b>' + esc(E.nome || "AGE Elétrica e Pintura") + '</b><div class="s">' + info + '</div></div><div class="d">' + esc(E.endereco || "") + "<br>" + esc(E.cidade || "") + "<br>" + cont + "</div></div>" + corpo +
       '<p style="margin-top:22px">' + esc(cidade) + ", " + dataLonga(new Date()) + '.</p>' +
-      '<div class="ass"><div>' + esc(d.cli_nome || "CONTRATANTE") + "<br>CONTRATANTE" + (d.cli_rep ? "<br>" + esc(d.cli_rep) : "") + "</div><div>" + esc(d.emp_nome || E.nome || "CONTRATADA") + "<br>CONTRATADA" + (d.emp_rep ? "<br>" + esc(d.emp_rep) : "") + "</div></div>" +
+      '<div class="ass">' + assinaturas + "</div>" +
       '<div class="ass test"><div>Testemunha 1<br>Nome:<br>CPF:</div><div>Testemunha 2<br>Nome:<br>CPF:</div></div>' +
-      '<div class="rod">' + esc(E.nome || "AGE Elétrica e Pintura") + " · " + cont + " · Contrato " + esc(d.numero || "") + "</div>" +
+      '<div class="rod">' + esc(E.nome || "AGE Elétrica e Pintura") + " · " + cont + " · Contrato " + esc(d.numero || "") + ' · Rubricas: ________ ________</div>' +
       "<script>setTimeout(function(){window.print()},400)<\/script></body></html>";
     w.document.open(); w.document.write(html); w.document.close();
   }
