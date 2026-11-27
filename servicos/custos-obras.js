@@ -202,5 +202,11 @@
     $("#co-fechar", j.el).onclick = function () { j.fechar(); };
   }
 
-  window.AGE_CUSTOS = { ver: ver, calcular: calcular };
+  // média das obras concluídas (para a Calculadora sugerir o preço da mão de obra)
+  function mediaAtual(ctx) {
+    return run(ctx.sb.from("obras_custos").select("*").eq("status", "concluida").limit(500)).then(function (r) {
+      var antes = lista; lista = r.data || []; var m = medias(); lista = antes; return m;
+    }).catch(function () { return null; });
+  }
+  window.AGE_CUSTOS = { ver: ver, calcular: calcular, mediaAtual: mediaAtual };
 })();
