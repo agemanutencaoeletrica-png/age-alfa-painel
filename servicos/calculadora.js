@@ -458,34 +458,66 @@
   function compCartao(c) {
     var el = $("#cl-comp", c); if (!el || !P) return;
     el.innerHTML = '<details class="cartao" id="cp-cx"><summary><b>📊 Comparar com uma obra já feita</b> <span class="peq mudo">· metragem, custos, despesas e sobra por m²</span></summary><div id="cp-corpo"></div></details>';
+    if (OBRAS === undefined && !(window.AGE_CUSTOS && window.AGE_CUSTOS.todas)) OBRAS = [];
     if (OBRAS === undefined && !obrasBusy && window.AGE_CUSTOS && window.AGE_CUSTOS.todas) { obrasBusy = true; window.AGE_CUSTOS.todas(P).then(function (L) { OBRAS = L; obrasBusy = false; pintarComp(c); }); }
     pintarComp(c);
+  }
+  // metragem lembrada por obra (digitada uma vez) e metragem achada numa cotação salva com o mesmo nome
+  function lerAreas() { try { return JSON.parse(localStorage.getItem("age_comp_area") || "{}") || {}; } catch (e) { return {}; } }
+  function guardarArea(k, v) { try { var o = lerAreas(); if (v > 0) o[k] = v; else delete o[k]; localStorage.setItem("age_comp_area", JSON.stringify(o)); } catch (e) { /* sem armazenamento */ } }
+  function areaDe(linhas) { var a = 0; (linhas || []).forEach(function (l) { if (l && l.tipo !== "material" && /^m(²|2)$/i.test(String(l.un || "").trim())) a += Number(l.qtd) || 0; }); return a; }
+  function achaCotacao(nome) {
+    var chave = semAcento(String(nome || "").replace(/\(.*?\)/g, "")).split(/\s+/).filter(function (w) { return w.length >= 3; })[0]; if (!chave) return null;
+    var cs = cot.filter(function (x) { return x.id !== estado.id && semAcento(x.nome).indexOf(chave) >= 0 && areaDe(x.linhas) > 0; });
+    return cs[0] ? { nome: cs[0].nome, area: areaDe(cs[0].linhas) } : null;
+  }
+  function finalizadas() {
+    try { return window.AGE_FAT && window.AGE_FAT.resultadoTodos ? window.AGE_FAT.resultadoTodos(P).filter(function (x) { return x.k !== "-" && (x.entrada || x.gastos); }) : []; } catch (e) { return []; }
   }
   function pintarComp(c) {
     var el = c && $("#cp-corpo", c); if (!el) return;
     if (OBRAS === undefined) { el.innerHTML = '<p class="peq mudo">Carregando as obras...</p>'; return; }
-    if (!OBRAS.length) { el.innerHTML = '<p class="peq mudo">Cadastre a obra feita (por exemplo a da Deva) na aba <b>📈 Custo de obras</b>: equipe e diárias, dias, <b>metragem de cada etapa</b>, outros custos (tinta, material) e o <b>valor cobrado</b>. Depois ela aparece aqui para comparar.</p>'; return; }
+    var FIN = finalizadas();
+    if (!OBRAS.length && !FIN.length) { el.innerHTML = '<p class="peq mudo">Ainda não há obra finalizada para comparar. As obras com notas, compras e pagamentos lançados em <b>💼 Notas e resultado</b> aparecem aqui sozinhas. Também dá para cadastrar uma obra em <b>📈 Custo de obras</b>.</p>'; return; }
     var antes = $("#cp-sel", el) ? $("#cp-sel", el).value : compSel;
-    var area = 0, t = totais(), k = custoEquipe();
-    estado.linhas.forEach(function (l) { if (l.tipo !== "material" && /^m(²|2)$/i.test(String(l.un || "").trim())) area += Number(l.qtd) || 0; });
-    el.innerHTML = '<label style="display:block;margin-top:6px">Obra para comparar<select id="cp-sel"><option value="">— escolha —</option>' + OBRAS.map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.id === antes ? " selected" : "") + ">" + esc(o.nome) + (o.status === "concluida" ? " (concluída)" : " (em andamento)") + "</option>"; }).join("") + '</select></label><div id="cp-res"></div>';
+    var area = areaDe(estado.linhas), t = totais(), k = custoEquipe();
+    el.innerHTML = '<label style="display:block;margin-top:6px">Obra para comparar<select id="cp-sel"><option value="">— escolha —</option>' +
+      (FIN.length ? '<optgroup label="✅ Obras finalizadas (Notas e resultado)">' + FIN.map(function (x) { return '<option value="f:' + esc(x.k) + '"' + ("f:" + x.k === antes ? " selected" : "") + ">" + esc(x.nome) + (x.entrada ? " · notas " + din(x.notasV || x.portal) : "") + "</option>"; }).join("") + "</optgroup>" : "") +
+      (OBRAS.length ? '<optgroup label="📈 Custo de obras">' + OBRAS.map(function (o) { return '<option value="o:' + esc(o.id) + '"' + ("o:" + o.id === antes ? " selected" : "") + ">" + esc(o.nome) + (o.status === "concluida" ? " (concluída)" : " (em andamento)") + "</option>"; }).join("") + "</optgroup>" : "") +
+      '</select></label><div id="cp-res"></div>';
     function mostrar() {
-      compSel = $("#cp-sel", el).value; var r = $("#cp-res", el), o = OBRAS.filter(function (y) { return y.id === compSel; })[0];
-      if (!o) { r.innerHTML = ""; return; }
+      compSel = $("#cp-sel", el).value; var r = $("#cp-res", el), ref = null;
+      if (!compSel) { r.innerHTML = ""; return; }
       if (!(area > 0)) { r.innerHTML = '<p class="peq mudo">Coloque serviços em <b>m²</b> na lista para comparar por metro quadrado.</p>'; return; }
-      var oc = o.c;
-      if (!(oc.area > 0)) { r.innerHTML = '<p class="peq" style="color:var(--atencao,#b7791f)">Essa obra não tem metragem lançada. Abra-a em <b>📈 Custo de obras</b> e preencha a área (m²) de cada etapa.</p>'; return; }
+      if (compSel.charAt(0) === "o") {
+        var o = OBRAS.filter(function (y) { return "o:" + y.id === compSel; })[0]; if (!o) { r.innerHTML = ""; return; }
+        if (!(o.c.area > 0)) { r.innerHTML = '<p class="peq" style="color:var(--atencao,#b7791f)">Essa obra não tem metragem lançada. Abra-a em <b>📈 Custo de obras</b> e preencha a área (m²) de cada etapa.</p>'; return; }
+        ref = { nome: o.nome, area: o.c.area, mo: o.c.mo, outros: o.c.outros, total: o.c.total, cobrado: o.cobrado };
+      } else {
+        var x = FIN.filter(function (y) { return "f:" + y.k === compSel; })[0]; if (!x) { r.innerHTML = ""; return; }
+        var mem = lerAreas()[x.k], ach = achaCotacao(x.nome), a0 = mem || (ach ? Math.round(ach.area * 100) / 100 : 0);
+        r.innerHTML = '<div class="linha" style="gap:8px;align-items:flex-end;margin-top:6px"><label style="width:200px">Metragem de <b>' + esc(x.nome) + '</b> (m²)<input id="cp-area" inputmode="decimal" value="' + (a0 ? esc(fq(a0)) : "") + '"></label><span class="peq mudo" style="flex:1;min-width:200px">' +
+          (mem ? "Lembrada da última vez." : ach ? "Achei " + A.numero(ach.area, 0) + ' m² na cotação salva “' + esc(ach.nome) + '”.' : "O app não sabe a metragem dessa obra: digite uma vez e ela fica lembrada.") + '</span></div><div id="cp-tab"></div>';
+        var tab = function () {
+          var A0 = A.lerNumero($("#cp-area", r).value) || 0; guardarArea(x.k, A0);
+          if (!(A0 > 0)) { $("#cp-tab", r).innerHTML = '<p class="peq mudo">Digite a metragem para ver a comparação por m².</p>'; return; }
+          $("#cp-tab", r).innerHTML = tabela({ nome: x.nome, area: A0, mo: x.mo, outros: r2(x.mat + x.av + (x.impEmp || 0)), total: r2(x.mat + x.mo + x.av + (x.impEmp || 0)), cobrado: x.notasV || x.portal || 0 });
+        };
+        $("#cp-area", r).oninput = tab; tab(); return;
+      }
+      r.innerHTML = tabela(ref);
+    }
+    function tabela(o) {
       var totCob = r2(t.seu + t.mat), custoC = r2(k.total + t.matCusto), sobraC = r2(totCob - custoC), pctC = totCob ? sobraC / totCob * 100 : 0;
-      var sobraO = o.cobrado ? r2(o.cobrado - oc.total) : null, pctO = o.cobrado ? sobraO / o.cobrado * 100 : null;
+      var sobraO = o.cobrado ? r2(o.cobrado - o.total) : null, pctO = o.cobrado ? sobraO / o.cobrado * 100 : null, est = r2(o.total / o.area * area);
       function lin(rot, a1, b1, forte) { var T = forte ? "b" : "span"; return '<tr><td>' + rot + '</td><td style="text-align:right"><' + T + ">" + a1 + "</" + T + '></td><td style="text-align:right"><' + T + ">" + b1 + "</" + T + "></td></tr>"; }
-      var est = r2(oc.totalPorM2 * area);
-      r.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;margin-top:8px"><thead><tr><th style="text-align:left" class="peq mudo"></th><th style="text-align:right" class="peq mudo">Esta cotação</th><th style="text-align:right" class="peq mudo">' + esc(o.nome) + "</th></tr></thead><tbody>" +
-        lin("Metragem (m²)", A.numero(area, 0), A.numero(oc.area, 0)) +
-        lin("Custo da mão de obra por m²", k.total > 0 ? din(r2(k.total / area)) : "—", din(oc.porM2)) +
-        lin("Material e outras despesas por m²", t.matCusto > 0 ? din(r2(t.matCusto / area)) : "—", din(oc.outrosPorM2)) +
-        lin("Custo total por m²", din(r2(custoC / area)), din(oc.totalPorM2), true) +
-        lin("Valor cobrado por m²", din(r2(totCob / area)), o.cobrado ? din(oc.cobradoPorM2) : "—") +
-        lin("Custo total (R$)", din(custoC), din(oc.total)) +
+      return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;margin-top:8px"><thead><tr><th class="peq mudo"></th><th style="text-align:right" class="peq mudo">Esta cotação</th><th style="text-align:right" class="peq mudo">' + esc(o.nome) + "</th></tr></thead><tbody>" +
+        lin("Metragem (m²)", A.numero(area, 0), A.numero(o.area, 0)) +
+        lin("Custo da mão de obra por m²", k.total > 0 ? din(r2(k.total / area)) : "—", din(r2(o.mo / o.area))) +
+        lin("Material e outras despesas por m²", t.matCusto > 0 ? din(r2(t.matCusto / area)) : "—", din(r2(o.outros / o.area))) +
+        lin("Custo total por m²", din(r2(custoC / area)), din(r2(o.total / o.area)), true) +
+        lin("Valor cobrado por m²", din(r2(totCob / area)), o.cobrado ? din(r2(o.cobrado / o.area)) : "—") +
+        lin("Custo total (R$)", din(custoC), din(o.total)) +
         lin("Valor cobrado (R$)", din(totCob), o.cobrado ? din(o.cobrado) : "—") +
         lin("Sobra (R$ e %)", din(sobraC) + " (" + A.numero(pctC, 1) + "%)", sobraO === null ? "—" : din(sobraO) + " (" + A.numero(pctO, 1) + "%)", true) + "</tbody></table></div>" +
         '<p class="peq" style="margin:6px 0 0">Com o custo por m² dessa obra, os <b>' + A.numero(area, 0) + " m²</b> desta cotação custariam cerca de <b>" + din(est) + "</b> (a cotação tem custo de " + din(custoC) + ").</p>" +
