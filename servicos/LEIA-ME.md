@@ -709,3 +709,6 @@ No cartão **👷 Custo da equipe** da Calculadora aparece **📈 Pela média da
 
 ## ✉️ Enviar contrato por e-mail
 No contrato aberto, o botão **✉️ Enviar por e-mail** abre o seu programa de e-mail já com o destinatário (e-mail do cliente/parceiro do contrato), o assunto e uma mensagem pronta. O navegador não anexa arquivos sozinho: antes, use **🖨 Imprimir / salvar PDF**, salve o arquivo e anexe. Depois o app oferece marcar o contrato como "Enviado ao cliente".
+
+## 💬 Enviar contrato pelo WhatsApp
+O botão **💬 Enviar pelo WhatsApp** abre a conversa com o telefone do cliente (campo "Telefone / WhatsApp" das Partes) e a mensagem pronta. No computador o app pergunta se abre o WhatsApp Web ou o app. O PDF você anexa na conversa (📎) depois de salvar em **🖨 Imprimir / salvar PDF**.
