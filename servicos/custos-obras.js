@@ -40,7 +40,7 @@
     var mo = r2(dias * cd.total), outros = r2((d.outros || []).reduce(function (s, o) { return s + (Number(o.valor) || 0); }, 0));
     var total = r2(mo + outros), cobrado = Number(d.cobrado) || 0;
     return { cd: cd, etapas: etapas, nEtapas: n, dias: dias, area: area, areaMO: areaMO, mo: mo, outros: outros, total: total, cobrado: cobrado, lucro: cobrado ? r2(cobrado - total) : null, margem: cobrado ? (cobrado - total) / cobrado * 100 : null,
-      porEtapa: n ? r2(mo / n) : 0, diasPorEtapa: n ? dias / n : 0, porDia: dias ? r2(total / dias) : 0, porM2: area ? r2(mo / area) : 0 };
+      porEtapa: n ? r2(mo / n) : 0, diasPorEtapa: n ? dias / n : 0, porDia: dias ? r2(total / dias) : 0, porM2: area ? r2(mo / area) : 0, outrosPorM2: area ? r2(outros / area) : 0, totalPorM2: area ? r2(total / area) : 0, cobradoPorM2: area && cobrado ? r2(cobrado / area) : 0 };
   }
   // médias das obras CONCLUÍDAS
   function medias() {
@@ -134,7 +134,7 @@
       var k = calcular(d), u = (d.unidade || "etapa").toLowerCase();
       $("#co-cdia", j.el).innerHTML = '<span class="peq mudo">Custo da equipe por dia (' + k.cd.pessoas + ' pessoas):</span> <b>' + din(k.cd.total) + "</b>";
       $("#co-res", j.el).innerHTML = '<div class="linha" style="justify-content:space-between"><span>Mão de obra (' + A.numero(k.dias, 1) + " dias × " + din(k.cd.total) + ')</span><b>' + din(k.mo) + '</b></div><div class="linha" style="justify-content:space-between"><span>Outros custos</span><b>' + din(k.outros) + '</b></div><div class="linha" style="justify-content:space-between;border-top:1px solid var(--borda);margin-top:4px;padding-top:4px"><b>CUSTO TOTAL DA OBRA</b><b style="font-size:20px">' + din(k.total) + "</b></div>" +
-        '<div class="peq mudo" style="margin-top:6px;display:flex;gap:16px;flex-wrap:wrap"><span>' + k.nEtapas + " " + esc(u) + "(s)</span><span>média de " + A.numero(k.diasPorEtapa, 1) + " dias por " + esc(u) + "</span><span>mão de obra por " + esc(u) + ": <b>" + din(k.porEtapa) + "</b></span><span>custo por dia: <b>" + din(k.porDia) + "</b></span>" + (k.porM2 ? "<span>mão de obra por m²: <b>" + din(k.porM2) + "</b></span>" : "") + "</div>" +
+        '<div class="peq mudo" style="margin-top:6px;display:flex;gap:16px;flex-wrap:wrap"><span>' + k.nEtapas + " " + esc(u) + "(s)</span><span>média de " + A.numero(k.diasPorEtapa, 1) + " dias por " + esc(u) + "</span><span>mão de obra por " + esc(u) + ": <b>" + din(k.porEtapa) + "</b></span><span>custo por dia: <b>" + din(k.porDia) + "</b></span>" + (k.porM2 ? "<span>mão de obra por m²: <b>" + din(k.porM2) + "</b></span><span>outros custos por m²: <b>" + din(k.outrosPorM2) + "</b></span><span>custo total por m²: <b>" + din(k.totalPorM2) + "</b></span>" + (k.cobradoPorM2 ? "<span>cobrado por m²: <b>" + din(k.cobradoPorM2) + "</b></span>" : "") : "") + "</div>" +
         (k.lucro !== null ? '<div class="linha" style="justify-content:space-between;margin-top:6px"><span>Cobrado do cliente ' + din(k.cobrado) + '</span><b style="color:' + (k.lucro >= 0 ? "var(--bom,#1b7f3b)" : "var(--perigo,#c0392b)") + '">Sobra ' + din(k.lucro) + " (" + A.numero(k.margem, 1) + "%)</b></div>" : "");
     }
     function mudou() { resumo(); agendar(); }
@@ -209,5 +209,11 @@
       var antes = lista; lista = r.data || []; var m = medias(); lista = antes; return m;
     }).catch(function () { return null; });
   }
-  window.AGE_CUSTOS = { ver: ver, calcular: calcular, mediaAtual: mediaAtual };
+  // todas as obras com as contas feitas (para a Calculadora comparar a cotação com uma obra já feita)
+  function todas(ctx) {
+    return run(ctx.sb.from("obras_custos").select("*").order("atualizado_em", { ascending: false }).limit(300)).then(function (r) {
+      return (r.data || []).map(function (x) { var d = x.dados || novoDados(); return { id: x.id, nome: x.nome || "(sem nome)", status: x.status, c: calcular(d), cobrado: Number(d.cobrado) || 0 }; });
+    }).catch(function () { return []; });
+  }
+  window.AGE_CUSTOS = { ver: ver, calcular: calcular, mediaAtual: mediaAtual, todas: todas };
 })();

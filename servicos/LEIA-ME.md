@@ -724,3 +724,6 @@ No custo da equipe, **Função** e **Funcionário** agora são campos que você 
 
 ## 📦 Total com materiais no cartão da equipe
 O cartão **Custo da equipe** passou a mostrar, quando há materiais na lista, o bloco **📦 Com os materiais**: mão de obra cobrada, materiais (valor de venda), **total do orçamento**, custo da equipe, custo dos materiais na loja e a **sobra total** (em R$ e %). Não desconta imposto, transporte do material nem outros gastos.
+
+## 📊 Comparar a cotação com uma obra já feita
+Cadastre a obra feita (ex.: a da Deva, com epóxi) em **📈 Custo de obras**: equipe e diárias, dias, **metragem (área) de cada etapa**, outros custos (tinta e material) e o **valor cobrado**. Na Calculadora, o cartão **📊 Comparar com uma obra já feita** põe lado a lado, por m²: custo da mão de obra, material e despesas, custo total, valor cobrado e sobra (R$ e %), e estima quanto os m² da cotação custariam pelo custo/m² da obra. Em Custo de obras, o resumo também mostra outros custos, custo total e valor cobrado por m².
