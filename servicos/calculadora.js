@@ -96,7 +96,7 @@
   }
 
   // ---------------- tela ----------------
-  function ver(c, ctx) { P = ctx; raiz = c; MEDIA = undefined; ler(); c.innerHTML = '<div class="cab-secao"><h2>🧮 Calculadora de mão de obra</h2></div><div class="cartao vazio">Carregando...</div>'; carregarCot(function () { desenhar(c); }); }
+  function ver(c, ctx) { P = ctx; raiz = c; MEDIA = undefined; OBRAS = undefined; ler(); c.innerHTML = '<div class="cab-secao"><h2>🧮 Calculadora de mão de obra</h2></div><div class="cartao vazio">Carregando...</div>'; carregarCot(function () { desenhar(c); }); }
   function desenhar(c) {
     var L = servicos(estado.cat), grupos = [];
     L.forEach(function (s) { if (grupos.indexOf(s.grupo) < 0) grupos.push(s.grupo); });
@@ -116,7 +116,7 @@
       '<span id="cl-prev" style="margin-left:auto;font-weight:700"></span><button class="prim" id="cl-add">➕ Adicionar à lista</button></div>' +
       '<div class="acoes"><button class="peq" id="cl-colar" title="Cole várias metragens de uma vez: o app acha o serviço na tabela de cada linha">📝 Colar lista de metragens</button><button class="peq" id="cl-livre" title="Serviço que não está na tabela (ex.: limpeza do piso)">➕ Item fora da tabela</button><button class="peq" id="cl-fach" title="Calcula a área das fachadas de torres/prédios, a tinta e já coloca o serviço na lista">🏢 Fachadas (torres / prédios)</button>' +
       '<button class="peq" id="cl-loja" title="Lê o orçamento ou a nota da loja (PDF, foto ou XML) e traz os materiais com o custo de cada um">📂 Materiais da loja (PDF, foto ou XML)</button><input type="file" id="cl-arq-loja" class="oculto" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml"></div></div>' +
-      '<div id="cl-lista"></div><div id="cl-equipe"></div><div id="cl-laudo"></div><div id="cl-salvas"></div>';
+      '<div id="cl-lista"></div><div id="cl-equipe"></div><div id="cl-comp"></div><div id="cl-laudo"></div><div id="cl-salvas"></div>';
     $$("[data-cat]", c).forEach(function (b) { b.onclick = function () { estado.cat = b.dataset.cat; estado.grupo = ""; estado.busca = ""; estado.sel = ""; guardar(); desenhar(c); }; });
     $("#cl-busca", c).oninput = function () { estado.busca = this.value; opcoes(c); };
     $("#cl-grupo", c).onchange = function () { estado.grupo = this.value; opcoes(c); };
@@ -136,7 +136,7 @@
     $("#cl-fach", c).onclick = function () { fachadas(c); };
     $("#cl-loja", c).onclick = function () { $("#cl-arq-loja", c).value = ""; $("#cl-arq-loja", c).click(); };
     $("#cl-arq-loja", c).onchange = function () { if (this.files[0]) lerLoja(c, this.files[0]); };
-    opcoes(c); lista(c); equipeCartao(c); laudoCartao(c); pintarSalvas();
+    opcoes(c); lista(c); equipeCartao(c); compCartao(c); laudoCartao(c); pintarSalvas();
   }
   function opcoes(c) {
     var b = semAcento(estado.busca), g = {}, total = 0;
@@ -435,7 +435,7 @@
   }
   function resumoEquipe(c) {
     var el = c && $("#eq-res", c); if (!el) return;
-    pintarMedia(c);
+    pintarMedia(c); pintarComp(c);
     var k = custoEquipe(), t = totais(), e = eq(), cobra = t.seu, res = r2(cobra - k.total), pct = cobra ? res / cobra * 100 : 0, mg = Number(e.margem) || 0;
     var minimo = mg > 0 && mg < 100 ? r2(k.total / (1 - mg / 100)) : null;
     el.innerHTML = '<div class="linha peq" style="justify-content:space-between"><span>Diárias</span><span>' + din(k.dia) + '</span></div>' +
@@ -453,6 +453,47 @@
           '<p class="peq mudo" style="margin:4px 0 0">Sobra = total do orçamento − custo da equipe − custo dos materiais na loja. Não desconta imposto, transporte do material nem outros gastos.</p></div>';
       })() : "");
   }
+  // ---- 📊 comparar esta cotação com uma obra já feita (aba Custo de obras): metragem, custos, despesas e sobra por m² ----
+  var OBRAS, obrasBusy = false, compSel = "";
+  function compCartao(c) {
+    var el = $("#cl-comp", c); if (!el || !P) return;
+    el.innerHTML = '<details class="cartao" id="cp-cx"><summary><b>📊 Comparar com uma obra já feita</b> <span class="peq mudo">· metragem, custos, despesas e sobra por m²</span></summary><div id="cp-corpo"></div></details>';
+    if (OBRAS === undefined && !obrasBusy && window.AGE_CUSTOS && window.AGE_CUSTOS.todas) { obrasBusy = true; window.AGE_CUSTOS.todas(P).then(function (L) { OBRAS = L; obrasBusy = false; pintarComp(c); }); }
+    pintarComp(c);
+  }
+  function pintarComp(c) {
+    var el = c && $("#cp-corpo", c); if (!el) return;
+    if (OBRAS === undefined) { el.innerHTML = '<p class="peq mudo">Carregando as obras...</p>'; return; }
+    if (!OBRAS.length) { el.innerHTML = '<p class="peq mudo">Cadastre a obra feita (por exemplo a da Deva) na aba <b>📈 Custo de obras</b>: equipe e diárias, dias, <b>metragem de cada etapa</b>, outros custos (tinta, material) e o <b>valor cobrado</b>. Depois ela aparece aqui para comparar.</p>'; return; }
+    var antes = $("#cp-sel", el) ? $("#cp-sel", el).value : compSel;
+    var area = 0, t = totais(), k = custoEquipe();
+    estado.linhas.forEach(function (l) { if (l.tipo !== "material" && /^m(²|2)$/i.test(String(l.un || "").trim())) area += Number(l.qtd) || 0; });
+    el.innerHTML = '<label style="display:block;margin-top:6px">Obra para comparar<select id="cp-sel"><option value="">— escolha —</option>' + OBRAS.map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.id === antes ? " selected" : "") + ">" + esc(o.nome) + (o.status === "concluida" ? " (concluída)" : " (em andamento)") + "</option>"; }).join("") + '</select></label><div id="cp-res"></div>';
+    function mostrar() {
+      compSel = $("#cp-sel", el).value; var r = $("#cp-res", el), o = OBRAS.filter(function (y) { return y.id === compSel; })[0];
+      if (!o) { r.innerHTML = ""; return; }
+      if (!(area > 0)) { r.innerHTML = '<p class="peq mudo">Coloque serviços em <b>m²</b> na lista para comparar por metro quadrado.</p>'; return; }
+      var oc = o.c;
+      if (!(oc.area > 0)) { r.innerHTML = '<p class="peq" style="color:var(--atencao,#b7791f)">Essa obra não tem metragem lançada. Abra-a em <b>📈 Custo de obras</b> e preencha a área (m²) de cada etapa.</p>'; return; }
+      var totCob = r2(t.seu + t.mat), custoC = r2(k.total + t.matCusto), sobraC = r2(totCob - custoC), pctC = totCob ? sobraC / totCob * 100 : 0;
+      var sobraO = o.cobrado ? r2(o.cobrado - oc.total) : null, pctO = o.cobrado ? sobraO / o.cobrado * 100 : null;
+      function lin(rot, a1, b1, forte) { var T = forte ? "b" : "span"; return '<tr><td>' + rot + '</td><td style="text-align:right"><' + T + ">" + a1 + "</" + T + '></td><td style="text-align:right"><' + T + ">" + b1 + "</" + T + "></td></tr>"; }
+      var est = r2(oc.totalPorM2 * area);
+      r.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;margin-top:8px"><thead><tr><th style="text-align:left" class="peq mudo"></th><th style="text-align:right" class="peq mudo">Esta cotação</th><th style="text-align:right" class="peq mudo">' + esc(o.nome) + "</th></tr></thead><tbody>" +
+        lin("Metragem (m²)", A.numero(area, 0), A.numero(oc.area, 0)) +
+        lin("Custo da mão de obra por m²", k.total > 0 ? din(r2(k.total / area)) : "—", din(oc.porM2)) +
+        lin("Material e outras despesas por m²", t.matCusto > 0 ? din(r2(t.matCusto / area)) : "—", din(oc.outrosPorM2)) +
+        lin("Custo total por m²", din(r2(custoC / area)), din(oc.totalPorM2), true) +
+        lin("Valor cobrado por m²", din(r2(totCob / area)), o.cobrado ? din(oc.cobradoPorM2) : "—") +
+        lin("Custo total (R$)", din(custoC), din(oc.total)) +
+        lin("Valor cobrado (R$)", din(totCob), o.cobrado ? din(o.cobrado) : "—") +
+        lin("Sobra (R$ e %)", din(sobraC) + " (" + A.numero(pctC, 1) + "%)", sobraO === null ? "—" : din(sobraO) + " (" + A.numero(pctO, 1) + "%)", true) + "</tbody></table></div>" +
+        '<p class="peq" style="margin:6px 0 0">Com o custo por m² dessa obra, os <b>' + A.numero(area, 0) + " m²</b> desta cotação custariam cerca de <b>" + din(est) + "</b> (a cotação tem custo de " + din(custoC) + ").</p>" +
+        '<p class="peq mudo" style="margin:4px 0 0">Serve como noção de valores: a tinta (epóxi ou viária), o piso e a equipe mudam o custo. O custo da equipe da cotação vem do cartão acima, e o material, do custo da loja na lista.</p>';
+    }
+    $("#cp-sel", el).onchange = mostrar; mostrar();
+  }
+
   // ---- 🔍 laudo técnico (vistoria e solução): escolher um modelo, editar e salvar como modelo; vai junto ao criar o orçamento ----
   function laudoCartao(c) {
     var el = $("#cl-laudo", c); if (!el || !P || !P.laudos) return;
