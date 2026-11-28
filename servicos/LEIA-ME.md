@@ -736,3 +736,6 @@ No cartão **📊 Comparar com uma obra já feita** da Calculadora, a lista já 
 
 ## 🧾 Trazer pela nota fiscal ou pelo orçamento, com o detalhe
 Em **📥 Trazer de Notas e resultado** cada obra mostra **Ver o que compõe** (cada nota fiscal, compra e pagamento) e deixa escolher o **valor cobrado** a usar: o das **notas fiscais** ou o de um **orçamento** do mesmo cliente. Se as notas diferem do orçamento, o app avisa o tamanho da diferença. Quando não há pagamento da equipe ligado à obra, avisa que a mão de obra vem como R$ 0,00 (sobra alta demais).
+
+## 📋 Colar etapas com metragem e valor (Custo de obras)
+Na obra, o botão **📋 Colar etapas (nome, m² e valor)** cria uma etapa por linha colada, lendo o nome, a **metragem (m²)**, o **valor cobrado (R$)** e os **dias** (os três últimos são opcionais). Cada etapa agora tem o campo **Cobrado (R$)**; sem o valor total da obra preenchido, o cobrado é a soma das etapas.

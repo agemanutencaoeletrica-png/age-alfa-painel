@@ -38,7 +38,7 @@
       etapas.push({ nome: e.nome, dias: di, area: ar, mo: mo });
     });
     var mo = r2(dias * cd.total + (Number(d.moReal) || 0)), outros = r2((d.outros || []).reduce(function (s, o) { return s + (Number(o.valor) || 0); }, 0));
-    var total = r2(mo + outros), cobrado = Number(d.cobrado) || 0;
+    var cobEt = r2((d.etapas || []).reduce(function (z, e) { return z + (Number(e.cobrado) || 0); }, 0)), total = r2(mo + outros), cobrado = Number(d.cobrado) || cobEt;
     return { cd: cd, etapas: etapas, nEtapas: n, dias: dias, area: area, areaMO: areaMO, mo: mo, outros: outros, total: total, cobrado: cobrado, lucro: cobrado ? r2(cobrado - total) : null, margem: cobrado ? (cobrado - total) / cobrado * 100 : null,
       porEtapa: n ? r2(mo / n) : 0, diasPorEtapa: n ? dias / n : 0, porDia: dias ? r2(total / dias) : 0, porM2: area ? r2(mo / area) : 0, outrosPorM2: area ? r2(outros / area) : 0, totalPorM2: area ? r2(total / area) : 0, cobradoPorM2: area && cobrado ? r2(cobrado / area) : 0 };
   }
@@ -87,6 +87,16 @@
     ligarEstimativa(c, M);
   }
   // 📥 traz uma obra que já foi lançada em Notas e resultado (notas, compras de material, pagamentos da equipe e avulsos), sem digitar tudo de novo
+  // "Nome — 461 m² — R$ 24.500,00 — 5 dias" -> { nome, area, cobrado, dias }
+  function linhasEtapas(txt) {
+    return String(txt || "").split(/\n+/).map(function (l) {
+      var t = l.trim(); if (!t) return null;
+      var ma = /([\d.]*\d(?:,\d+)?)\s*m\s*(?:²|2)/i.exec(t), mv = /R\$\s*([\d.]*\d(?:,\d+)?)/i.exec(t), md = /(\d+(?:,\d+)?)\s*dias?/i.exec(t);
+      var nome = t.replace(ma ? ma[0] : "§§", " ").replace(mv ? mv[0] : "§§", " ").replace(md ? md[0] : "§§", " ").replace(/\s+[—–|;-]\s+/g, " ").replace(/^[\s—–|;:-]+|[\s—–|;:-]+$/g, "").replace(/\s{2,}/g, " ");
+      if (!nome) return null;
+      return { nome: nome.slice(0, 60), dias: md ? num(md[1]) : 0, area: ma ? num(ma[1]) : 0, cobrado: mv ? num(mv[1]) : 0 };
+    }).filter(Boolean);
+  }
   function sa(t) { return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim(); }
   // orçamentos do app do mesmo cliente (pela primeira palavra do nome: "DEVA IVECO CONTAGEM" acha "Deva")
   function orcamentosDe(nome) {
@@ -159,7 +169,7 @@
       '<label style="width:170px">Situação<select class="co-status"><option value="andamento">🚧 Em andamento</option><option value="concluida">✅ Concluída (entra nas médias)</option></select></label></div>' +
       '<details open class="cartao"><summary><b>👷 Equipe e diárias</b></summary><div id="co-equipe"></div><div class="acoes"><button class="peq" id="co-add-f">➕ Função</button></div>' +
         '<div class="linha" style="gap:8px"><label style="width:200px">Encargos e benefícios (% das diárias)<input class="co-enc" inputmode="decimal"></label><div id="co-cdia" style="flex:1;min-width:200px;align-self:flex-end"></div></div></details>' +
-      '<details open class="cartao"><summary><b>🏗 Etapas e dias gastos</b></summary><div id="co-etapas"></div><div class="acoes"><button class="peq" id="co-add-e">➕ Etapa</button><button class="peq" id="co-add-n">➕ Várias etapas de uma vez</button></div></details>' +
+      '<details open class="cartao"><summary><b>🏗 Etapas e dias gastos</b></summary><div id="co-etapas"></div><div class="acoes"><button class="peq" id="co-add-e">➕ Etapa</button><button class="peq" id="co-add-n">➕ Várias etapas de uma vez</button><button class="peq" id="co-add-c">📋 Colar etapas (nome, m² e valor)</button></div></details>' +
       '<details open class="cartao"><summary><b>🧱 Outros custos</b> <span class="peq mudo">(material, andaime, aluguel...)</span></summary><div id="co-outros"></div><div class="acoes"><button class="peq" id="co-add-o">➕ Custo</button></div></details>' +
       '<label style="display:block;margin-top:8px">Mão de obra já paga, valor real (opcional) <span class="peq mudo">— soma-se aos dias × diárias. Vem preenchida quando a obra é trazida de Notas e resultado.</span><input class="co-moreal" inputmode="decimal" style="max-width:220px"></label>' +
       '<label style="display:block;margin-top:8px">Valor cobrado do cliente (opcional, para ver a sobra)<input class="co-cob" inputmode="decimal" style="max-width:220px"></label><label>Observações<textarea class="co-obs" rows="2" maxlength="2000"></textarea></label>' +
@@ -201,11 +211,11 @@
     function desenharEtapas() {
       var k = calcular(d), u = d.unidade || "Etapa";
       $("#co-etapas", j.el).innerHTML = d.etapas.map(function (e, i) {
-        return '<div class="linha co-e" data-i="' + i + '" style="gap:6px;margin-top:6px;align-items:flex-end"><label style="flex:2;min-width:150px">' + esc(u) + '<input class="e-n" maxlength="60" value="' + esc(e.nome || "") + '"></label><label style="width:100px">Dias gastos<input class="e-d" inputmode="decimal" value="' + esc(fq(e.dias)) + '"></label><label style="width:120px">Área (m², opcional)<input class="e-a" inputmode="decimal" value="' + esc(e.area ? fq(e.area) : "") + '"></label><div class="peq e-c" style="min-width:110px;padding-bottom:8px">' + din(k.etapas[i] ? k.etapas[i].mo : 0) + '</div><button class="peq perigo" data-tirar-e="' + i + '" aria-label="Tirar">🗑</button></div>';
+        return '<div class="linha co-e" data-i="' + i + '" style="gap:6px;margin-top:6px;align-items:flex-end"><label style="flex:2;min-width:150px">' + esc(u) + '<input class="e-n" maxlength="60" value="' + esc(e.nome || "") + '"></label><label style="width:100px">Dias gastos<input class="e-d" inputmode="decimal" value="' + esc(fq(e.dias)) + '"></label><label style="width:120px">Área (m², opcional)<input class="e-a" inputmode="decimal" value="' + esc(e.area ? fq(e.area) : "") + '"></label><label style="width:130px">Cobrado (R$, opcional)<input class="e-cb" inputmode="decimal" value="' + esc(e.cobrado ? f2(e.cobrado) : "") + '"></label><div class="peq e-c" style="min-width:110px;padding-bottom:8px">' + din(k.etapas[i] ? k.etapas[i].mo : 0) + '</div><button class="peq perigo" data-tirar-e="' + i + '" aria-label="Tirar">🗑</button></div>';
       }).join("") || '<p class="peq mudo">Toque em ➕ Etapa (ou ➕ Várias etapas) e lance os dias gastos em cada uma.</p>';
       $$(".co-e", j.el).forEach(function (el) {
         var e = d.etapas[Number(el.dataset.i)];
-        $$("input", el).forEach(function (i) { i.addEventListener("input", function () { e.nome = $(".e-n", el).value; e.dias = num($(".e-d", el).value); e.area = num($(".e-a", el).value); var kk = calcular(d); $(".e-c", el).textContent = din(kk.etapas[Number(el.dataset.i)].mo); mudou(); }); });
+        $$("input", el).forEach(function (i) { i.addEventListener("input", function () { e.nome = $(".e-n", el).value; e.dias = num($(".e-d", el).value); e.area = num($(".e-a", el).value); e.cobrado = num($(".e-cb", el).value); var kk = calcular(d); $(".e-c", el).textContent = din(kk.etapas[Number(el.dataset.i)].mo); mudou(); }); });
       });
       $$("[data-tirar-e]", j.el).forEach(function (b) { b.onclick = function () { d.etapas.splice(Number(b.dataset.tirarE), 1); desenharEtapas(); mudou(); }; });
     }
@@ -232,6 +242,16 @@
     $(".co-obs", j.el).oninput = function () { d.obs = this.value; agendar(); };
     $("#co-add-f", j.el).onclick = function () { d.equipe.push({ funcao: "", pessoas: 1, diaria: 0, extra: 0 }); desenharEquipe(); mudou(); };
     $("#co-add-e", j.el).onclick = function () { var n = d.etapas.length + 1; d.etapas.push({ nome: (d.unidade || "Etapa") + " " + String(n).padStart(2, "0"), dias: 0, area: 0 }); desenharEtapas(); mudou(); };
+    // cola uma linha por etapa: "Pátio — 461 m² — R$ 24.500,00 — 5 dias" (m², valor cobrado e dias são opcionais)
+    $("#co-add-c", j.el).onclick = function () {
+      var jj = A.janela('<p class="mudo peq" style="margin-top:0">Cole <b>uma linha por etapa</b>, com o nome e, se tiver, a <b>metragem (m²)</b>, o <b>valor cobrado (R$)</b> e os <b>dias</b>. Exemplo:<br><code>Pátio: faixas e vagas — 461 m² — R$ 24.500,00 — 5 dias</code></p><textarea id="co-cola" rows="8" style="width:100%" spellcheck="false"></textarea><div class="acoes"><button class="prim" id="co-cola-ok">➕ Adicionar as etapas</button><button id="co-cola-x">Cancelar</button></div>', { titulo: "📋 Colar etapas", semRascunho: true });
+      $("#co-cola-x", jj.el).onclick = function () { jj.fechar(); };
+      $("#co-cola-ok", jj.el).onclick = function () {
+        var novas = linhasEtapas($("#co-cola", jj.el).value);
+        if (!novas.length) { A.avisar("Não achei nenhuma linha com nome. Cole uma linha por etapa.", "erro"); return; }
+        novas.forEach(function (e) { d.etapas.push(e); }); jj.fechar(); desenharEtapas(); mudou(); A.avisar(novas.length + " etapa(s) adicionada(s)", "ok");
+      };
+    };
     $("#co-add-o", j.el).onclick = function () { d.outros.push({ tipo: OUTROS[0], desc: "", valor: 0 }); desenharOutros(); mudou(); };
     $("#co-add-n", j.el).onclick = function () {
       var jn = A.janela('<div class="linha" style="gap:8px"><label style="width:130px">Quantas?<input class="vn-q" inputmode="decimal" value="34"></label><label style="width:150px">Dias de cada (padrão)<input class="vn-d" inputmode="decimal" value="0"></label><label style="width:170px">Nomear com<select class="vn-m"><option value="n">Números (01, 02...)</option><option value="l">Letras (A, B, C...)</option></select></label></div><p class="peq mudo">Depois você ajusta os dias de cada uma. Ex.: Torre A 15 dias, Torre B 20 dias.</p><div class="acoes"><button class="prim" id="vn-ok">Adicionar</button><button id="vn-x">Cancelar</button></div>', { titulo: "➕ Várias etapas", semRascunho: true });
@@ -256,7 +276,7 @@
   // todas as obras com as contas feitas (para a Calculadora comparar a cotação com uma obra já feita)
   function todas(ctx) {
     return run(ctx.sb.from("obras_custos").select("*").order("atualizado_em", { ascending: false }).limit(300)).then(function (r) {
-      return (r.data || []).map(function (x) { var d = x.dados || novoDados(); return { id: x.id, nome: x.nome || "(sem nome)", status: x.status, c: calcular(d), cobrado: Number(d.cobrado) || 0 }; });
+      return (r.data || []).map(function (x) { var d = x.dados || novoDados(); return { id: x.id, nome: x.nome || "(sem nome)", status: x.status, c: calcular(d), cobrado: calcular(d).cobrado }; });
     }).catch(function () { return []; });
   }
   window.AGE_CUSTOS = { ver: ver, calcular: calcular, mediaAtual: mediaAtual, todas: todas };
