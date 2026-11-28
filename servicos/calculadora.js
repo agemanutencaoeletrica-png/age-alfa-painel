@@ -116,7 +116,7 @@
       '<span id="cl-prev" style="margin-left:auto;font-weight:700"></span><button class="prim" id="cl-add">➕ Adicionar à lista</button></div>' +
       '<div class="acoes"><button class="peq" id="cl-colar" title="Cole várias metragens de uma vez: o app acha o serviço na tabela de cada linha">📝 Colar lista de metragens</button><button class="peq" id="cl-livre" title="Serviço que não está na tabela (ex.: limpeza do piso)">➕ Item fora da tabela</button><button class="peq" id="cl-fach" title="Calcula a área das fachadas de torres/prédios, a tinta e já coloca o serviço na lista">🏢 Fachadas (torres / prédios)</button>' +
       '<button class="peq" id="cl-loja" title="Lê o orçamento ou a nota da loja (PDF, foto ou XML) e traz os materiais com o custo de cada um">📂 Materiais da loja (PDF, foto ou XML)</button><input type="file" id="cl-arq-loja" class="oculto" accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml"></div></div>' +
-      '<div id="cl-lista"></div><div id="cl-equipe"></div><div id="cl-salvas"></div>';
+      '<div id="cl-lista"></div><div id="cl-equipe"></div><div id="cl-laudo"></div><div id="cl-salvas"></div>';
     $$("[data-cat]", c).forEach(function (b) { b.onclick = function () { estado.cat = b.dataset.cat; estado.grupo = ""; estado.busca = ""; estado.sel = ""; guardar(); desenhar(c); }; });
     $("#cl-busca", c).oninput = function () { estado.busca = this.value; opcoes(c); };
     $("#cl-grupo", c).onchange = function () { estado.grupo = this.value; opcoes(c); };
@@ -136,7 +136,7 @@
     $("#cl-fach", c).onclick = function () { fachadas(c); };
     $("#cl-loja", c).onclick = function () { $("#cl-arq-loja", c).value = ""; $("#cl-arq-loja", c).click(); };
     $("#cl-arq-loja", c).onchange = function () { if (this.files[0]) lerLoja(c, this.files[0]); };
-    opcoes(c); lista(c); equipeCartao(c); pintarSalvas();
+    opcoes(c); lista(c); equipeCartao(c); laudoCartao(c); pintarSalvas();
   }
   function opcoes(c) {
     var b = semAcento(estado.busca), g = {}, total = 0;
@@ -446,6 +446,41 @@
       (cobra ? '<div class="linha" style="justify-content:space-between;margin-top:6px"><span>Mão de obra cobrada na lista</span><span>' + din(cobra) + '</span></div><div class="linha" style="justify-content:space-between"><b>Sobra (cobrado − custo da equipe)</b><b style="color:' + (res >= 0 ? "var(--bom,#1b7f3b)" : "var(--perigo,#c0392b)") + '">' + din(res) + " (" + A.numero(pct, 1) + "%)</b></div>" : '<p class="peq mudo" style="margin:6px 0 0">Adicione serviços à lista acima para comparar com o que você cobra.</p>') +
       (minimo !== null && k.total > 0 ? '<div class="linha" style="justify-content:space-between;margin-top:4px"><span>Preço mínimo da mão de obra para ter ' + A.numero(mg, 1) + '% de sobra</span><b>' + din(minimo) + "</b></div>" + (cobra && cobra < minimo ? '<p class="peq" style="color:var(--perigo,#c0392b);margin:4px 0 0">⚠ O que você cobra está ' + din(r2(minimo - cobra)) + " abaixo desse mínimo.</p>" : "") : "");
   }
+  // ---- 🔍 laudo técnico (vistoria e solução): escolher um modelo, editar e salvar como modelo; vai junto ao criar o orçamento ----
+  function laudoCartao(c) {
+    var el = $("#cl-laudo", c); if (!el || !P || !P.laudos) return;
+    var l0 = (estado.orc && estado.orc.laudo) || {};
+    el.innerHTML = '<details class="cartao" id="lz-cx"' + (String(l0.vistoria || "").trim() || String(l0.solucao || "").trim() ? " open" : "") + '><summary><b>🔍 Laudo técnico (vistoria e solução)</b> <span class="peq mudo">· vai junto quando você criar o orçamento</span></summary>' +
+      '<select id="lz-mod" aria-label="Modelo de laudo" style="width:100%;margin-top:8px"></select>' +
+      '<label>Vistoria técnica<textarea id="lz-vist" rows="5" maxlength="4000"></textarea></label><label>Solução e materiais<textarea id="lz-sol" rows="9" maxlength="6000"></textarea></label>' +
+      '<div class="acoes"><button class="peq" id="lz-salvar">💾 Salvar como modelo</button><button class="peq perigo" id="lz-apagar">🗑 Apagar o modelo escolhido</button><button class="peq" id="lz-limpar">🧹 Limpar o laudo</button></div>' +
+      '<p class="peq mudo" style="margin:4px 0 0">Os modelos salvos ficam guardados e aparecem aqui e no orçamento, para usar em outros serviços. O modelo pronto não muda: o que você edita vale só para esta cotação.</p></details>';
+    var vi = $("#lz-vist", el), so = $("#lz-sol", el), mod = $("#lz-mod", el);
+    vi.value = l0.vistoria || ""; so.value = l0.solucao || "";
+    function lista(sel) { mod.innerHTML = '<option value="">📑 Usar um modelo de laudo...</option>' + P.laudos.lista().map(function (m) { return '<option value="' + esc(m.id) + '">' + esc(m.titulo) + (m.padrao ? " (modelo pronto)" : "") + "</option>"; }).join(""); mod.value = sel || ""; }
+    function gravarLaudo() { estado.orc = estado.orc || {}; estado.orc.laudo = Object.assign({ vistoria: "", solucao: "", escopo: "" }, estado.orc.laudo || {}, { vistoria: vi.value.trim(), solucao: so.value.trim() }); guardar(); }
+    lista();
+    vi.oninput = gravarLaudo; so.oninput = gravarLaudo;
+    mod.onchange = function () {
+      var m = P.laudos.lista().filter(function (y) { return y.id === mod.value; })[0]; if (!m) return;
+      if ((vi.value.trim() || so.value.trim()) && !A.confirmar("Trocar o laudo que está escrito pelo modelo “" + m.titulo + "”?")) { mod.value = ""; return; }
+      vi.value = m.vistoria || ""; so.value = m.solucao || ""; gravarLaudo(); A.avisar("📑 Modelo “" + m.titulo + "” colocado. Edite o que precisar para este cliente.", "ok");
+    };
+    $("#lz-salvar", el).onclick = function () {
+      if (!vi.value.trim() && !so.value.trim()) { A.avisar("Escreva a vistoria ou a solução antes de salvar como modelo.", "erro"); return; }
+      var esc0 = P.laudos.lista().filter(function (y) { return y.id === mod.value; })[0], sug = esc0 && !esc0.padrao ? esc0.titulo : String(estado.nome || "").slice(0, 60);
+      var t = window.prompt("Nome do modelo de laudo (para achar na lista).\nSe já existir um modelo seu com este nome, ele é atualizado:", sug); if (t === null) return;
+      P.laudos.salvar(t, vi.value.trim(), so.value.trim()).then(function (r) { lista(r.modelo.id); A.avisar("💾 Modelo de laudo “" + r.modelo.titulo + "” " + (r.atualizou ? "atualizado" : "salvo"), "ok"); }).catch(function (e) { A.avisar(A.msgErro ? A.msgErro(e) : e.message, "erro"); });
+    };
+    $("#lz-apagar", el).onclick = function () {
+      var m = P.laudos.lista().filter(function (y) { return y.id === mod.value; })[0];
+      if (!m) { A.avisar("Escolha na lista o modelo que quer apagar.", "erro"); return; }
+      if (!m.padrao && !A.confirmar("Apagar o modelo de laudo “" + m.titulo + "”? As cotações e os orçamentos que já usaram continuam iguais.")) return;
+      P.laudos.apagar(m.id).then(function () { lista(); A.avisar("Modelo apagado", "ok"); }).catch(function (e) { A.avisar(A.msgErro ? A.msgErro(e) : e.message, "erro"); });
+    };
+    $("#lz-limpar", el).onclick = function () { if (!A.confirmar("Limpar o texto do laudo desta cotação?")) return; vi.value = ""; so.value = ""; gravarLaudo(); mod.value = ""; };
+  }
+
   // ---- 📈 preço sugerido pela média das obras concluídas (aba Custo de obras) ----
   var MEDIA, medBusy = false;   // undefined = ainda não carregou; null = sem obras concluídas
   function pintarMedia(c) {

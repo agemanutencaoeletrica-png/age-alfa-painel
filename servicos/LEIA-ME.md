@@ -715,3 +715,6 @@ O botão **💬 Enviar pelo WhatsApp** abre a conversa com o telefone do cliente
 
 ## 🔁 Trocar os materiais antigos pelos do orçamento novo da loja
 Na Calculadora, ao tocar em **📂 Materiais da loja** com materiais já na lista, o app oferece **Trocar** (tira os materiais antigos e põe os novos; serviços e mão de obra não mudam; vem marcado) ou **Acrescentar** (mantém os antigos). A margem já vem igual à dos materiais antigos.
+
+## 🔍 Laudo técnico na Calculadora e modelos salvos
+Na Calculadora há o cartão **🔍 Laudo técnico (vistoria e solução)**: escolha um modelo (os prontos de sinalização horizontal com tinta viária ou epóxi, ou os seus), edite e ele vai junto ao tocar em **📄 Criar orçamento com esta lista**. **💾 Salvar como modelo** guarda o laudo (tabela `modelos_laudo`) para usar em outras cotações e orçamentos; **🗑** apaga um modelo seu. Os mesmos modelos aparecem na lista do orçamento.
