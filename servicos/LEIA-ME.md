@@ -727,3 +727,6 @@ O cartão **Custo da equipe** passou a mostrar, quando há materiais na lista, o
 
 ## 📊 Comparar a cotação com uma obra já feita
 Cadastre a obra feita (ex.: a da Deva, com epóxi) em **📈 Custo de obras**: equipe e diárias, dias, **metragem (área) de cada etapa**, outros custos (tinta e material) e o **valor cobrado**. Na Calculadora, o cartão **📊 Comparar com uma obra já feita** põe lado a lado, por m²: custo da mão de obra, material e despesas, custo total, valor cobrado e sobra (R$ e %), e estima quanto os m² da cotação custariam pelo custo/m² da obra. Em Custo de obras, o resumo também mostra outros custos, custo total e valor cobrado por m².
+
+## 📥 Trazer uma obra finalizada de Notas e resultado
+Em **📈 Custo de obras**, o botão **📥 Trazer de Notas e resultado** lista as obras e clientes que já têm lançamentos (ex.: DEVA) e copia: **notas** (valor cobrado), **materiais** (compras), **mão de obra paga** (pagamentos), **avulsos** e o imposto da empresa. A obra entra como **Concluída**; falta só informar a **metragem (m²)** de cada etapa, e os dias/equipe se quiser. Daí a comparação por m² (cartão **📊** da Calculadora) funciona sem digitar tudo de novo. Campo novo: **Mão de obra já paga (valor real)**, que se soma aos dias × diárias.
