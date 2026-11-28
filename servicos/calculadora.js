@@ -345,14 +345,17 @@
   }
   function importar(c) {
     var j = A.janela('<p class="mudo peq" style="margin-top:0">Cole aqui o código da cotação (começa com <b>AGE-COTACAO:</b>).</p><textarea id="cl-cod" rows="6" style="width:100%" spellcheck="false"></textarea>' +
+      '<div class="acoes"><button class="peq" id="cl-cod-arq">📂 Abrir arquivo do código (.txt)</button><input type="file" id="cl-cod-in" class="oculto" accept=".txt,text/plain"></div>' +
       '<div class="acoes"><button class="prim" id="cl-cod-ok">📥 Importar</button><button id="cl-cod-x">Cancelar</button></div>', { titulo: "📥 Importar cotação", semRascunho: true });
     $("#cl-cod-x", j.el).onclick = function () { j.fechar(); };
+    $("#cl-cod-arq", j.el).onclick = function () { $("#cl-cod-in", j.el).click(); };
+    $("#cl-cod-in", j.el).onchange = function () { var f = this.files[0]; if (!f) return; var r = new FileReader(); r.onload = function () { $("#cl-cod", j.el).value = String(r.result || ""); }; r.readAsText(f); };
     $("#cl-cod-ok", j.el).onclick = function () {
       var d = decodificar($("#cl-cod", j.el).value);
       if (!d || !Array.isArray(d.l)) { A.avisar("Não consegui ler esse código. Copie de novo, inteiro.", "erro"); return; }
       if (estado.linhas.length && !estado.id && !A.confirmar("A lista atual ainda não foi salva e será substituída. Continuar?")) return;
       Object.assign(estado, { id: null, nome: d.n || "", cat: CATS[d.c] ? d.c : "pintura", orc: tirarEquipe(d.o).orc, equipe: tirarEquipe(d.o).equipe, visao: d.v || "t_servicos",
-        linhas: d.l.map(function (x) { return { tipo: x.t === "m" ? "material" : undefined, custo: x.t === "m" ? (Number(x.v) || 0) : undefined, desc: x.d, ref: x.r || x.d, un: x.u, qtd: Number(x.q) || 0, valor: Number(x.v) || 0, media: x.m === undefined ? null : x.m, min: x.mi === undefined ? null : x.mi, max: x.ma === undefined ? null : x.ma, cat: CATS[x.c] ? x.c : (CATS[d.c] ? d.c : "pintura") }; }) });
+        linhas: d.l.map(function (x) { return { tipo: x.t === "m" ? "material" : undefined, custo: x.t === "m" ? (x.cu !== undefined ? Number(x.cu) || 0 : Number(x.v) || 0) : undefined, desc: x.d, ref: x.r || x.d, un: x.u, qtd: Number(x.q) || 0, valor: Number(x.v) || 0, media: x.m === undefined ? null : x.m, min: x.mi === undefined ? null : x.mi, max: x.ma === undefined ? null : x.ma, cat: CATS[x.c] ? x.c : (CATS[d.c] ? d.c : "pintura") }; }) });
       guardar(); j.fechar(); desenhar(c); A.avisar("Cotação importada: " + estado.linhas.length + " itens", "ok");
     };
   }
