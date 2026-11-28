@@ -501,7 +501,7 @@
         var tab = function () {
           var A0 = A.lerNumero($("#cp-area", r).value) || 0; guardarArea(x.k, A0);
           if (!(A0 > 0)) { $("#cp-tab", r).innerHTML = '<p class="peq mudo">Digite a metragem para ver a comparação por m².</p>'; return; }
-          $("#cp-tab", r).innerHTML = tabela({ nome: x.nome, area: A0, mo: x.mo, outros: r2(x.mat + x.av + (x.impEmp || 0)), total: r2(x.mat + x.mo + x.av + (x.impEmp || 0)), cobrado: x.notasV || x.portal || 0 });
+          $("#cp-tab", r).innerHTML = tabela({ nome: x.nome, area: A0, mo: x.mo, outros: r2(x.mat + x.av + (x.impEmp || 0)), total: r2(x.mat + x.mo + x.av + (x.impEmp || 0)), cobrado: x.notasV || x.portal || 0 }) + (x.mo === 0 ? '<p class="peq" style="color:var(--atencao,#b7791f);margin:6px 0 0">⚠ Essa obra está sem mão de obra paga ligada: o custo e a sobra dela aparecem melhores do que foram. Ligue os pagamentos da equipe à obra (Pagamentos › Obra / cliente) ou cadastre a obra em Custo de obras com a mão de obra real.</p>' : "");
         };
         $("#cp-area", r).oninput = tab; tab(); return;
       }

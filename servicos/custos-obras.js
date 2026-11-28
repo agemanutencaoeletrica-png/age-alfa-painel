@@ -87,24 +87,42 @@
     ligarEstimativa(c, M);
   }
   // 📥 traz uma obra que já foi lançada em Notas e resultado (notas, compras de material, pagamentos da equipe e avulsos), sem digitar tudo de novo
+  function sa(t) { return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim(); }
+  // orçamentos do app do mesmo cliente (pela primeira palavra do nome: "DEVA IVECO CONTAGEM" acha "Deva")
+  function orcamentosDe(nome) {
+    var ch = sa(String(nome || "").replace(/\(.*?\)/g, "")).split(/\s+/).filter(function (w) { return w.length >= 3; })[0]; if (!ch) return [];
+    return ((P.S && P.S.orc) || []).filter(function (o) { return sa(o.cliente).indexOf(ch) >= 0; }).map(function (o) { var t = 0; try { t = P.calcOrc(o).total; } catch (e) { t = 0; } return { numero: o.numero, total: r2(t), data: o.criado_em }; }).filter(function (o) { return o.total > 0; });
+  }
+  // 📥 traz uma obra que já foi lançada em Notas e resultado (notas fiscais, compras de material, pagamentos da equipe e avulsos), sem digitar tudo de novo
   function trazer(c) {
     if (!window.AGE_FAT || !window.AGE_FAT.resultadoTodos) { A.avisar("Atualize a página (Ctrl+F5) para trazer as obras de Notas e resultado.", "erro"); return; }
     var L = window.AGE_FAT.resultadoTodos(P).filter(function (x) { return x.k !== "-" && (x.entrada || x.gastos); });
-    var j = A.janela('<p class="mudo peq" style="margin-top:0">Escolha a obra ou o cliente que já está em <b>💼 Notas e resultado</b>. O app copia o que foi lançado: <b>notas</b> (valor cobrado), <b>materiais</b>, <b>mão de obra paga</b> e <b>avulsos</b>. Depois você só informa a <b>metragem (m²)</b> e, se quiser, os dias e a equipe.</p>' +
-      (L.length ? '<div class="tabela-caixa"><table><thead><tr><th>Obra / cliente</th><th class="num">Notas</th><th class="num">Materiais</th><th class="num">Mão de obra</th><th class="num">Avulsos</th><th class="num">Resultado</th><th></th></tr></thead><tbody>' + L.map(function (x, i) {
-        return "<tr><td><b>" + esc(x.nome) + '</b></td><td class="num">' + (x.entrada ? din(x.notasV || x.portal) : "—") + '</td><td class="num">' + din(x.mat) + '</td><td class="num">' + din(x.mo) + '</td><td class="num">' + din(x.av) + '</td><td class="num"><b>' + (x.entrada ? din(x.lucro) : "—") + '</b></td><td><button class="peq prim" data-tz="' + i + '">Trazer</button></td></tr>';
-      }).join("") + "</tbody></table></div>" : '<div class="cartao vazio">Nada lançado em Notas e resultado ainda.</div>') + '<div class="acoes"><button id="co-tz-x">Fechar</button></div>', { titulo: "📥 Trazer de Notas e resultado", larga: true, semRascunho: true });
+    var dt = function (iso) { return dataBr(String(iso || "").slice(0, 10)); };
+    var j = A.janela('<p class="mudo peq" style="margin-top:0">Escolha a obra ou o cliente que já está em <b>💼 Notas e resultado</b>. O app copia o que foi lançado: <b>notas fiscais</b> (valor cobrado), <b>materiais</b>, <b>mão de obra paga</b> e <b>avulsos</b>. Abra <b>Ver o que compõe</b> para conferir cada nota, compra e pagamento. Depois você só informa a <b>metragem (m²)</b>.</p>' +
+      (L.length ? L.map(function (x, i) {
+        var ors = orcamentosDe(x.nome), notasV = r2(x.notasV || x.portal || 0), dif = ors.length && notasV ? r2(notasV - ors[0].total) : null;
+        return '<div class="cartao"><div class="linha" style="gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:230px"><b>' + esc(x.nome) + "</b>" +
+          '<div class="peq" style="margin-top:4px">Notas fiscais <b>' + (notasV ? din(notasV) : "—") + "</b> · materiais <b>" + din(x.mat) + "</b> · mão de obra <b>" + din(x.mo) + "</b> · avulsos <b>" + din(x.av) + "</b>" + (x.impEmp ? " · imposto <b>" + din(x.impEmp) + "</b>" : "") + (x.entrada ? " · resultado <b>" + din(x.lucro) + "</b>" : "") + "</div>" +
+          (x.mo === 0 && notasV ? '<div class="peq" style="color:var(--atencao,#b7791f);margin-top:4px">⚠ Nenhum pagamento da equipe está ligado a esta obra: a mão de obra vem como R$ 0,00 e a sobra fica alta demais. Depois de trazer, informe a mão de obra paga, ou ligue os pagamentos em Pagamentos (campo Obra / cliente).</div>' : "") +
+          (dif !== null && Math.abs(dif) >= 0.01 ? '<div class="peq" style="color:var(--atencao,#b7791f);margin-top:4px">As notas somam ' + din(Math.abs(dif)) + (dif > 0 ? " a mais" : " a menos") + " que o orçamento nº " + esc(ors[0].numero) + " (" + din(ors[0].total) + "). Confira as notas abaixo (mais de uma nota, nota adicional ou valor diferente).</div>" : "") +
+          '<details style="margin-top:6px"><summary class="peq"><b>Ver o que compõe</b> (' + x.notas.length + " nota(s), " + x.compras.length + " compra(s), " + x.pags.length + " pagamento(s))</summary><div class=\"peq\" style=\"margin-top:4px\">" +
+            x.notas.map(function (n) { return "🧾 Nota nº " + esc(n.numero_nota || "s/ nº") + " · " + esc(dt(n.emitida_em)) + " · <b>" + din(n.valor) + "</b>" + (n.descricao ? " · " + esc(String(n.descricao).slice(0, 70)) : ""); }).concat(
+              x.compras.map(function (k) { return "🧱 " + esc(dt(k.comprado_em)) + " · " + esc(k.fornecedor || "Loja") + " · " + din(k.valor); }),
+              x.pags.map(function (g) { return "👷 " + esc(dt(g.pago_em)) + " · " + din(g.valor); })).join("<br>") + "</div></details></div>" +
+          '<div style="min-width:230px"><label class="peq">Valor cobrado a usar<select class="tz-v" data-i="' + i + '"><option value="n">Notas fiscais' + (notasV ? " — " + din(notasV) : "") + "</option>" + ors.map(function (o, k) { return '<option value="o' + k + '">Orçamento nº ' + esc(o.numero) + " — " + din(o.total) + "</option>"; }).join("") + '</select></label><div class="acoes" style="margin-top:6px"><button class="peq prim" data-tz="' + i + '">Trazer</button></div></div></div></div>';
+      }).join("") : '<div class="cartao vazio">Nada lançado em Notas e resultado ainda.</div>') + '<div class="acoes"><button id="co-tz-x">Fechar</button></div>', { titulo: "📥 Trazer de Notas e resultado", larga: true, semRascunho: true });
     $("#co-tz-x", j.el).onclick = function () { j.fechar(); };
     $$("[data-tz]", j.el).forEach(function (b) {
       b.onclick = function () {
-        var x = L[Number(b.dataset.tz)];
+        var x = L[Number(b.dataset.tz)], sel = $('.tz-v[data-i="' + b.dataset.tz + '"]', j.el), ors = orcamentosDe(x.nome), esc0 = sel ? sel.value : "n";
         if (lista.some(function (y) { return String(y.nome).trim().toLowerCase() === String(x.nome).trim().toLowerCase(); }) && !A.confirmar("Já existe uma obra “" + x.nome + "” aqui. Trazer de novo e criar outra?")) return;
-        var d = novoDados();
+        var d = novoDados(), usaOrc = /^o\d+$/.test(esc0) ? ors[Number(esc0.slice(1))] : null;
         d.unidade = "Etapa"; d.etapas = [{ nome: "Obra toda", dias: 0, area: "" }]; d.moReal = r2(x.mo);
         if (x.mat > 0) d.outros.push({ tipo: "Material (tinta, massa...)", desc: "Compras lançadas em Notas e resultado", valor: r2(x.mat) });
         if (x.av > 0) d.outros.push({ tipo: "Outro", desc: "Avulsos (gasolina, lanche e outros)", valor: r2(x.av) });
         if (x.impEmp > 0) d.outros.push({ tipo: "Outro", desc: "Imposto da empresa sobre as notas", valor: r2(x.impEmp) });
-        d.cobrado = r2(x.notasV || x.portal || 0); d.obs = "Trazida de Notas e resultado. Informe a metragem (m²) da obra para comparar por m².";
+        d.cobrado = usaOrc ? usaOrc.total : r2(x.notasV || x.portal || 0);
+        d.obs = "Trazida de Notas e resultado. Valor cobrado: " + (usaOrc ? "orçamento nº " + usaOrc.numero : "notas fiscais") + ". " + (x.mo === 0 ? "Sem mão de obra paga ligada à obra: informe o valor real. " : "") + "Informe a metragem (m²) da obra para comparar por m².";
         j.fechar(); criar({ nome: x.nome, status: "concluida", dados: d }, c);
       };
     });
