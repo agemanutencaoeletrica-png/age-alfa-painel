@@ -86,6 +86,20 @@
     });
     ligarEstimativa(c, M);
   }
+  // dados de uma obra de Custo de obras a partir do resultado de Notas e resultado (usado ao trazer e pela Ficha da obra)
+  function dadosDeResultado(x, orc, area) {
+    var d = novoDados();
+    d.unidade = "Etapa"; d.etapas = [{ nome: "Obra toda", dias: 0, area: area > 0 ? area : "" }]; d.moReal = r2(x.mo);
+    if (x.mat > 0) d.outros.push({ tipo: "Material (tinta, massa...)", desc: "Compras lançadas em Notas e resultado", valor: r2(x.mat) });
+    if (x.av > 0) d.outros.push({ tipo: "Outro", desc: "Avulsos (gasolina, lanche e outros)", valor: r2(x.av) });
+    if (x.impEmp > 0) d.outros.push({ tipo: "Outro", desc: "Imposto da empresa sobre as notas", valor: r2(x.impEmp) });
+    d.cobrado = orc ? orc.total : r2(x.notasV || x.portal || 0);
+    d.obs = "Trazida de Notas e resultado. Valor cobrado: " + (orc ? "orçamento nº " + orc.numero : "notas fiscais") + ". " + (x.mo === 0 ? "Sem mão de obra paga ligada à obra: informe o valor real. " : "") + (area > 0 ? "" : "Informe a metragem (m²) da obra para comparar por m².");
+    return d;
+  }
+  function inserirObra(ctx, nome, status, dados) {
+    return run(ctx.sb.from("obras_custos").insert({ nome: nome, status: status, dados: dados, total: calcular(dados).total }).select()).then(function (r) { return (r.data || [])[0]; });
+  }
   // 📥 traz uma obra que já foi lançada em Notas e resultado (notas, compras de material, pagamentos da equipe e avulsos), sem digitar tudo de novo
   // "Nome — 461 m² — R$ 24.500,00 — 5 dias" -> { nome, area, cobrado, dias }
   function linhasEtapas(txt) {
@@ -126,13 +140,7 @@
       b.onclick = function () {
         var x = L[Number(b.dataset.tz)], sel = $('.tz-v[data-i="' + b.dataset.tz + '"]', j.el), ors = orcamentosDe(x.nome), esc0 = sel ? sel.value : "n";
         if (lista.some(function (y) { return String(y.nome).trim().toLowerCase() === String(x.nome).trim().toLowerCase(); }) && !A.confirmar("Já existe uma obra “" + x.nome + "” aqui. Trazer de novo e criar outra?")) return;
-        var d = novoDados(), usaOrc = /^o\d+$/.test(esc0) ? ors[Number(esc0.slice(1))] : null;
-        d.unidade = "Etapa"; d.etapas = [{ nome: "Obra toda", dias: 0, area: "" }]; d.moReal = r2(x.mo);
-        if (x.mat > 0) d.outros.push({ tipo: "Material (tinta, massa...)", desc: "Compras lançadas em Notas e resultado", valor: r2(x.mat) });
-        if (x.av > 0) d.outros.push({ tipo: "Outro", desc: "Avulsos (gasolina, lanche e outros)", valor: r2(x.av) });
-        if (x.impEmp > 0) d.outros.push({ tipo: "Outro", desc: "Imposto da empresa sobre as notas", valor: r2(x.impEmp) });
-        d.cobrado = usaOrc ? usaOrc.total : r2(x.notasV || x.portal || 0);
-        d.obs = "Trazida de Notas e resultado. Valor cobrado: " + (usaOrc ? "orçamento nº " + usaOrc.numero : "notas fiscais") + ". " + (x.mo === 0 ? "Sem mão de obra paga ligada à obra: informe o valor real. " : "") + "Informe a metragem (m²) da obra para comparar por m².";
+        var usaOrc = /^o\d+$/.test(esc0) ? ors[Number(esc0.slice(1))] : null, d = dadosDeResultado(x, usaOrc, 0);
         j.fechar(); criar({ nome: x.nome, status: "concluida", dados: d }, c);
       };
     });
@@ -279,5 +287,5 @@
       return (r.data || []).map(function (x) { var d = x.dados || novoDados(); return { id: x.id, nome: x.nome || "(sem nome)", status: x.status, c: calcular(d), cobrado: calcular(d).cobrado }; });
     }).catch(function () { return []; });
   }
-  window.AGE_CUSTOS = { ver: ver, calcular: calcular, mediaAtual: mediaAtual, todas: todas };
+  window.AGE_CUSTOS = { ver: ver, calcular: calcular, mediaAtual: mediaAtual, todas: todas, dadosDeResultado: dadosDeResultado, inserirObra: inserirObra };
 })();
