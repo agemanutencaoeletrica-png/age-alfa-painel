@@ -377,23 +377,30 @@
       if (!itens.length) { st("Não achei materiais nesse arquivo. Tente o PDF ou o XML da loja, ou uma foto mais reta e de perto.", true); return; }
       var tot = itens.reduce(function (s, x) { return s + r2(x.qtd * x.unit); }, 0);
       st("");
+      // já há materiais na lista (orçamento antigo da loja)? oferece trocar pelos novos, com a mesma margem
+      var velhos = estado.linhas.filter(function (l) { return l.tipo === "material"; }), vCusto = 0, vVenda = 0;
+      velhos.forEach(function (l) { var cu = Number(l.custo) || 0; if (cu > 0) { vCusto += cu * (Number(l.qtd) || 0); vVenda += (Number(l.valor) || 0) * (Number(l.qtd) || 0); } });
+      var mgVelha = vCusto > 0 ? Math.max(0, Math.round((vVenda / vCusto - 1) * 1000) / 10) : 0, totVelho = r2(velhos.reduce(function (z, l) { return z + (Number(l.qtd) || 0) * (Number(l.valor) || 0); }, 0));
+      var trocar = velhos.length ? '<div class="cartao" style="margin:8px 0"><b>Já existem ' + velhos.length + " material(is) na lista (" + din(totVelho) + ')</b><label class="marca-linha" style="display:block;font-weight:400;margin-top:6px"><input type="radio" name="lj-modo" value="trocar" checked> <b>Trocar</b> os materiais antigos por estes (os serviços e a mão de obra não mudam)</label><label class="marca-linha" style="display:block;font-weight:400"><input type="radio" name="lj-modo" value="somar"> <b>Acrescentar</b> a estes, mantendo os antigos</label></div>' : "";
       $("#lj-prev", j.el).innerHTML = '<p class="peq mudo" style="margin:0 0 6px"><b>' + itens.length + " material(is)</b>" + (d.fornecedor ? " · " + esc(d.fornecedor) : "") + " · " + din(tot) + ' no total da loja. Confira nomes, quantidades e preços (a leitura de foto pode errar) e desmarque o que não vai.</p>' +
         '<div class="tabela-caixa"><table><thead><tr><th></th><th>Material</th><th>Qtd</th><th>Un</th><th>Custo na loja (un.)</th></tr></thead><tbody>' +
         itens.map(function (x, n) { return '<tr data-n="' + n + '"><td><input type="checkbox" class="lj-ok" checked aria-label="Usar"></td><td><input class="lj-d" maxlength="300" style="min-width:200px"></td><td><input class="lj-q" inputmode="decimal" style="width:70px"></td><td><input class="lj-u" style="width:70px" maxlength="12"></td><td><input class="lj-v" inputmode="decimal" style="width:100px"></td></tr>'; }).join("") +
-        '</tbody></table></div><label style="display:block;margin-top:8px">Margem sobre o custo da loja (%) <span class="peq mudo">— pode deixar 0 e ajustar depois na lista</span><input class="lj-m" inputmode="decimal" value="0" style="width:100px"></label>' +
-        '<div class="acoes"><button class="prim" id="lj-ok">➕ Adicionar à lista como materiais</button><button id="lj-x">Cancelar</button></div>';
+        '</tbody></table></div>' + trocar + '<label style="display:block;margin-top:8px">Margem sobre o custo da loja (%) <span class="peq mudo">— ' + (mgVelha > 0 ? "a mesma dos materiais antigos; " : "") + 'pode ajustar depois na lista</span><input class="lj-m" inputmode="decimal" value="' + fq(mgVelha) + '" style="width:100px"></label>' +
+        '<div class="acoes"><button class="prim" id="lj-ok">' + (velhos.length ? "✔ Usar estes materiais" : "➕ Adicionar à lista como materiais") + '</button><button id="lj-x">Cancelar</button></div>';
       $$("#lj-prev tbody tr", j.el).forEach(function (tr) { var x = itens[Number(tr.dataset.n)]; $(".lj-d", tr).value = x.desc; $(".lj-q", tr).value = fq(x.qtd); $(".lj-u", tr).value = x.un; $(".lj-v", tr).value = f2(x.unit); });
       $("#lj-x", j.el).onclick = function () { j.fechar(); };
       $("#lj-ok", j.el).onclick = function () {
-        var m = A.lerNumero($(".lj-m", j.el).value) || 0, n = 0;
+        var m = A.lerNumero($(".lj-m", j.el).value) || 0, n = 0, novas = [], md = $('input[name="lj-modo"]:checked', j.el), trocarVelhos = !!(md && md.value === "trocar");
         $$("#lj-prev tbody tr", j.el).forEach(function (tr) {
           if (!$(".lj-ok", tr).checked) return;
           var q = A.lerNumero($(".lj-q", tr).value), cu = A.lerNumero($(".lj-v", tr).value), ds = $(".lj-d", tr).value.trim();
           if (!ds || !(q > 0)) return;
-          estado.linhas.push({ tipo: "material", custo: cu, desc: ds, un: $(".lj-u", tr).value.trim() || "un", qtd: q, valor: r2(cu * (1 + m / 100)), media: null, min: null, max: null, cat: estado.cat }); n++;
+          novas.push({ tipo: "material", custo: cu, desc: ds, un: $(".lj-u", tr).value.trim() || "un", qtd: q, valor: r2(cu * (1 + m / 100)), media: null, min: null, max: null, cat: estado.cat }); n++;
         });
         if (!n) { A.avisar("Marque pelo menos um material.", "erro"); return; }
-        guardar(); j.fechar(); lista(c); A.avisar(n + " material(is) adicionado(s) à lista", "ok");
+        if (trocarVelhos) estado.linhas = estado.linhas.filter(function (l) { return l.tipo !== "material"; });
+        novas.forEach(function (x) { estado.linhas.push(x); });
+        guardar(); j.fechar(); lista(c); A.avisar(trocarVelhos ? n + " material(is) novo(s) no lugar dos " + velhos.length + " antigos" : n + " material(is) adicionado(s) à lista", "ok");
       };
     }).catch(function (e) { st("Não consegui ler o arquivo: " + (A.msgErro ? A.msgErro(e) : e.message), true); });
   }

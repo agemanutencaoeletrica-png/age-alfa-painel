@@ -712,3 +712,6 @@ No contrato aberto, o botão **✉️ Enviar por e-mail** abre o seu programa de
 
 ## 💬 Enviar contrato pelo WhatsApp
 O botão **💬 Enviar pelo WhatsApp** abre a conversa com o telefone do cliente (campo "Telefone / WhatsApp" das Partes) e a mensagem pronta. No computador o app pergunta se abre o WhatsApp Web ou o app. O PDF você anexa na conversa (📎) depois de salvar em **🖨 Imprimir / salvar PDF**.
+
+## 🔁 Trocar os materiais antigos pelos do orçamento novo da loja
+Na Calculadora, ao tocar em **📂 Materiais da loja** com materiais já na lista, o app oferece **Trocar** (tira os materiais antigos e põe os novos; serviços e mão de obra não mudam; vem marcado) ou **Acrescentar** (mantém os antigos). A margem já vem igual à dos materiais antigos.
