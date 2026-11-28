@@ -77,6 +77,29 @@
       "• Instalar ou ajustar os equipamentos de rede e os pontos necessários.\n" +
       "• Configurar os computadores, a impressora e o acesso à internet.\n" +
       "• Testar a conexão em cada ponto e orientar o responsável no uso."
+  }, {
+    id: "padrao-sinal-viaria", padrao: true, titulo: "Sinalização horizontal: repintura com tinta de demarcação viária (vagas e vias)",
+    vistoria: "Conforme a vistoria técnica realizada nas áreas de estacionamento e circulação (piso asfáltico, ao ar livre, com tráfego de veículos e de pedestres), a sinalização horizontal está desgastada, com tinta solta ou craquelada em vários pontos e com a identificação das vagas apagada em parte delas. " +
+      "A sinalização perdeu visibilidade e aderência e precisa ser repintada para voltar a orientar o trânsito e as vagas com segurança. As quantidades de cada item constam do orçamento e serão confirmadas na medição no local.",
+    solucao: "• Limpar o piso e remover a tinta solta e craquelada, com o piso seco.\n" +
+      "• Marcar as medidas e proteger as bordas com fita crepe, para as linhas e as letras ficarem retas e limpas.\n" +
+      "• Aplicar duas demãos de tinta de demarcação viária para asfalto, nas cores definidas no orçamento, respeitando o intervalo entre demãos, a diluição e as condições de tempo (piso seco, sem chuva) da ficha técnica do fabricante.\n" +
+      "• Misturar microesfera de vidro na tinta, quando prevista no orçamento, para a sinalização ser visível à noite com a luz dos faróis.\n" +
+      "• Retirar a fita no tempo indicado pelo fabricante e conferir o acabamento.\n" +
+      "• Trabalhar por setores, combinados com a administração, e liberar cada trecho ao tráfego só depois do tempo de secagem da ficha técnica.\n" +
+      "• Referências para a conferência do serviço: Manual Brasileiro de Sinalização de Trânsito (CONTRAN), volume IV, e ABNT NBR 9050 (vagas e símbolo de acesso para pessoas com deficiência)."
+  }, {
+    id: "padrao-sinal-epoxi", padrao: true, titulo: "Sinalização horizontal: repintura com tinta epóxi (vagas e vias)",
+    vistoria: "Conforme a vistoria técnica realizada nas áreas de estacionamento e circulação, a sinalização horizontal está desgastada, com tinta solta ou craquelada em vários pontos e com a identificação das vagas apagada em parte delas. " +
+      "A sinalização perdeu visibilidade e aderência e precisa ser repintada para voltar a orientar o trânsito e as vagas com segurança. As quantidades de cada item constam do orçamento e serão confirmadas na medição no local.",
+    solucao: "• Limpar o piso e remover a tinta solta e craquelada, com o piso seco.\n" +
+      "• Marcar as medidas e proteger as bordas com fita crepe, para as linhas e as letras ficarem retas e limpas.\n" +
+      "• Usar tinta epóxi bicomponente (partes A e B) indicada pelo fabricante para o tipo de piso e para o ambiente do serviço.\n" +
+      "• Misturar as partes A e B na proporção do fabricante e diluir com o diluente próprio para epóxi, quando indicado.\n" +
+      "• Aplicar duas demãos, respeitando o intervalo entre demãos e o tempo de uso da mistura, conforme a ficha técnica.\n" +
+      "• Retirar a fita no tempo indicado pelo fabricante e conferir o acabamento.\n" +
+      "• Trabalhar por setores, combinados com a administração, e liberar cada trecho ao tráfego só depois da secagem e da cura indicadas pelo fabricante (a cura total do epóxi é mais longa que a secagem ao toque).\n" +
+      "• Referências para a conferência do serviço: Manual Brasileiro de Sinalização de Trânsito (CONTRAN), volume IV, e ABNT NBR 9050 (vagas e símbolo de acesso para pessoas com deficiência)."
   }];
   // primeira letra maiúscula (do campo, ou de cada linha nos textos longos) enquanto você digita
   function maiusculaInicial(t, linhas) {
@@ -151,6 +174,31 @@
   function copiaLaudo(l) { l = l || {}; return { vistoria: l.vistoria || "", solucao: l.solucao || "", escopo: l.escopo || "" }; }
   function temAlgo(o) { return temLaudo(o) || temEscopo(o); }
   function modelosLaudo() { return MODELOS_LAUDO.concat(S.modelosLaudo || []); }
+  // salvar/apagar modelos de laudo (usado pela Calculadora; o orçamento tem o seu próprio botão)
+  function salvarModeloLaudo(titulo, vistoria, solucao) {
+    titulo = String(titulo || "").trim().slice(0, 120);
+    if (!titulo) return Promise.reject(new Error("Dê um nome ao modelo."));
+    if (modelosLaudo().some(function (y) { return y.padrao && semAcento(y.titulo).trim() === semAcento(titulo).trim(); })) return Promise.reject(new Error("Já existe um modelo pronto com este nome. Escolha outro nome."));
+    var dados = { titulo: titulo, vistoria: vistoria || null, solucao: solucao || null }, igual = (S.modelosLaudo || []).filter(function (y) { return semAcento(y.titulo).trim() === semAcento(titulo).trim(); })[0];
+    function local() {
+      if (igual) { Object.assign(igual, dados); guardarModelosLocal(); return igual; }
+      var n = Object.assign({ id: "local-" + Date.now(), local: true }, dados); S.modelosLaudo.push(n); guardarModelosLocal(); return n;
+    }
+    var pr = S.semModLaudo || (igual && igual.local) ? Promise.resolve(local())
+      : igual ? q(sb.from("modelos_laudo").update(dados).eq("id", igual.id).select().single()).then(function (n) { trocar(S.modelosLaudo, n); return n; })
+      : q(sb.from("modelos_laudo").insert(dados).select().single()).then(function (n) { S.modelosLaudo.push(n); return n; });
+    return pr.catch(function (e) {
+      if (!/modelos_laudo|relation|does not exist|schema cache|not find/i.test(A.msgErro(e) + " " + (e && e.message))) throw e;
+      S.semModLaudo = true; A.avisar("Modelo guardado só neste aparelho. Para usar em todos, rode o supabase.sql no Supabase (tabela modelos_laudo).", "erro");
+      return local();
+    }).then(function (n) { return { modelo: n, atualizou: !!igual }; });
+  }
+  function apagarModeloLaudo(id) {
+    var m = modelosLaudo().filter(function (y) { return y.id === id; })[0];
+    if (!m) return Promise.reject(new Error("Escolha na lista o modelo que quer apagar."));
+    if (m.padrao) return Promise.reject(new Error("O modelo pronto não pode ser apagado (ele não muda: o que você edita fica só no orçamento)."));
+    return (m.local ? Promise.resolve() : q(sb.from("modelos_laudo").delete().eq("id", m.id))).then(function () { tirar(S.modelosLaudo, m.id); guardarModelosLocal(); return m; });
+  }
   function guardarModelosLocal() { try { localStorage.setItem("age_modelos_laudo", JSON.stringify((S.modelosLaudo || []).filter(function (m) { return m.local; }))); } catch (e) { /* sem armazenamento */ } }
   function lerModelosLocal() { try { return JSON.parse(localStorage.getItem("age_modelos_laudo") || "[]"); } catch (e) { return []; } }
   var GRUPO_MAT_ORC = "Materiais (dos orçamentos)", GRUPO_MAT_NOTA = "Materiais (das notas e orçamentos das lojas)";
@@ -4998,6 +5046,7 @@
     // 🧾 Compras → orçamento de materiais com os itens de uma nota
     // 📑 Propostas prontas → orçamento do app já preenchido
     calcOrc: function (o) { return calcOrc(o); },
+    laudos: { lista: function () { return modelosLaudo(); }, salvar: salvarModeloLaudo, apagar: apagarModeloLaudo },
     novoOrcamento: function (base) { editarOrcamento(null, base || {}); },
     areas: function () { return CAT_ORC; }, editarAreas: function (depois) { editarAreas(depois); },
     orcMateriais: function (c) { editarOrcamento(null, { tipo: "materiais", categoria: c.area === "eletrica" || c.area === "pintura" ? c.area : "", _nota: c }); }

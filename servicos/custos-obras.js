@@ -141,14 +141,15 @@
     // ---- equipe
     function desenharEquipe() {
       var fn = FUNCOES.concat(lerFn().extras.filter(function (z) { return FUNCOES.indexOf(z) < 0; }));
-      $("#co-equipe", j.el).innerHTML = d.equipe.map(function (f, i) {
+      $("#co-equipe", j.el).innerHTML = (d.equipe.map(function (f, i) {
         var L = fn.slice(); if (f.funcao && L.indexOf(f.funcao) < 0) L.push(f.funcao);
-        return '<div class="linha co-f" data-i="' + i + '" style="gap:6px;margin-top:6px;align-items:flex-end;flex-wrap:wrap"><label style="flex:2;min-width:190px">Função<select class="f-fn"><option value="">— escolha —</option>' + L.map(function (z) { return "<option" + (z === f.funcao ? " selected" : "") + ">" + esc(z) + "</option>"; }).join("") + '</select></label>' +
+        return '<div class="linha co-f" data-i="' + i + '" style="gap:6px;margin-top:6px;align-items:flex-end;flex-wrap:wrap"><label style="flex:2;min-width:190px">Função <span class="peq mudo">(escolha ou digite)</span><input class="f-fn" list="co-dl-fn" maxlength="60" placeholder="Ex.: Pintor" value="' + esc(f.funcao || "") + '"></label>' +
           '<label style="width:90px">Pessoas<input class="f-p" inputmode="decimal" value="' + esc(fq(f.pessoas === "" || f.pessoas === undefined ? 1 : f.pessoas)) + '"></label><label style="width:120px">Diária de cada (R$)<input class="f-v" inputmode="decimal" value="' + esc(f2(f.diaria)) + '"></label><label style="width:130px">Transp./alim. por dia (R$)<input class="f-x" inputmode="decimal" value="' + esc(f2(f.extra)) + '"></label><button class="peq perigo" data-tirar-f="' + i + '" aria-label="Tirar">🗑</button></div>';
-      }).join("") || '<p class="peq mudo">Toque em ➕ Função e informe, por exemplo, 5 pintores e 5 meio oficiais, cada um com a sua diária.</p>';
+      }).join("") || '<p class="peq mudo">Toque em ➕ Função e informe, por exemplo, 5 pintores e 5 meio oficiais, cada um com a sua diária.</p>') + '<datalist id="co-dl-fn">' + fn.map(function (z) { return '<option value="' + esc(z) + '">'; }).join("") + "</datalist>";
       $$(".co-f", j.el).forEach(function (el) {
         var f = d.equipe[Number(el.dataset.i)];
-        $(".f-fn", el).onchange = function () { f.funcao = this.value; var m = lerFn().diarias[f.funcao]; if (m && !(Number(f.diaria) > 0)) { f.diaria = Number(m.diaria) || 0; f.extra = Number(m.extra) || 0; $(".f-v", el).value = f2(f.diaria); $(".f-x", el).value = f2(f.extra); } mudou(); };
+        $(".f-fn", el).oninput = function () { f.funcao = this.value.trim(); agendar(); };
+        $(".f-fn", el).onchange = function () { f.funcao = this.value.trim(); if (f.funcao && fn.indexOf(f.funcao) < 0) { var o1 = lerFn(); o1.extras.push(f.funcao); guardarFn(o1); } var m = lerFn().diarias[f.funcao]; if (m && !(Number(f.diaria) > 0)) { f.diaria = Number(m.diaria) || 0; f.extra = Number(m.extra) || 0; $(".f-v", el).value = f2(f.diaria); $(".f-x", el).value = f2(f.extra); } mudou(); };
         $$("input", el).forEach(function (i) { i.addEventListener("input", function () { f.pessoas = $(".f-p", el).value === "" ? "" : num($(".f-p", el).value); f.diaria = num($(".f-v", el).value); f.extra = num($(".f-x", el).value); if (f.funcao && /f-(v|x)/.test(i.className)) { var o = lerFn(); o.diarias[f.funcao] = { diaria: f.diaria, extra: f.extra }; guardarFn(o); } mudou(); }); });
       });
       $$("[data-tirar-f]", j.el).forEach(function (b) { b.onclick = function () { d.equipe.splice(Number(b.dataset.tirarF), 1); desenharEquipe(); mudou(); }; });
