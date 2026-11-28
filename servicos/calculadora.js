@@ -26,7 +26,7 @@
   function nomePadrao() { var d = new Date(); return "Cotação de " + ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + " " + agoraTxt(); }
 
   // a equipe (custo interno) viaja dentro do campo "orc" da cotação salva (o orçamento criado nunca recebe isso)
-  function orcComEquipe() { var o = Object.assign({}, estado.orc || {}); if (estado.equipe && ((estado.equipe.func || []).length || (estado.equipe.outros || []).length)) o._equipe = estado.equipe; return Object.keys(o).length ? o : null; }
+  function orcComEquipe() { var o = Object.assign({}, estado.orc || {}); if (estado.equipe && ((estado.equipe.func || []).length || (estado.equipe.outros || []).length || Number(estado.equipe.areaObra) > 0)) o._equipe = estado.equipe; return Object.keys(o).length ? o : null; }
   function tirarEquipe(o) { var x = Object.assign({}, o || {}), eq = x._equipe || null; delete x._equipe; return { orc: Object.keys(x).length ? x : null, equipe: eq }; }
   // ---- salvar sozinho na nuvem (Supabase) e guardar as cotações para consulta ----
   function carregarCot(depois) {
@@ -457,7 +457,9 @@
   var OBRAS, obrasBusy = false, compSel = "";
   function compCartao(c) {
     var el = $("#cl-comp", c); if (!el || !P) return;
-    el.innerHTML = '<details class="cartao" id="cp-cx"><summary><b>📊 Comparar com uma obra já feita</b> <span class="peq mudo">· metragem, custos, despesas e sobra por m²</span></summary><div id="cp-corpo"></div></details>';
+    el.innerHTML = '<details class="cartao" id="cp-cx"><summary><b>📊 Comparar com uma obra já feita</b> <span class="peq mudo">· metragem, custos, despesas e sobra por m²</span></summary><div class="linha" style="gap:8px;align-items:flex-end;margin-top:6px;flex-wrap:wrap"><label style="width:230px">Metragem desta cotação (m²) <input id="cp-am" inputmode="decimal" placeholder="Ex.: 963"></label><span class="peq mudo" style="flex:1;min-width:220px">Para obras de linhas e símbolos (em metros e unidades), digite a área pintada. Vazio = soma dos serviços em m².</span></div><div id="cp-corpo"></div></details>';
+    var am = $("#cp-am", el), eqv = estado.equipe || {}; am.value = Number(eqv.areaObra) > 0 ? fq(eqv.areaObra) : "";
+    am.oninput = function () { eq().areaObra = A.lerNumero(this.value) || 0; guardar(); pintarComp(c); pintarMedia(c); };
     if (OBRAS === undefined && !(window.AGE_CUSTOS && window.AGE_CUSTOS.todas)) OBRAS = [];
     if (OBRAS === undefined && !obrasBusy && window.AGE_CUSTOS && window.AGE_CUSTOS.todas) { obrasBusy = true; window.AGE_CUSTOS.todas(P).then(function (L) { OBRAS = L; obrasBusy = false; pintarComp(c); }); }
     pintarComp(c);
@@ -465,6 +467,8 @@
   // metragem lembrada por obra (digitada uma vez) e metragem achada numa cotação salva com o mesmo nome
   function lerAreas() { try { return JSON.parse(localStorage.getItem("age_comp_area") || "{}") || {}; } catch (e) { return {}; } }
   function guardarArea(k, v) { try { var o = lerAreas(); if (v > 0) o[k] = v; else delete o[k]; localStorage.setItem("age_comp_area", JSON.stringify(o)); } catch (e) { /* sem armazenamento */ } }
+  // metragem da cotação: a digitada no cartão de comparação (vale para obras de linhas e símbolos, em m e un) ou a soma dos serviços em m²
+  function areaCot() { var m = Number((estado.equipe || {}).areaObra) || 0; return m > 0 ? m : areaDe(estado.linhas); }
   function areaDe(linhas) { var a = 0; (linhas || []).forEach(function (l) { if (l && l.tipo !== "material" && /^m(²|2)$/i.test(String(l.un || "").trim())) a += Number(l.qtd) || 0; }); return a; }
   function achaCotacao(nome) {
     var chave = semAcento(String(nome || "").replace(/\(.*?\)/g, "")).split(/\s+/).filter(function (w) { return w.length >= 3; })[0]; if (!chave) return null;
@@ -480,7 +484,7 @@
     var FIN = finalizadas();
     if (!OBRAS.length && !FIN.length) { el.innerHTML = '<p class="peq mudo">Ainda não há obra finalizada para comparar. As obras com notas, compras e pagamentos lançados em <b>💼 Notas e resultado</b> aparecem aqui sozinhas. Também dá para cadastrar uma obra em <b>📈 Custo de obras</b>.</p>'; return; }
     var antes = $("#cp-sel", el) ? $("#cp-sel", el).value : compSel;
-    var area = areaDe(estado.linhas), t = totais(), k = custoEquipe();
+    var area = areaCot(), t = totais(), k = custoEquipe();
     el.innerHTML = '<label style="display:block;margin-top:6px">Obra para comparar<select id="cp-sel"><option value="">— escolha —</option>' +
       (FIN.length ? '<optgroup label="✅ Obras finalizadas (Notas e resultado)">' + FIN.map(function (x) { return '<option value="f:' + esc(x.k) + '"' + ("f:" + x.k === antes ? " selected" : "") + ">" + esc(x.nome) + (x.entrada ? " · notas " + din(x.notasV || x.portal) : "") + "</option>"; }).join("") + "</optgroup>" : "") +
       (OBRAS.length ? '<optgroup label="📈 Custo de obras">' + OBRAS.map(function (o) { return '<option value="o:' + esc(o.id) + '"' + ("o:" + o.id === antes ? " selected" : "") + ">" + esc(o.nome) + (o.status === "concluida" ? " (concluída)" : " (em andamento)") + "</option>"; }).join("") + "</optgroup>" : "") +
@@ -488,7 +492,7 @@
     function mostrar() {
       compSel = $("#cp-sel", el).value; var r = $("#cp-res", el), ref = null;
       if (!compSel) { r.innerHTML = ""; return; }
-      if (!(area > 0)) { r.innerHTML = '<p class="peq mudo">Coloque serviços em <b>m²</b> na lista para comparar por metro quadrado.</p>'; return; }
+      if (!(area > 0)) { r.innerHTML = '<p class="peq mudo">Informe a <b>metragem desta cotação (m²)</b> acima, ou coloque serviços em m² na lista, para comparar por metro quadrado.</p>'; return; }
       if (compSel.charAt(0) === "o") {
         var o = OBRAS.filter(function (y) { return "o:" + y.id === compSel; })[0]; if (!o) { r.innerHTML = ""; return; }
         if (!(o.c.area > 0)) { r.innerHTML = '<p class="peq" style="color:var(--atencao,#b7791f)">Essa obra não tem metragem lançada. Abra-a em <b>📈 Custo de obras</b> e preencha a área (m²) de cada etapa.</p>'; return; }
@@ -568,7 +572,7 @@
     if (MEDIA === undefined) { el.innerHTML = ""; return; }
     if (!MEDIA) { el.innerHTML = '<p class="peq mudo" style="margin:8px 0 0">📈 Quando você marcar obras como <b>Concluídas</b> na aba Custo de obras, aqui aparece o preço sugerido pela média delas.</p>'; return; }
     var e = eq(), t = totais(), mg = Number(e.margem) || 0, fm = mg > 0 && mg < 100 ? 1 - mg / 100 : 1, area = 0, sug = [];
-    estado.linhas.forEach(function (l) { if (l.tipo !== "material" && /^m(²|2)$/i.test(String(l.un || "").trim())) area += Number(l.qtd) || 0; });
+    area = areaCot();
     if (MEDIA.moPorM2 > 0 && area > 0) sug.push({ rot: "Média por m² (" + din(MEDIA.moPorM2) + "/m² × " + A.numero(area, 0) + " m²)", custo: r2(MEDIA.moPorM2 * area) });
     if (MEDIA.moPorDia > 0 && Number(e.dias) > 0) sug.push({ rot: "Média por dia (" + din(MEDIA.moPorDia) + "/dia × " + A.numero(e.dias, 0) + " dias)", custo: r2(MEDIA.moPorDia * e.dias) });
     el.innerHTML = '<div style="border-top:1px solid var(--borda);margin-top:8px;padding-top:6px"><b>📈 Pela média das suas obras</b> <span class="peq mudo">(' + MEDIA.obras + " obra(s) concluída(s))</span>" +

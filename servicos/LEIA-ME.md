@@ -742,3 +742,6 @@ Na obra, o botão **📋 Colar etapas (nome, m² e valor)** cria uma etapa por l
 
 ## 🗂 Ficha da obra
 Aba nova que junta, por obra ou cliente (ex.: DEVA), o que já está lançado: **orçamentos** do app (pelo nome do cliente), **notas fiscais**, **materiais** (compras), **mão de obra** (pagamentos) e **avulsos**, de 💼 Notas e resultado. Mostra orçado, notas, custos, **sobra (R$ e %)** e os valores **por m²**. A **metragem** vem de Custo de obras, de uma cotação salva com o mesmo nome ou do que você digitar (fica lembrada e vale também na comparação da Calculadora). Avisa quando falta mão de obra ligada, quando as notas diferem dos orçamentos, quando falta metragem e quanto há a receber. Botões: **📈 Levar para Custo de obras (concluída)** e **📤 Compartilhar resumo**. O vínculo é pelo **mesmo nome de obra** nas compras (Para onde foi), nos pagamentos (Obra / cliente) e nas notas.
+
+## 📐 Metragem da cotação (obras de linhas e símbolos)
+No cartão **📊 Comparar com uma obra já feita** há o campo **Metragem desta cotação (m²)**. Serve para obras cujos serviços estão em metros e unidades (sinalização, faixas, vagas): digite a **área pintada** e a comparação por m² e o preço sugerido pela média passam a usar esse valor. Vazio = soma dos serviços em m². Fica salvo com a cotação (e vem no código de importação).
