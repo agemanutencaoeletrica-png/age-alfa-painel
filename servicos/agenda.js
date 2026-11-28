@@ -134,6 +134,27 @@
     var b = new Date(a.getFullYear(), a.getMonth(), a.getDate() + 6), m1 = MESES[a.getMonth()].slice(0, 3).toLowerCase(), m2 = MESES[b.getMonth()].slice(0, 3).toLowerCase();
     return a.getDate() + (a.getMonth() === b.getMonth() ? "" : " " + m1) + " – " + b.getDate() + " " + m2 + " " + b.getFullYear();
   }
+  // 📋 cronograma da obra: cola uma linha por semana ("S1 | Linhas das vagas: blocos 1-10") e cria um compromisso por linha, a partir da data de início
+  function cronograma() {
+    var seg = (function () { var d = new Date(); d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7)); return iso(d); })();
+    var j = A.janela('<p class="mudo peq" style="margin-top:0">Cole <b>uma linha por semana</b> no formato <code>S1 | o que será feito</code> (também vale <code>Semana 1: ...</code>). O app cria um compromisso <b>🔧 Serviço</b> para cada linha, na data de início da semana. Várias linhas da mesma semana viram vários compromissos.</p>' +
+      '<div class="linha" style="gap:8px"><label style="flex:2;min-width:200px">Obra (aparece no título)<input id="cr-obra" maxlength="60" placeholder="Ex.: Orion – sinalização"></label><label style="width:180px">Início da semana 1<input id="cr-ini" type="date" value="' + seg + '"></label></div>' +
+      '<label>Cronograma<textarea id="cr-txt" rows="10" style="width:100%" spellcheck="false"></textarea></label><div class="acoes"><button class="prim" id="cr-ok">➕ Criar na Agenda</button><button id="cr-x">Cancelar</button></div>', { titulo: "📋 Cronograma da obra", larga: true, semRascunho: true });
+    $("#cr-x", j.el).onclick = function () { j.fechar(); };
+    $("#cr-ok", j.el).onclick = function () {
+      var obra = $("#cr-obra", j.el).value.trim(), ini = $("#cr-ini", j.el).value, linhas = [];
+      if (!ini) { A.avisar("Escolha a data de início da semana 1.", "erro"); return; }
+      $("#cr-txt", j.el).value.split(/\n+/).forEach(function (l) {
+        var m = /^\s*(?:s|sem(?:ana)?)\s*\.?\s*(\d{1,2})\s*[|:\-–—]\s*(.+?)\s*$/i.exec(l); if (!m) return;
+        var d = deIso(ini); d.setDate(d.getDate() + (Number(m[1]) - 1) * 7);
+        linhas.push({ titulo: ((obra ? obra + " · " : "") + "S" + Number(m[1]) + ": " + m[2]).slice(0, 200), tipo: "servico", data: iso(d), hora_ini: null, hora_fim: null, avisar_min: null, onde: null, funcionario_id: null, obs: "Cronograma da obra" + (obra ? " " + obra : "") + " · semana " + Number(m[1]), feito: false });
+      });
+      if (!linhas.length) { A.avisar("Não achei linhas no formato “S1 | texto”.", "erro"); return; }
+      run(P.sb.from("agenda_eventos").insert(linhas).select()).then(function (r) {
+        ev = ev.concat((r.data || []).length ? r.data : linhas); sel = linhas[0].data; var d0 = deIso(sel); mes = new Date(d0.getFullYear(), d0.getMonth(), 1); j.fechar(); desenhar(); A.avisar(linhas.length + " compromisso(s) criado(s) na Agenda", "ok");
+      }).catch(function (er) { A.avisar(A.msgErro ? A.msgErro(er) : er.message, "erro"); });
+    };
+  }
   function desenhar() {
     if (!raiz) return;
     var y = mes.getFullYear(), m = mes.getMonth(), hoje = iso(new Date()), ini = new Date(y, m, 1 - new Date(y, m, 1).getDay()), fer = {}, dsel = deIso(sel), sem = vista === "sem";
@@ -160,7 +181,7 @@
       }
       corpo = '<div class="ag-semana" id="ag-grade">' + cols + "</div>";
     }
-    raiz.innerHTML = '<div class="cab-secao"><h2>📅 Agenda</h2><span><button class="prim" id="ag-novo"' + (semTabela ? " disabled" : "") + ">+ Novo compromisso</button></span></div>" +
+    raiz.innerHTML = '<div class="cab-secao"><h2>📅 Agenda</h2><span><button class="prim" id="ag-novo"' + (semTabela ? " disabled" : "") + ">+ Novo compromisso</button> <button id=\"ag-cron\"" + (semTabela ? " disabled" : "") + ">📋 Cronograma da obra</button></span></div>" +
       (semTabela ? '<div class="aviso">Para criar compromissos, rode no Supabase o <b>agenda.sql</b> (tabela <b>agenda_eventos</b>) e atualize o app. Enquanto isso a agenda já mostra os serviços com data prevista e os vencimentos de impostos.</div>' : "") +
       '<div class="ag"><div class="ag-hud"><div><div class="ag-rel" data-rel="hora"></div><div class="ag-data" data-rel="data"></div></div><div class="ag-prox" id="ag-prox">' + htmlProximo() + "</div></div>" +
       '<div class="ag-vistas"><button data-vista="mes" class="' + (!sem ? "on" : "") + '">Mês</button><button data-vista="sem" class="' + (sem ? "on" : "") + '">Semana</button></div>' +
@@ -181,6 +202,7 @@
       };
     });
     $("#ag-novo", raiz).onclick = function () { editar(null, sel); };
+    $("#ag-cron", raiz).onclick = function () { cronograma(); };
     if ($("#ag-novo2", raiz)) $("#ag-novo2", raiz).onclick = function () { editar(null, sel); };
     $$("[data-novo]", raiz).forEach(function (b) { b.onclick = function () { editar(null, b.dataset.novo); }; });
     $$(".ag-ci", raiz).forEach(function (el) { el.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } }; });
