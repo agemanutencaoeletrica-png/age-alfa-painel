@@ -745,3 +745,6 @@ Aba nova que junta, por obra ou cliente (ex.: DEVA), o que já está lançado: *
 
 ## 📐 Metragem da cotação (obras de linhas e símbolos)
 No cartão **📊 Comparar com uma obra já feita** há o campo **Metragem desta cotação (m²)**. Serve para obras cujos serviços estão em metros e unidades (sinalização, faixas, vagas): digite a **área pintada** e a comparação por m² e o preço sugerido pela média passam a usar esse valor. Vazio = soma dos serviços em m². Fica salvo com a cotação (e vem no código de importação).
+
+## 📋 Cronograma da obra na Agenda
+Na **📅 Agenda**, o botão **📋 Cronograma da obra** cria compromissos **🔧 Serviço** a partir de linhas coladas no formato `S1 | o que será feito` (ou `Semana 1: ...`): informe a obra e a **data de início da semana 1**, e cada linha vira um compromisso na data da sua semana (de 7 em 7 dias). Várias linhas da mesma semana viram vários compromissos.
