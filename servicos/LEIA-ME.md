@@ -736,3 +736,9 @@ No cartão **📊 Comparar com uma obra já feita** da Calculadora, a lista já 
 
 ## 🧾 Trazer pela nota fiscal ou pelo orçamento, com o detalhe
 Em **📥 Trazer de Notas e resultado** cada obra mostra **Ver o que compõe** (cada nota fiscal, compra e pagamento) e deixa escolher o **valor cobrado** a usar: o das **notas fiscais** ou o de um **orçamento** do mesmo cliente. Se as notas diferem do orçamento, o app avisa o tamanho da diferença. Quando não há pagamento da equipe ligado à obra, avisa que a mão de obra vem como R$ 0,00 (sobra alta demais).
+
+## 📋 Colar etapas com metragem e valor (Custo de obras)
+Na obra, o botão **📋 Colar etapas (nome, m² e valor)** cria uma etapa por linha colada, lendo o nome, a **metragem (m²)**, o **valor cobrado (R$)** e os **dias** (os três últimos são opcionais). Cada etapa agora tem o campo **Cobrado (R$)**; sem o valor total da obra preenchido, o cobrado é a soma das etapas.
+
+## 🗂 Ficha da obra
+Aba nova que junta, por obra ou cliente (ex.: DEVA), o que já está lançado: **orçamentos** do app (pelo nome do cliente), **notas fiscais**, **materiais** (compras), **mão de obra** (pagamentos) e **avulsos**, de 💼 Notas e resultado. Mostra orçado, notas, custos, **sobra (R$ e %)** e os valores **por m²**. A **metragem** vem de Custo de obras, de uma cotação salva com o mesmo nome ou do que você digitar (fica lembrada e vale também na comparação da Calculadora). Avisa quando falta mão de obra ligada, quando as notas diferem dos orçamentos, quando falta metragem e quanto há a receber. Botões: **📈 Levar para Custo de obras (concluída)** e **📤 Compartilhar resumo**. O vínculo é pelo **mesmo nome de obra** nas compras (Para onde foi), nos pagamentos (Obra / cliente) e nas notas.
