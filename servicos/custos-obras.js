@@ -37,7 +37,7 @@
       dias += di; if (di > 0) n++; area += ar; if (ar > 0) areaMO += mo;
       etapas.push({ nome: e.nome, dias: di, area: ar, mo: mo });
     });
-    var mo = r2(dias * cd.total), outros = r2((d.outros || []).reduce(function (s, o) { return s + (Number(o.valor) || 0); }, 0));
+    var mo = r2(dias * cd.total + (Number(d.moReal) || 0)), outros = r2((d.outros || []).reduce(function (s, o) { return s + (Number(o.valor) || 0); }, 0));
     var total = r2(mo + outros), cobrado = Number(d.cobrado) || 0;
     return { cd: cd, etapas: etapas, nEtapas: n, dias: dias, area: area, areaMO: areaMO, mo: mo, outros: outros, total: total, cobrado: cobrado, lucro: cobrado ? r2(cobrado - total) : null, margem: cobrado ? (cobrado - total) / cobrado * 100 : null,
       porEtapa: n ? r2(mo / n) : 0, diasPorEtapa: n ? dias / n : 0, porDia: dias ? r2(total / dias) : 0, porM2: area ? r2(mo / area) : 0, outrosPorM2: area ? r2(outros / area) : 0, totalPorM2: area ? r2(total / area) : 0, cobradoPorM2: area && cobrado ? r2(cobrado / area) : 0 };
@@ -65,7 +65,7 @@
   }
   function desenhar(c) {
     var M = medias();
-    c.innerHTML = '<div class="cab-secao"><h2>📈 Custo de obras</h2><span><button class="prim" id="co-nova"' + (semTab ? " disabled" : "") + '>+ Nova obra</button></span></div>' +
+    c.innerHTML = '<div class="cab-secao"><h2>📈 Custo de obras</h2><span><button class="prim" id="co-nova"' + (semTab ? " disabled" : "") + '>+ Nova obra</button> <button id="co-trazer"' + (semTab ? " disabled" : "") + '>📥 Trazer de Notas e resultado</button></span></div>' +
       (semTab ? '<div class="aviso">Para guardar as obras, rode no Supabase o <b>custos-obras.sql</b> (tabela <b>obras_custos</b>) e atualize o app.</div>' : "") +
       '<p class="mudo peq" style="margin-top:-4px">Guarde o <b>custo real</b> de cada obra: a equipe e as diárias, os dias gastos em cada etapa (ex.: Torre A 15 dias, Torre B 20 dias) e os outros custos. O app soma tudo e, com as obras <b>concluídas</b>, calcula as <b>médias</b> para você orçar as próximas. Só você vê.</p>' +
       htmlMedias(M) + (lista.length ? lista.map(function (x) {
@@ -75,6 +75,7 @@
       }).join("") : '<div class="cartao vazio">Nenhuma obra guardada ainda. Toque em + Nova obra.</div>');
     function achar(id) { return lista.filter(function (x) { return x.id === id; })[0]; }
     $("#co-nova", c).onclick = function () { criar({ nome: "", status: "andamento", dados: novoDados() }, c); };
+    $("#co-trazer", c).onclick = function () { trazer(c); };
     $$("[data-ab]", c).forEach(function (b) { b.onclick = function () { editar(achar(b.dataset.ab), c); }; });
     $$("[data-dp]", c).forEach(function (b) { b.onclick = function () { var x = achar(b.dataset.dp); criar({ nome: (x.nome || "Obra") + " (cópia)", status: "andamento", dados: JSON.parse(JSON.stringify(x.dados || novoDados())) }, c, true); }; });
     $$("[data-ap]", c).forEach(function (b) {
@@ -84,6 +85,29 @@
       };
     });
     ligarEstimativa(c, M);
+  }
+  // 📥 traz uma obra que já foi lançada em Notas e resultado (notas, compras de material, pagamentos da equipe e avulsos), sem digitar tudo de novo
+  function trazer(c) {
+    if (!window.AGE_FAT || !window.AGE_FAT.resultadoTodos) { A.avisar("Atualize a página (Ctrl+F5) para trazer as obras de Notas e resultado.", "erro"); return; }
+    var L = window.AGE_FAT.resultadoTodos(P).filter(function (x) { return x.k !== "-" && (x.entrada || x.gastos); });
+    var j = A.janela('<p class="mudo peq" style="margin-top:0">Escolha a obra ou o cliente que já está em <b>💼 Notas e resultado</b>. O app copia o que foi lançado: <b>notas</b> (valor cobrado), <b>materiais</b>, <b>mão de obra paga</b> e <b>avulsos</b>. Depois você só informa a <b>metragem (m²)</b> e, se quiser, os dias e a equipe.</p>' +
+      (L.length ? '<div class="tabela-caixa"><table><thead><tr><th>Obra / cliente</th><th class="num">Notas</th><th class="num">Materiais</th><th class="num">Mão de obra</th><th class="num">Avulsos</th><th class="num">Resultado</th><th></th></tr></thead><tbody>' + L.map(function (x, i) {
+        return "<tr><td><b>" + esc(x.nome) + '</b></td><td class="num">' + (x.entrada ? din(x.notasV || x.portal) : "—") + '</td><td class="num">' + din(x.mat) + '</td><td class="num">' + din(x.mo) + '</td><td class="num">' + din(x.av) + '</td><td class="num"><b>' + (x.entrada ? din(x.lucro) : "—") + '</b></td><td><button class="peq prim" data-tz="' + i + '">Trazer</button></td></tr>';
+      }).join("") + "</tbody></table></div>" : '<div class="cartao vazio">Nada lançado em Notas e resultado ainda.</div>') + '<div class="acoes"><button id="co-tz-x">Fechar</button></div>', { titulo: "📥 Trazer de Notas e resultado", larga: true, semRascunho: true });
+    $("#co-tz-x", j.el).onclick = function () { j.fechar(); };
+    $$("[data-tz]", j.el).forEach(function (b) {
+      b.onclick = function () {
+        var x = L[Number(b.dataset.tz)];
+        if (lista.some(function (y) { return String(y.nome).trim().toLowerCase() === String(x.nome).trim().toLowerCase(); }) && !A.confirmar("Já existe uma obra “" + x.nome + "” aqui. Trazer de novo e criar outra?")) return;
+        var d = novoDados();
+        d.unidade = "Etapa"; d.etapas = [{ nome: "Obra toda", dias: 0, area: "" }]; d.moReal = r2(x.mo);
+        if (x.mat > 0) d.outros.push({ tipo: "Material (tinta, massa...)", desc: "Compras lançadas em Notas e resultado", valor: r2(x.mat) });
+        if (x.av > 0) d.outros.push({ tipo: "Outro", desc: "Avulsos (gasolina, lanche e outros)", valor: r2(x.av) });
+        if (x.impEmp > 0) d.outros.push({ tipo: "Outro", desc: "Imposto da empresa sobre as notas", valor: r2(x.impEmp) });
+        d.cobrado = r2(x.notasV || x.portal || 0); d.obs = "Trazida de Notas e resultado. Informe a metragem (m²) da obra para comparar por m².";
+        j.fechar(); criar({ nome: x.nome, status: "concluida", dados: d }, c);
+      };
+    });
   }
   function htmlMedias(M) {
     if (!M) return '<div class="cartao"><b>📊 Médias para orçar</b><p class="peq mudo" style="margin:4px 0 0">Aparecem quando houver pelo menos uma obra <b>concluída</b> com dias lançados.</p></div>';
@@ -119,9 +143,10 @@
         '<div class="linha" style="gap:8px"><label style="width:200px">Encargos e benefícios (% das diárias)<input class="co-enc" inputmode="decimal"></label><div id="co-cdia" style="flex:1;min-width:200px;align-self:flex-end"></div></div></details>' +
       '<details open class="cartao"><summary><b>🏗 Etapas e dias gastos</b></summary><div id="co-etapas"></div><div class="acoes"><button class="peq" id="co-add-e">➕ Etapa</button><button class="peq" id="co-add-n">➕ Várias etapas de uma vez</button></div></details>' +
       '<details open class="cartao"><summary><b>🧱 Outros custos</b> <span class="peq mudo">(material, andaime, aluguel...)</span></summary><div id="co-outros"></div><div class="acoes"><button class="peq" id="co-add-o">➕ Custo</button></div></details>' +
+      '<label style="display:block;margin-top:8px">Mão de obra já paga, valor real (opcional) <span class="peq mudo">— soma-se aos dias × diárias. Vem preenchida quando a obra é trazida de Notas e resultado.</span><input class="co-moreal" inputmode="decimal" style="max-width:220px"></label>' +
       '<label style="display:block;margin-top:8px">Valor cobrado do cliente (opcional, para ver a sobra)<input class="co-cob" inputmode="decimal" style="max-width:220px"></label><label>Observações<textarea class="co-obs" rows="2" maxlength="2000"></textarea></label>' +
       '<div id="co-res" class="cartao" style="margin-top:8px"></div><div class="acoes"><button id="co-fechar">Fechar</button></div>', { titulo: "📈 Custo da obra", larga: true, semRascunho: true, aoFechar: function () { salvarJa(); desenhar(c); } });
-    $(".co-nome", j.el).value = nome; $(".co-un", j.el).value = d.unidade; $(".co-status", j.el).value = status; $(".co-enc", j.el).value = fq(d.enc); $(".co-cob", j.el).value = d.cobrado ? f2(d.cobrado) : ""; $(".co-obs", j.el).value = d.obs || "";
+    $(".co-nome", j.el).value = nome; $(".co-un", j.el).value = d.unidade; $(".co-status", j.el).value = status; $(".co-enc", j.el).value = fq(d.enc); $(".co-cob", j.el).value = d.cobrado ? f2(d.cobrado) : ""; $(".co-moreal", j.el).value = d.moReal ? f2(d.moReal) : ""; $(".co-obs", j.el).value = d.obs || "";
     function salvarJa() {
       clearTimeout(tm);
       var reg = { nome: $(".co-nome", j.el) ? $(".co-nome", j.el).value.trim() : x.nome, status: status, dados: d, total: calcular(d).total, atualizado_em: new Date().toISOString() };
@@ -185,6 +210,7 @@
     $(".co-status", j.el).onchange = function () { status = this.value; agendar(); };
     $(".co-enc", j.el).oninput = function () { d.enc = num(this.value); mudou(); desenharEtapas(); };
     $(".co-cob", j.el).oninput = function () { d.cobrado = num(this.value); mudou(); };
+    $(".co-moreal", j.el).oninput = function () { d.moReal = num(this.value); mudou(); };
     $(".co-obs", j.el).oninput = function () { d.obs = this.value; agendar(); };
     $("#co-add-f", j.el).onclick = function () { d.equipe.push({ funcao: "", pessoas: 1, diaria: 0, extra: 0 }); desenharEquipe(); mudou(); };
     $("#co-add-e", j.el).onclick = function () { var n = d.etapas.length + 1; d.etapas.push({ nome: (d.unidade || "Etapa") + " " + String(n).padStart(2, "0"), dias: 0, area: 0 }); desenharEtapas(); mudou(); };
