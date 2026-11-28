@@ -21,6 +21,16 @@
     var k = function (o) { return (o.itens || []).map(function (i) { return chaveMat(i.descricao) + "|" + Math.round((Number(i.unit) || 0) * 100); }).sort().join(";"); };
     return (a.itens || []).length === (b.itens || []).length && k(a) === k(b);
   }
+  // mesmo número, mas outro dia de emissão ou outro total: a loja REVISOU o orçamento (muda itens e valores). Entra como revisão, sem apagar o antigo.
+  function comRevisao(o) {
+    if (!o || !o.numero) return o;
+    var base = String(o.numero), igual = lista().filter(function (x) { return mesmaLoja(x, o) && String(x.numero) === base; })[0];
+    if (!igual) return o;
+    var mesmoDia = String(igual.data).slice(0, 10) === String(o.data).slice(0, 10), mesmoTotal = !(o.total && igual.total) || Math.abs(Number(o.total) - Number(igual.total)) < 0.01;
+    if (mesmoDia && mesmoTotal) return o;
+    o.numero = base + " (revisão de " + A.dataSimples(String(o.data).slice(0, 10)) + ")";
+    return o;
+  }
   function jaLancado(d) {
     return lista().filter(function (o) {
       if (d.arquivo_hash && o.arquivo_hash === d.arquivo_hash) return true;
@@ -132,6 +142,7 @@
               arquivo_hash: hash, chave: d.chave || null, itens: itens,
               total: d.valor || null, origem: rl.bruto && /<infNFe/i.test(rl.bruto) ? "nota" : "orcamento_loja",
               area: CP.areaPelosItens(itens.map(function (x) { return { item: x.descricao }; })) || "eletrica" };
+            comRevisao(o);
             var ja = jaLancado(o);
             if (ja) { cx.innerHTML = htmlJa(o, ja); $("[data-abrir]", cx).onclick = function () { abrir(ja); }; return; }
             if (!/^image\//.test(f.type)) return salvar(o, itens, f, cx);
@@ -242,6 +253,7 @@
     return (o.arquivo_hash || !f ? Promise.resolve(o.arquivo_hash || null) : impressao(f)).then(function (h) {
       o.arquivo_hash = h;
       // repetido: não grava de novo (nem mexe no acervo)
+      comRevisao(o);
       var ja = jaLancado(Object.assign({}, o, { itens: itens }));
       if (ja) return { linhas: [], novos: 0, atualizados: 0, repetido: ja, reg: ja };
       return PR.guardarDaLoja(P, itens, area, { loja: o.loja, cnpj: o.cnpj, data: o.data, numero: o.numero, origem: o.origem }).then(function (r) {
@@ -395,5 +407,5 @@
     };
   }
 
-  window.AGE_ORCLOJA = { ver: ver, guardar: function (ctx, o, itens, f) { P = ctx; return guardar(o, itens, f); }, jaLancado: function (ctx, o) { P = ctx; return jaLancado(o); }, validadeDoTexto: validadeDoTexto };
+  window.AGE_ORCLOJA = { ver: ver, guardar: function (ctx, o, itens, f) { P = ctx; return guardar(o, itens, f); }, jaLancado: function (ctx, o) { P = ctx; return jaLancado(comRevisao(o)); }, validadeDoTexto: validadeDoTexto };
 })();
