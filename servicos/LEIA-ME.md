@@ -730,3 +730,9 @@ Cadastre a obra feita (ex.: a da Deva, com epóxi) em **📈 Custo de obras**: e
 
 ## 📥 Trazer uma obra finalizada de Notas e resultado
 Em **📈 Custo de obras**, o botão **📥 Trazer de Notas e resultado** lista as obras e clientes que já têm lançamentos (ex.: DEVA) e copia: **notas** (valor cobrado), **materiais** (compras), **mão de obra paga** (pagamentos), **avulsos** e o imposto da empresa. A obra entra como **Concluída**; falta só informar a **metragem (m²)** de cada etapa, e os dias/equipe se quiser. Daí a comparação por m² (cartão **📊** da Calculadora) funciona sem digitar tudo de novo. Campo novo: **Mão de obra já paga (valor real)**, que se soma aos dias × diárias.
+
+## ⚡ Comparar direto com uma obra finalizada (sem cadastrar)
+No cartão **📊 Comparar com uma obra já feita** da Calculadora, a lista já traz as **obras finalizadas de Notas e resultado** (ex.: DEVA), sem precisar cadastrar em Custo de obras. O app usa notas, materiais, mão de obra paga, avulsos e imposto da empresa lançados e pede só a **metragem (m²)**: se existir uma cotação salva com o mesmo nome, ele usa a metragem dela; senão você digita uma vez e ela fica lembrada. As obras de Custo de obras continuam na lista, num grupo à parte.
+
+## 🧾 Trazer pela nota fiscal ou pelo orçamento, com o detalhe
+Em **📥 Trazer de Notas e resultado** cada obra mostra **Ver o que compõe** (cada nota fiscal, compra e pagamento) e deixa escolher o **valor cobrado** a usar: o das **notas fiscais** ou o de um **orçamento** do mesmo cliente. Se as notas diferem do orçamento, o app avisa o tamanho da diferença. Quando não há pagamento da equipe ligado à obra, avisa que a mão de obra vem como R$ 0,00 (sobra alta demais).
