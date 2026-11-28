@@ -509,16 +509,19 @@
     if (MEDIA !== undefined || medBusy || !P || !window.AGE_CUSTOS || !window.AGE_CUSTOS.mediaAtual) return;
     medBusy = true; window.AGE_CUSTOS.mediaAtual(P).then(function (m) { MEDIA = m || null; medBusy = false; pintarMedia(c); });
   }
+  // nomes sem repetição (o cadastro pode ter o mesmo funcionário duas vezes)
+  function nomesFunc(fs) { var vistos = {}; return (fs || []).filter(function (x) { var k = semAcento(x.nome).trim(); if (!k || vistos[k]) return false; vistos[k] = 1; return true; }); }
   function equipeCartao(c) {
     var el = $("#cl-equipe", c); if (!el) return;
     var e = eq(), fs = ((P && P.S.func) || []).filter(function (f) { return f.ativo !== false; }).sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome), "pt-BR"); });
     el.innerHTML = '<details class="cartao" id="eq-cx"' + ((e.func.length || e.outros.length) ? " open" : "") + '><summary><b>👷 Custo da equipe (honorários)</b> <span class="selo">só você vê</span> <span class="peq mudo">· quanto a equipe custa nesta obra</span></summary>' +
       '<p class="peq mudo" style="margin:6px 0">Escolha quem vai trabalhar, os dias e a diária (vem do cadastro da equipe, e você pode mudar aqui). O app soma o custo e compara com o que a lista cobra de mão de obra. Nada disso vai para o orçamento do cliente.</p>' +
       '<div class="linha" style="gap:8px"><label style="width:150px">Dias de obra (padrão)<input class="eq-dias" inputmode="decimal" value="' + esc(fq(e.dias)) + '"></label><label style="width:160px">Encargos e benefícios (%)<input class="eq-enc" inputmode="decimal" value="' + esc(fq(e.enc)) + '"></label><label style="width:170px">Sobra desejada (%)<input class="eq-mg" inputmode="decimal" value="' + esc(fq(e.margem)) + '"></label></div>' +
+      '<datalist id="eq-dl-fn">' + listaFuncoes().map(function (x) { return '<option value="' + esc(x) + '">'; }).join("") + '</datalist><datalist id="eq-dl-f">' + nomesFunc(fs).map(function (x) { return '<option value="' + esc(x.nome) + '">'; }).join("") + '</datalist>' +
       '<div id="eq-func">' + e.func.map(function (f, i) {
         var fnL = listaFuncoes(); if (f.funcao && fnL.indexOf(f.funcao) < 0) fnL.push(f.funcao);
-        return '<div class="linha eq-lin" data-i="' + i + '" style="gap:6px;margin-top:8px;align-items:flex-end;flex-wrap:wrap"><label style="flex:2;min-width:190px">Função<select class="eq-fn"><option value="">— escolha —</option>' + fnL.map(function (x) { return '<option' + (x === f.funcao ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("") + '</select></label>' +
-          '<label style="flex:2;min-width:170px">Funcionário (opcional)<select class="eq-f"><option value="">— sem nome —</option>' + fs.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === f.id ? " selected" : "") + ">" + esc(x.nome) + "</option>"; }).join("") + '</select></label>' +
+        return '<div class="linha eq-lin" data-i="' + i + '" style="gap:6px;margin-top:8px;align-items:flex-end;flex-wrap:wrap"><label style="flex:2;min-width:190px">Função <span class="peq mudo">(escolha ou digite)</span><input class="eq-fn" list="eq-dl-fn" maxlength="60" placeholder="Ex.: Pintor" value="' + esc(f.funcao || "") + '"></label>' +
+          '<label style="flex:2;min-width:170px">Funcionário (opcional) <span class="peq mudo">(escolha ou digite)</span><input class="eq-f" list="eq-dl-f" maxlength="80" placeholder="Nome" value="' + esc(f.nome || (f.id ? (fs.filter(function (y) { return y.id === f.id; })[0] || {}).nome || "" : "")) + '"></label>' +
           '<label style="width:78px">Pessoas<input class="eq-p" inputmode="decimal" value="' + esc(fq(f.pessoas === undefined || f.pessoas === "" ? 1 : f.pessoas)) + '"></label><label style="width:78px">Dias<input class="eq-d" inputmode="decimal" value="' + esc(fq(f.dias)) + '"></label>' +
           '<label style="width:110px">Diária (R$)<input class="eq-v" inputmode="decimal" value="' + esc(f2(f.diaria)) + '"></label><label style="width:120px">Transp./alim. por dia<input class="eq-x" inputmode="decimal" value="' + esc(f2(f.extra)) + '"></label><button class="peq perigo" data-eq-tirar="' + i + '" aria-label="Tirar">🗑</button></div>';
       }).join("") + "</div>" +
@@ -539,14 +542,18 @@
     $("#eq-add-o", el).onclick = function () { e.outros.push({ desc: "", valor: 0 }); salvar(); equipeCartao(c); };
     $$(".eq-lin", el).forEach(function (d) {
       var f = e.func[Number(d.dataset.i)];
+      $(".eq-fn", d).oninput = function () { f.funcao = this.value.trim(); salvar(); };
       $(".eq-fn", d).onchange = function () {
-        f.funcao = this.value; var m = lerFn().diarias[f.funcao];
+        f.funcao = this.value.trim(); var m = lerFn().diarias[f.funcao];
+        if (f.funcao && listaFuncoes().indexOf(f.funcao) < 0) { var o0 = lerFn(); o0.extras.push(f.funcao); guardarFn(o0); }   // função nova digitada fica na lista
         if (m && !f.id) { if (Number(m.diaria) > 0) f.diaria = Number(m.diaria); if (Number(m.extra) > 0 && !(Number(f.extra) > 0)) f.extra = Number(m.extra); $(".eq-v", d).value = f2(f.diaria); $(".eq-x", d).value = f2(f.extra); }
         salvar(); resumoEquipe(c);
       };
+      function achaFunc(nome) { var n = semAcento(nome).trim(); return n ? nomesFunc(fs).filter(function (y) { return semAcento(y.nome).trim() === n; })[0] : null; }
+      $(".eq-f", d).oninput = function () { var x = achaFunc(this.value); f.nome = this.value.trim(); f.id = x ? x.id : ""; salvar(); };
       $(".eq-f", d).onchange = function () {
-        f.id = this.value; var x = fs.filter(function (y) { return y.id === f.id; })[0];
-        if (x) { f.nome = x.nome; if (Number(x.diaria) > 0) { f.diaria = Number(x.diaria); $(".eq-v", d).value = f2(f.diaria); } } else f.nome = "";
+        var x = achaFunc(this.value); f.nome = this.value.trim(); f.id = x ? x.id : "";
+        if (x) { f.nome = x.nome; this.value = x.nome; if (Number(x.diaria) > 0) { f.diaria = Number(x.diaria); $(".eq-v", d).value = f2(f.diaria); } }
         salvar(); resumoEquipe(c);
       };
       function ler(ev) {
