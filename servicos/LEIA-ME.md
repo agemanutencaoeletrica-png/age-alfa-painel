@@ -721,3 +721,6 @@ Na Calculadora há o cartão **🔍 Laudo técnico (vistoria e solução)**: esc
 
 ## ✏️ Equipe editável (Calculadora e Custo de obras)
 No custo da equipe, **Função** e **Funcionário** agora são campos que você pode **digitar** ou escolher na lista de sugestões. Um nome igual ao do cadastro liga ao funcionário e traz a diária; um nome de fora (ajudante avulso, terceiro) fica só escrito. Uma função nova digitada entra na lista das próximas vezes. A lista de nomes não repete o mesmo funcionário duplicado no cadastro.
+
+## 📦 Total com materiais no cartão da equipe
+O cartão **Custo da equipe** passou a mostrar, quando há materiais na lista, o bloco **📦 Com os materiais**: mão de obra cobrada, materiais (valor de venda), **total do orçamento**, custo da equipe, custo dos materiais na loja e a **sobra total** (em R$ e %). Não desconta imposto, transporte do material nem outros gastos.
